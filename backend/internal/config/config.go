@@ -5,6 +5,7 @@ import (
 	"crypto/sha1" //nolint:gosec // SHA-1 is mandated by the coturn TURN REST API (RFC draft)
 	"encoding/base64"
 	"strconv"
+	"os"
 	"strings"
 	"time"
 
@@ -116,6 +117,10 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
+	// URL is a full connection string (postgres://user:pass@host:port/db?sslmode=...).
+	// When set it wins over host/port/user/password/name. Hosts like Render
+	// provide this as DATABASE_URL.
+	URL             string `koanf:"url"`
 	Host            string `koanf:"host"`
 	Port            int    `koanf:"port"`
 	User            string `koanf:"user"`
@@ -128,6 +133,9 @@ type DatabaseConfig struct {
 }
 
 type RedisConfig struct {
+	// URL is a full connection string (redis:// or rediss:// for TLS). When set
+	// it wins over host/port/username/password/db. Also read from REDIS_URL.
+	URL      string `koanf:"url"`
 	Host     string `koanf:"host"`
 	Port     int    `koanf:"port"`
 	Username string `koanf:"username"`
@@ -259,6 +267,13 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Server.WriteTimeout == 0 {
 		cfg.Server.WriteTimeout = 30
+	}
+	// Platforms such as Render and Heroku hand out plain DATABASE_URL / REDIS_URL.
+	if cfg.Database.URL == "" {
+		cfg.Database.URL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	}
+	if cfg.Redis.URL == "" {
+		cfg.Redis.URL = strings.TrimSpace(os.Getenv("REDIS_URL"))
 	}
 	if cfg.Database.Port == 0 {
 		cfg.Database.Port = 5432

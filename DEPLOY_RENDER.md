@@ -78,8 +78,8 @@ If you prefer to configure each service individually on Render:
    | `WHATOMATE_SERVER__PORT` | `8080` | Server listen port |
    | `WHATOMATE_SERVER__HOST` | `0.0.0.0` | Bind to all interfaces |
    | `WHATOMATE_APP__ENVIRONMENT` | `production` | Production mode |
-   | `WHATOMATE_DATABASE__URL` | `postgresql://...` | Connection URL from Step 1 |
-   | `WHATOMATE_REDIS__URL` | `redis://...` | Redis URL (e.g. from Upstash or Render) |
+   | `WHATOMATE_DATABASE__URL` | `postgresql://...` | **Internal Database URL** from Step 1 (plain `DATABASE_URL` also works) |
+   | `WHATOMATE_REDIS__URL` | `redis://...` | **Internal Key Value URL** from Render (New + → Key Value), or an Upstash `rediss://` URL. Plain `REDIS_URL` also works |
    | `WHATOMATE_JWT__SECRET` | *(click Generate)* | 64-char random secret |
    | `WHATOMATE_COOKIE__SECURE` | `true` | Secure cookies over HTTPS |
    | `WHATOMATE_COOKIE__SAME_SITE` | `None` | Cross-site cookie support |
@@ -112,6 +112,19 @@ If you prefer to configure each service individually on Render:
      - Source: `/*`
      - Destination: `/index.html`
 6. Click **Create Static Site**.
+
+---
+
+## 🧯 Troubleshooting
+
+**`hostname resolving error: lookup db ... no such host`**
+The backend is using the sample `config.toml`, whose database host is `db` (the Docker Compose name). Set `WHATOMATE_DATABASE__URL` (or `DATABASE_URL`) on the backend service to your Render Postgres **Internal Database URL**, then redeploy. The database and the backend must be in the same region for the internal URL to work.
+
+**`failed to connect to redis`**
+Same cause for Redis: create a Render Key Value instance (or Upstash) and set `WHATOMATE_REDIS__URL` (or `REDIS_URL`) to its connection URL.
+
+**Service marked unhealthy**
+Use `/health` as the health check path (not `/api/auth/me`, which needs a login).
 
 ---
 

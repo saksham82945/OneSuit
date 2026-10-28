@@ -16,7 +16,7 @@ services:
     region: oregon
     buildCommand: go build -ldflags="-s -w" -o whatomate ./cmd/whatomate
     startCommand: ./whatomate server -config config.toml -migrate
-    healthCheckPath: /api/auth/me
+    healthCheckPath: /health
     envVars:
       - key: PORT
         value: 8080
@@ -31,7 +31,10 @@ services:
           name: whatomate-db
           property: connectionString
       - key: WHATOMATE_REDIS__URL
-        value: redis://localhost:6379 # Or provide an external Redis URL (Upstash / Redis Cloud)
+        fromService:
+          type: keyvalue
+          name: whatomate-redis
+          property: connectionString
       - key: WHATOMATE_JWT__SECRET
         generateValue: true
       - key: WHATOMATE_COOKIE__SECURE
@@ -44,6 +47,16 @@ services:
         value: admin123
       - key: WHATOMATE_RATE_LIMIT__TRUST_PROXY
         value: true
+
+  # -------------------------------------------------------
+  # Redis (Render Key Value) for sessions, queues and caches
+  # -------------------------------------------------------
+  - type: keyvalue
+    name: whatomate-redis
+    plan: free
+    region: oregon
+    maxmemoryPolicy: noeviction
+    ipAllowList: [] # only reachable from your Render services
 
   # -------------------------------------------------------
   # 2. Whatomate Frontend Client (React Vite SPA)
@@ -72,5 +85,6 @@ services:
 databases:
   - name: whatomate-db
     plan: free
+    region: oregon # same region as the backend so the internal URL works
     databaseName: whatomate
     user: whatomate

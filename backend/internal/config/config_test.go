@@ -199,3 +199,23 @@ func TestLoad_EnvMapsMultiWordKeys(t *testing.T) {
 	assert.Equal(t, "admin@example.com", cfg.DefaultAdmin.Email)
 	assert.Equal(t, "db.internal", cfg.Database.Host)
 }
+
+func TestLoad_ConnectionURLs(t *testing.T) {
+	// WHATOMATE_ form wins.
+	t.Setenv("WHATOMATE_DATABASE__URL", "postgres://u:p@render-host:5432/app")
+	t.Setenv("WHATOMATE_REDIS__URL", "rediss://default:pw@kv-host:6379")
+	t.Setenv("DATABASE_URL", "postgres://ignored@other/db")
+	cfg, err := config.Load(writeConfig(t, "[database]\nhost = \"db\"\n"))
+	require.NoError(t, err)
+	assert.Equal(t, "postgres://u:p@render-host:5432/app", cfg.Database.URL)
+	assert.Equal(t, "rediss://default:pw@kv-host:6379", cfg.Redis.URL)
+
+	// Plain DATABASE_URL / REDIS_URL are used when nothing else is set.
+	t.Setenv("WHATOMATE_DATABASE__URL", "")
+	t.Setenv("WHATOMATE_REDIS__URL", "")
+	t.Setenv("REDIS_URL", "redis://plain-host:6379")
+	cfg, err = config.Load(writeConfig(t, ""))
+	require.NoError(t, err)
+	assert.Equal(t, "postgres://ignored@other/db", cfg.Database.URL)
+	assert.Equal(t, "redis://plain-host:6379", cfg.Redis.URL)
+}

@@ -17,8 +17,15 @@ func NewRedis(cfg *config.RedisConfig) (*redis.Client, error) {
 		Password: cfg.Password,
 		DB:       cfg.DB,
 	}
+	if cfg.URL != "" {
+		parsed, err := redis.ParseURL(cfg.URL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid redis url: %w", err)
+		}
+		opts = parsed
+	}
 
-	if cfg.TLS {
+	if cfg.TLS && opts.TLSConfig == nil {
 		opts.TLSConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		}
