@@ -1,9 +1,9 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Image as ImageIcon, Info, type LucideIcon, Wallet } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, Image as ImageIcon, Info, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
-import { type AdCreative, type AdType, type AdStatus, type AdsSetup, formatMoney } from './adsApi';
+import { type AdCreative, type AdType, type AdStatus, type AdsSetup } from './adsApi';
 
 // ---------------------------------------------------------------------------
 // Style tokens (light-first, matching ContactsView / the AiSensy-style shell)
@@ -22,55 +22,99 @@ export const nativeSelectCls =
   'h-9 w-full rounded-lg border border-gray-200 bg-white px-2.5 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-teal-600 disabled:opacity-50 dark:bg-white/[0.04] dark:border-white/10 dark:text-gray-100';
 
 // ---------------------------------------------------------------------------
-// Page shell
-// ---------------------------------------------------------------------------
-
-interface AdsPageProps {
-  title: string;
-  subtitle?: string;
-  icon: LucideIcon;
-  actions?: React.ReactNode;
-  /** Shown as a pill in the header ("Ad credit: ₹500.00"). */
-  setup?: AdsSetup | null;
-  children: React.ReactNode;
-}
-
-export const AdsPage: React.FC<AdsPageProps> = ({ title, subtitle, icon: Icon, actions, setup, children }) => (
-  <div className="flex flex-col min-h-full bg-[#f8faf9] dark:bg-[#0a0f0e] text-gray-900 dark:text-gray-100">
-    <header className="border-b border-gray-200 dark:border-white/[0.08] bg-white/95 dark:bg-[#0d1312]/95 backdrop-blur shrink-0">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3 min-h-16">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="h-9 w-9 rounded-xl bg-spruce-light text-spruce-dark dark:bg-teal-950/60 dark:text-teal-300 flex items-center justify-center shrink-0">
-            <Icon className="h-[18px] w-[18px]" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-lg font-semibold leading-tight truncate">{title}</h1>
-            {subtitle && <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{subtitle}</p>}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {setup && <AdCreditPill setup={setup} />}
-          {actions}
-        </div>
-      </div>
-    </header>
-    <div className="p-4 sm:p-6 space-y-5 max-w-7xl mx-auto w-full">{children}</div>
-  </div>
-);
-
-export const AdCreditPill: React.FC<{ setup: AdsSetup }> = ({ setup }) => (
-  <div
-    className="inline-flex items-center gap-1.5 h-9 rounded-xl border border-teal-200/70 bg-spruce-light px-3 text-xs font-semibold text-spruce-dark dark:bg-teal-950/50 dark:border-teal-900 dark:text-teal-200"
-    title="Prepaid credit available for running ads"
-  >
-    <Wallet className="h-3.5 w-3.5" />
-    Ad credit: {formatMoney(setup.ad_credit, setup.currency)}
-  </div>
-);
-
-// ---------------------------------------------------------------------------
 // Building blocks
 // ---------------------------------------------------------------------------
+
+/** "Rows per page 25 · 1-1 of 1  ‹ ›" footer used by the Ads tables. */
+export const TablePager: React.FC<{
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (p: number) => void;
+  onPageSizeChange?: (n: number) => void;
+  sizes?: number[];
+}> = ({ page, pageSize, total, onPageChange, onPageSizeChange, sizes = [10, 25, 50, 100] }) => {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(total, page * pageSize);
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2 border-t border-gray-100 px-4 py-2.5 text-xs text-gray-500 dark:border-white/[0.06] dark:text-gray-400">
+      {onPageSizeChange && (
+        <label className="inline-flex items-center gap-2">
+          Rows per page
+          <select
+            value={pageSize}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            className="h-7 rounded-md border border-gray-200 bg-white px-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-teal-600 dark:bg-white/[0.04] dark:border-white/10 dark:text-gray-100"
+          >
+            {sizes.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <span className="tabular-nums">
+        {from}-{to} of {total}
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          aria-label="Previous page"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent dark:hover:bg-white/[0.06]"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          aria-label="Next page"
+          disabled={page >= pages}
+          onClick={() => onPageChange(page + 1)}
+          className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent dark:hover:bg-white/[0.06]"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+/** Two-option segmented tabs ("<Brand> Ads" / "Fetched Ads"). */
+export const UnderlineTabs = <T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
+}) => (
+  <div className="flex gap-5 border-b border-gray-200 dark:border-white/10" role="tablist">
+    {options.map((o) => (
+      <button
+        key={o.value}
+        type="button"
+        role="tab"
+        aria-selected={value === o.value}
+        onClick={() => onChange(o.value)}
+        className={cn(
+          '-mb-px border-b-2 px-0.5 pb-2.5 text-sm font-semibold transition-colors',
+          value === o.value
+            ? 'border-spruce text-spruce-dark dark:border-teal-400 dark:text-teal-200'
+            : 'border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+        )}
+      >
+        {o.label}
+      </button>
+    ))}
+  </div>
+);
+
+export const thCls = 'px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 whitespace-nowrap dark:text-gray-400';
+export const tdCls = 'px-4 py-3 text-xs text-gray-700 align-middle dark:text-gray-200';
 
 export const StatTile: React.FC<{
   label: string;

@@ -1,50 +1,111 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Eye, Wallet, Loader2, Megaphone, MousePointerClick, Pencil, Plus, Rocket, Settings2, Trash2, UserPlus } from 'lucide-react';
+import { Columns3, Download, Facebook, Info, Loader2, Megaphone, Pencil, RefreshCw, Rocket, Settings2, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { DataTable, type Column } from '@/components/shared/DataTable';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { SearchInput } from '@/components/shared/SearchInput';
 import { IconButton } from '@/components/shared/IconButton';
 import { DeleteConfirmDialog } from '@/components/shared/DeleteConfirmDialog';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { useBranding } from '@/services/branding';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
 import {
-  AD_TYPES,
   adTypeLabel,
   adsApi,
+  daysAgoISO,
+  downloadCsv,
   errorMessage,
   formatDate,
   formatMoney,
   formatNumber,
-  isSetupComplete,
+  readStored,
   useAdsSetup,
+  writeStored,
   type AdCampaign,
   type AdType,
+  type AdsSummary,
+  type FetchedList,
 } from './adsApi';
-import { AdsPage, EmptyCard, Pill, SetupNotice, StatTile, StatusBadge, cardCls, outlineBtnCls, primaryBtnCls } from './AdsShared';
+import { SetupNotice, StatusBadge, TablePager, UnderlineTabs, cardCls, outlineBtnCls, primaryBtnCls, tdCls, thCls } from './AdsShared';
+import { AdsPage } from './AdsPageShell';
 import { AdCampaignDialog } from './AdCampaignDialog';
+import { AdGenerator } from './AdGenerator';
 
-type Tab = 'all' | AdType;
+type Tab = 'ours' | 'fetched';
+type ColumnKey = 'actions' | 'name' | 'start_date' | 'status' | 'type' | 'budget' | 'leads' | 'spend';
+type MetricKey = 'leads' | 'ctr' | 'cpl' | 'spend' | 'capi';
+
+const COLUMNS: { key: ColumnKey; label: string; align?: 'right' }[] = [
+  { key: 'actions', label: 'Actions' },
+  { key: 'name', label: 'Ad Name' },
+  { key: 'start_date', label: 'Start Date' },
+  { key: 'status', label: 'Status' },
+  { key: 'type', label: 'Ad Type' },
+  { key: 'budget', label: 'Budget', align: 'right' },
+  { key: 'leads', label: 'Leads', align: 'right' },
+  { key: 'spend', label: 'Spend', align: 'right' },
+];
+
+const METRICS: { key: MetricKey; label: string; info: string }[] = [
+  { key: 'leads', label: 'Number of Leads', info: 'Leads collected from your ads (lead forms and WhatsApp chats) in the selected period.' },
+  { key: 'ctr', label: 'Click-Through Rate', info: 'Clicks ÷ impressions. Shows how often people who see your ad tap it.' },
+  { key: 'cpl', label: 'Cost Per Lead', info: 'Total spend ÷ number of leads.' },
+  { key: 'spend', label: 'Total Spend', info: 'Amount spent on your ads, paid from your ad credit.' },
+  { key: 'capi', label: 'Total CAPI Signals', info: 'Conversion events (Lead, Purchase…) shared with Meta through the Conversions API to optimise delivery.' },
+];
+
+const STATUSES = [
+  { value: '', label: 'Select Status' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'active', label: 'Active' },
+  { value: 'paused', label: 'Paused' },
+  { value: 'ended', label: 'Ended' },
+];
+
+const RANGES = [
+  { value: 0, label: 'All time' },
+  { value: 7, label: 'Last 7 days' },
+  { value: 30, label: 'Last 30 days' },
+  { value: 90, label: 'Last 90 days' },
+];
+
+const COLS_KEY = 'ads_manager_columns';
+const METRICS_KEY = 'ads_manager_metrics';
+const allOn = <K extends string>(keys: K[]) => Object.fromEntries(keys.map((k) => [k, true])) as Record<K, boolean>;
+
+const toolSelectCls =
+  'h-9 rounded-xl border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-spruce dark:bg-white/[0.04] dark:border-white/10 dark:text-gray-200';
 
 export const AdsManagerView: React.FC = () => {
   const { setup } = useAdsSetup();
+  const { platform_name } = useBranding();
   const { hasPermission } = useAuthStore();
   const canWrite = hasPermission('campaigns', 'write');
+  const location = useLocation();
 
+  const [tab, setTab] = useState<Tab>('ours');
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('all');
+  const [summary, setSummary] = useState<AdsSummary | null>(null);
+  const [fetched, setFetched] = useState<FetchedList<AdCampaign> | null>(null);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const [range, setRange] = useState(0);
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(25);
+  const [cols, setCols] = useState<Record<ColumnKey, boolean>>(() => readStored(COLS_KEY, allOn(COLUMNS.map((c) => c.key))));
+  const [metrics, setMetrics] = useState<Record<MetricKey, boolean>>(() => readStored(METRICS_KEY, allOn(METRICS.map((m) => m.key))));
+  const [syncing, setSyncing] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AdCampaign | null>(null);
+  const [createType, setCreateType] = useState<AdType | undefined>();
   const [toDelete, setToDelete] = useState<AdCampaign | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [launchingId, setLaunchingId] = useState<string | null>(null);
@@ -56,54 +117,110 @@ export const AdsManagerView: React.FC = () => {
     return () => clearTimeout(t);
   }, [search]);
 
+  // /ads#generate (from the quick guide) jumps to the generator.
+  useEffect(() => {
+    if (location.hash === '#generate') {
+      document.getElementById('generate')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [location.hash]);
+
+  const from = range ? daysAgoISO(range) : undefined;
+
   const load = useCallback(async () => {
     const id = ++seq.current;
     setLoading(true);
     try {
-      const list = await adsApi.listCampaigns({ search: debouncedSearch || undefined });
+      const [list, sum] = await Promise.all([
+        adsApi.listCampaigns({ search: debouncedSearch || undefined, status: status || undefined }),
+        adsApi.getSummary({ from, status: status || undefined }).catch(() => null),
+      ]);
       if (id !== seq.current) return;
       setCampaigns(list);
+      setSummary(sum);
       setLoadError(null);
     } catch (err) {
       if (id === seq.current) setLoadError(errorMessage(err, 'Failed to load ads'));
     } finally {
       if (id === seq.current) setLoading(false);
     }
-  }, [debouncedSearch]);
+  }, [debouncedSearch, status, from]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { all: campaigns.length };
-    for (const t of AD_TYPES) c[t.value] = campaigns.filter((x) => x.type === t.value).length;
-    return c;
-  }, [campaigns]);
+  useEffect(() => {
+    if (tab !== 'fetched' || fetched) return;
+    adsApi
+      .listFetchedAds()
+      .then(setFetched)
+      .catch((err) => toast.error(errorMessage(err, 'Failed to load fetched ads')));
+  }, [tab, fetched]);
 
-  const visible = useMemo(() => (tab === 'all' ? campaigns : campaigns.filter((c) => c.type === tab)), [campaigns, tab]);
-  const paged = useMemo(() => visible.slice((page - 1) * pageSize, page * pageSize), [visible, page]);
+  const visible = useMemo(() => {
+    const rows = tab === 'fetched' ? fetched?.items || [] : campaigns;
+    if (!from) return rows;
+    const since = new Date(`${from}T00:00:00`).getTime();
+    return rows.filter((c) => new Date(c.start_date || c.created_at).getTime() >= since);
+  }, [tab, fetched, campaigns, from]);
+  const paged = useMemo(() => visible.slice((page - 1) * pageSize, page * pageSize), [visible, page, pageSize]);
 
-  const totals = useMemo(
-    () =>
-      visible.reduce(
-        (acc, c) => ({
-          spend: acc.spend + (Number(c.spend) || 0),
-          impressions: acc.impressions + (Number(c.impressions) || 0),
-          clicks: acc.clicks + (Number(c.clicks) || 0),
-          leads: acc.leads + (Number(c.leads) || 0),
-        }),
-        { spend: 0, impressions: 0, clicks: 0, leads: 0 }
-      ),
-    [visible]
-  );
+  const currency = summary?.currency || setup?.currency || 'INR';
 
-  const currency = setup?.currency || campaigns[0]?.currency || 'INR';
-  const setupDone = isSetupComplete(setup);
+  const toggleCol = (k: ColumnKey) =>
+    setCols((c) => {
+      const next = { ...c, [k]: !c[k] };
+      writeStored(COLS_KEY, next);
+      return next;
+    });
+  const toggleMetric = (k: MetricKey) =>
+    setMetrics((m) => {
+      const next = { ...m, [k]: !m[k] };
+      writeStored(METRICS_KEY, next);
+      return next;
+    });
 
-  const openCreate = () => {
+  const openCreate = useCallback((type?: AdType) => {
     setEditing(null);
+    setCreateType(type);
     setDialogOpen(true);
+  }, []);
+
+  const sync = async () => {
+    setSyncing(true);
+    try {
+      await adsApi.sync();
+      toast.success('Ads synced from Meta');
+      setFetched(null);
+      load();
+    } catch (err) {
+      toast.error(errorMessage(err, 'Could not sync with Meta'));
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const downloadReport = () => {
+    if (visible.length === 0) {
+      toast.info('No ads to export');
+      return;
+    }
+    downloadCsv(
+      `ads-report-${daysAgoISO(0)}.csv`,
+      ['Ad Name', 'Start Date', 'Status', 'Ad Type', 'Daily Budget', 'Currency', 'Impressions', 'Clicks', 'Leads', 'Spend'],
+      visible.map((c) => [
+        c.name,
+        c.start_date ? c.start_date.slice(0, 10) : '',
+        c.status,
+        adTypeLabel(c.type),
+        c.daily_budget,
+        c.currency || currency,
+        c.impressions,
+        c.clicks,
+        c.leads,
+        c.spend,
+      ])
+    );
   };
 
   const launch = async (c: AdCampaign) => {
@@ -134,81 +251,38 @@ export const AdsManagerView: React.FC = () => {
     }
   };
 
-  const columns: Column<AdCampaign>[] = [
-    {
-      key: 'name',
-      label: 'Ad',
-      render: (c) => (
-        <div className="flex flex-col gap-1 min-w-[180px]">
-          <span className="font-semibold text-gray-900 dark:text-white truncate max-w-[260px]">{c.name}</span>
-          <div className="flex items-center gap-1.5">
-            <Pill>{adTypeLabel(c.type)}</Pill>
-            <span className="text-[11px] text-gray-400">Created {formatDate(c.created_at)}</span>
-          </div>
-        </div>
-      ),
-    },
-    { key: 'status', label: 'Status', render: (c) => <StatusBadge status={c.status} /> },
-    {
-      key: 'daily_budget',
-      label: 'Budget',
-      render: (c) => (
-        <div className="whitespace-nowrap">
-          <span className="font-semibold">{formatMoney(c.daily_budget, c.currency || currency)}</span>
-          <span className="text-gray-400"> /day</span>
-        </div>
-      ),
-    },
-    {
-      key: 'schedule',
-      label: 'Schedule',
-      render: (c) => (
-        <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap">
-          {c.start_date ? formatDate(c.start_date) : 'Not set'}
-          {c.end_date ? ` → ${formatDate(c.end_date)}` : c.start_date ? ' → ongoing' : ''}
-        </span>
-      ),
-    },
-    {
-      key: 'results',
-      label: 'Results',
-      render: (c) => (
-        <div className="text-[11px] leading-relaxed whitespace-nowrap">
-          <div>
-            <span className="font-semibold text-gray-900 dark:text-white">{formatNumber(c.leads)}</span>{' '}
-            <span className="text-gray-400">{c.type === 'lead_form' ? 'leads' : 'conversations'}</span>
-          </div>
-          <div className="text-gray-400">
-            {formatNumber(c.impressions)} impr. · {formatNumber(c.clicks)} clicks
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'spend',
-      label: 'Spend',
-      align: 'right',
-      render: (c) => <span className="font-semibold whitespace-nowrap">{formatMoney(c.spend, c.currency || currency)}</span>,
-    },
-    {
-      key: 'actions',
-      label: 'Actions',
-      align: 'right',
-      render: (c) => (
-        <div className="flex items-center justify-end gap-1">
-          {canWrite && c.status !== 'active' && c.status !== 'ended' && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={launchingId === c.id}
-              onClick={() => launch(c)}
-              className="h-8 rounded-lg border-teal-200 bg-white text-[11px] font-semibold text-spruce-dark hover:bg-spruce-light dark:bg-transparent dark:border-teal-900 dark:text-teal-300"
-            >
-              {launchingId === c.id ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Rocket className="h-3.5 w-3.5 mr-1" />}
-              Launch
-            </Button>
-          )}
-          {canWrite && (
+  const metricValue = (k: MetricKey): string => {
+    const s = summary;
+    switch (k) {
+      case 'leads':
+        return formatNumber(s?.leads);
+      case 'ctr':
+        return `${(s?.ctr ?? 0).toFixed(2)}%`;
+      case 'cpl':
+        return formatMoney(s?.cost_per_lead, currency);
+      case 'spend':
+        return formatMoney(s?.total_spend, currency);
+      case 'capi':
+        return formatNumber(s?.capi_signals);
+    }
+  };
+
+  const cell = (c: AdCampaign, k: ColumnKey): React.ReactNode => {
+    switch (k) {
+      case 'actions':
+        return tab === 'fetched' || !canWrite ? (
+          <span className="text-gray-400">—</span>
+        ) : (
+          <div className="flex items-center gap-0.5">
+            {c.status !== 'active' && c.status !== 'ended' && (
+              <IconButton
+                icon={launchingId === c.id ? Loader2 : Rocket}
+                label="Launch"
+                className={cn('text-spruce hover:bg-spruce-light dark:text-teal-300', launchingId === c.id && '[&_svg]:animate-spin')}
+                disabled={launchingId === c.id}
+                onClick={() => launch(c)}
+              />
+            )}
             <IconButton
               icon={Pencil}
               label="Edit"
@@ -218,148 +292,234 @@ export const AdsManagerView: React.FC = () => {
                 setDialogOpen(true);
               }}
             />
-          )}
-          {canWrite && (
             <IconButton
               icon={Trash2}
               label="Delete"
               className="text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
               onClick={() => setToDelete(c)}
             />
-          )}
-        </div>
-      ),
-    },
-  ];
+          </div>
+        );
+      case 'name':
+        return <span className="block max-w-[260px] truncate font-semibold text-gray-900 dark:text-white">{c.name}</span>;
+      case 'start_date':
+        return <span className="whitespace-nowrap">{c.start_date ? formatDate(c.start_date) : '—'}</span>;
+      case 'status':
+        return <StatusBadge status={c.status} />;
+      case 'type':
+        return <span className="whitespace-nowrap">{adTypeLabel(c.type)}</span>;
+      case 'budget':
+        return (
+          <span className="whitespace-nowrap">
+            {formatMoney(c.daily_budget, c.currency || currency)}
+            <span className="text-gray-400"> /day</span>
+          </span>
+        );
+      case 'leads':
+        return <span className="tabular-nums">{formatNumber(c.leads)}</span>;
+      case 'spend':
+        return <span className="whitespace-nowrap font-semibold">{formatMoney(c.spend, c.currency || currency)}</span>;
+    }
+  };
+
+  const shownCols = COLUMNS.filter((c) => cols[c.key]);
+  const shownMetrics = METRICS.filter((m) => metrics[m.key]);
+  const fetchedNotConnected = tab === 'fetched' && fetched && !fetched.meta_connected;
 
   return (
-    <AdsPage
-      title="Ads Manager"
-      subtitle="Facebook & Instagram ads that start WhatsApp conversations"
-      icon={Megaphone}
-      setup={setup}
-      actions={
-        canWrite && (
-          <Button size="sm" className={primaryBtnCls} onClick={openCreate}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" /> Create ad
-          </Button>
-        )
-      }
-    >
+    <AdsPage title="Ads Manager" setup={setup} onCreateAd={openCreate}>
       <SetupNotice setup={setup} />
 
-      {/* Tabs */}
-      <div className="-mx-4 sm:mx-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div className="flex w-max gap-1.5 px-4 sm:px-0" role="tablist" aria-label="Ad type">
-          {[{ value: 'all' as Tab, label: 'All' }, ...AD_TYPES].map((t) => {
-            const active = tab === t.value;
-            return (
-              <button
-                key={t.value}
-                role="tab"
-                aria-selected={active}
-                type="button"
-                onClick={() => {
-                  setTab(t.value);
+      <AdGenerator id="generate" hero pageName={setup?.page_name} onSaved={load} />
+
+      <section className={cn(cardCls, 'overflow-hidden')}>
+        <div className="space-y-4 px-4 pt-4 sm:px-5">
+          <UnderlineTabs
+            value={tab}
+            onChange={(v) => {
+              setTab(v);
+              setPage(1);
+            }}
+            options={[
+              { value: 'ours', label: `${platform_name} Ads` },
+              { value: 'fetched', label: 'Fetched Ads' },
+            ]}
+          />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchInput
+              value={search}
+              onChange={(v) => {
+                setSearch(v);
+                setPage(1);
+              }}
+              placeholder="Search by ad name"
+              className="w-full sm:w-60"
+            />
+            <Button variant="outline" size="sm" className={outlineBtnCls} onClick={sync} disabled={syncing || !canWrite}>
+              <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', syncing && 'animate-spin')} /> Sync
+            </Button>
+            <Button variant="outline" size="sm" className={outlineBtnCls} onClick={downloadReport}>
+              <Download className="h-3.5 w-3.5 mr-1.5" /> Download Report
+            </Button>
+            <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+              <select
+                aria-label="Status"
+                className={toolSelectCls}
+                value={status}
+                onChange={(e) => {
+                  setStatus(e.target.value);
                   setPage(1);
                 }}
-                className={cn(
-                  'inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors',
-                  active
-                    ? 'border-spruce-dark bg-spruce-dark text-white'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-teal-300 hover:text-gray-900 dark:bg-transparent dark:border-white/10 dark:text-gray-300'
-                )}
               >
-                {t.label}
-                <span
-                  className={cn(
-                    'rounded-full px-1.5 text-[10px] tabular-nums',
-                    active ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-400'
-                  )}
-                >
-                  {counts[t.value] ?? 0}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Amount spent" value={formatMoney(totals.spend, currency)} icon={Wallet} tone="teal" />
-        <StatTile label="Impressions" value={formatNumber(totals.impressions)} icon={Eye} tone="blue" />
-        <StatTile label="Clicks" value={formatNumber(totals.clicks)} icon={MousePointerClick} tone="amber" />
-        <StatTile label="Leads & chats" value={formatNumber(totals.leads)} icon={UserPlus} tone="violet" />
-      </div>
-
-      {/* Table */}
-      {loadError ? (
-        <div className={cardCls}>
-          <ErrorState title="Couldn't load ads" description={loadError} onRetry={load} />
-        </div>
-      ) : !loading && campaigns.length === 0 && !debouncedSearch ? (
-        <EmptyCard
-          icon={Megaphone}
-          title="No ads yet"
-          description={
-            setupDone
-              ? 'Create your first Click-to-WhatsApp ad and start conversations with people who tap it.'
-              : 'Complete Ads Manager setup to run ads on Facebook & Instagram. You can already build ad drafts while you finish.'
-          }
-          action={
-            <div className="flex flex-wrap justify-center gap-2">
-              {!setupDone && (
-                <Link to="/ads/setup">
-                  <Button size="sm" className={primaryBtnCls}>
-                    <Settings2 className="h-3.5 w-3.5 mr-1.5" /> Complete setup
-                  </Button>
-                </Link>
-              )}
-              {canWrite && (
-                <Button size="sm" variant={setupDone ? 'default' : 'outline'} className={setupDone ? primaryBtnCls : outlineBtnCls} onClick={openCreate}>
-                  <Plus className="h-3.5 w-3.5 mr-1.5" /> {setupDone ? 'Create ad' : 'Create a draft'}
-                </Button>
-              )}
+                {STATUSES.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Date range"
+                className={toolSelectCls}
+                value={range}
+                onChange={(e) => {
+                  setRange(Number(e.target.value));
+                  setPage(1);
+                }}
+              >
+                {RANGES.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+              <ToggleMenu
+                label="Customize Metrics"
+                icon={SlidersHorizontal}
+                items={METRICS.map((m) => ({ key: m.key, label: m.label, on: metrics[m.key] }))}
+                onToggle={(k) => toggleMetric(k as MetricKey)}
+              />
+              <ToggleMenu
+                label="Columns"
+                icon={Columns3}
+                items={COLUMNS.map((c) => ({ key: c.key, label: c.label, on: cols[c.key] }))}
+                onToggle={(k) => toggleCol(k as ColumnKey)}
+              />
             </div>
-          }
-        />
-      ) : (
-        <div className={cn(cardCls, 'p-4 sm:p-5 space-y-4')}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold">{tab === 'all' ? 'All ads' : adTypeLabel(tab)}</h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{visible.length} ads</p>
-            </div>
-            <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search ads…" className="w-full sm:w-64" />
           </div>
-          <DataTable
-            items={paged}
-            columns={columns}
-            isLoading={loading}
-            emptyIcon={Megaphone}
-            emptyTitle={debouncedSearch ? 'No ads match your search' : `No ${adTypeLabel(tab)} ads yet`}
-            emptyDescription={debouncedSearch ? 'Try another name.' : 'Create one to see it here.'}
-            emptyAction={
-              canWrite && !debouncedSearch ? (
-                <Button size="sm" className={primaryBtnCls} onClick={openCreate}>
-                  <Plus className="h-3.5 w-3.5 mr-1.5" /> Create ad
-                </Button>
-              ) : undefined
-            }
-            currentPage={page}
-            totalItems={visible.length}
-            pageSize={pageSize}
-            onPageChange={setPage}
-          />
+
+          {shownMetrics.length > 0 && (
+            <TooltipProvider delayDuration={150}>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                {shownMetrics.map((m) => (
+                  <div key={m.key} className="rounded-xl border border-gray-200 bg-white p-3.5 dark:border-white/10 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                      {m.label}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button type="button" aria-label={`About ${m.label}`} className="text-gray-400 hover:text-gray-600">
+                            <Info className="h-3 w-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[240px] text-xs">{m.info}</TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <p className="mt-1.5 text-lg font-bold tabular-nums">{loading && !summary ? '…' : metricValue(m.key)}</p>
+                  </div>
+                ))}
+              </div>
+            </TooltipProvider>
+          )}
         </div>
-      )}
+
+        {loadError && tab === 'ours' ? (
+          <ErrorState title="Couldn't load ads" description={loadError} onRetry={load} />
+        ) : (
+          <>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[760px] border-t border-gray-100 dark:border-white/[0.06]">
+                <thead className="bg-gray-50/80 dark:bg-white/[0.03]">
+                  <tr>
+                    {shownCols.map((c) => (
+                      <th key={c.key} className={cn(thCls, c.align === 'right' && 'text-right')}>
+                        {c.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-white/[0.06]">
+                  {loading && tab === 'ours' && campaigns.length === 0 ? (
+                    [0, 1, 2].map((i) => (
+                      <tr key={i}>
+                        <td colSpan={shownCols.length || 1} className="px-4 py-3">
+                          <div className="h-5 animate-pulse rounded bg-gray-100 dark:bg-white/[0.06]" />
+                        </td>
+                      </tr>
+                    ))
+                  ) : paged.length === 0 ? (
+                    <tr>
+                      <td colSpan={shownCols.length || 1} className="px-4 py-12 text-center">
+                        <Megaphone className="mx-auto h-8 w-8 text-gray-300" />
+                        <p className="mt-2 text-sm font-semibold">
+                          {fetchedNotConnected ? 'Facebook is not connected' : debouncedSearch || status || range ? 'No ads match your filters' : 'No ads yet'}
+                        </p>
+                        <p className="mx-auto mt-1 max-w-sm text-xs text-gray-500 dark:text-gray-400">
+                          {tab === 'fetched'
+                            ? fetched?.message || 'Ads from your Meta ad account appear here.'
+                            : 'Generate ads with AI above, or create one yourself.'}
+                        </p>
+                        <div className="mt-3 flex justify-center gap-2">
+                          {fetchedNotConnected ? (
+                            <Link to="/ads/setup">
+                              <Button size="sm" className="h-9 rounded-xl bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-semibold px-4">
+                                <Facebook className="h-3.5 w-3.5 mr-1.5" /> Connect Facebook
+                              </Button>
+                            </Link>
+                          ) : (
+                            tab === 'ours' &&
+                            canWrite &&
+                            !debouncedSearch && (
+                              <Button size="sm" className={primaryBtnCls} onClick={() => openCreate()}>
+                                Create Ad
+                              </Button>
+                            )
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    paged.map((c) => (
+                      <tr key={c.id} className="hover:bg-gray-50/70 dark:hover:bg-white/[0.02]">
+                        {shownCols.map((col) => (
+                          <td key={col.key} className={cn(tdCls, col.align === 'right' && 'text-right')}>
+                            {cell(c, col.key)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <TablePager
+              page={page}
+              pageSize={pageSize}
+              total={visible.length}
+              onPageChange={setPage}
+              onPageSizeChange={(n) => {
+                setPageSize(n);
+                setPage(1);
+              }}
+            />
+          </>
+        )}
+      </section>
 
       <AdCampaignDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         campaign={editing}
-        defaultType={tab === 'all' ? undefined : tab}
+        defaultType={createType}
         currency={currency}
         pageName={setup?.page_name}
         onSaved={load}
@@ -400,5 +560,29 @@ export const AdsManagerView: React.FC = () => {
     </AdsPage>
   );
 };
+
+const ToggleMenu: React.FC<{
+  label: string;
+  icon: React.ElementType;
+  items: { key: string; label: string; on: boolean }[];
+  onToggle: (key: string) => void;
+}> = ({ label, icon: Icon, items, onToggle }) => (
+  <Popover>
+    <PopoverTrigger asChild>
+      <Button variant="outline" size="sm" className={outlineBtnCls}>
+        <Icon className="h-3.5 w-3.5 mr-1.5" /> {label}
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent align="end" className="w-56 p-2">
+      <p className="px-2 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+      {items.map((i) => (
+        <label key={i.key} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-white/[0.04]">
+          <input type="checkbox" className="h-3.5 w-3.5 accent-[#0f5c62]" checked={i.on} onChange={() => onToggle(i.key)} />
+          {i.label}
+        </label>
+      ))}
+    </PopoverContent>
+  </Popover>
+);
 
 export default AdsManagerView;

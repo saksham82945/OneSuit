@@ -132,6 +132,9 @@ func GetMigrationModels() []MigrationModel {
 		{"AdLead", &models.AdLead{}},
 		{"AdAudience", &models.AdAudience{}},
 		{"AdEvent", &models.AdEvent{}},
+		{"AdWallet", &models.AdWallet{}},
+		{"AdCreditTransaction", &models.AdCreditTransaction{}},
+		{"AdEventDefinition", &models.AdEventDefinition{}},
 	}
 }
 

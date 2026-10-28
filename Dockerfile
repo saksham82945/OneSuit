@@ -12,12 +12,15 @@ COPY frontend/ .
 RUN npm run build
 
 # Go build stage
-FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
 
 WORKDIR /app/backend
+
+# Enable automatic toolchain upgrades if needed
+ENV GOTOOLCHAIN=auto
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates

@@ -1,20 +1,24 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, Contact, Loader2, Pencil, Plus, Tags, Trash2, UserPlus, UsersRound } from 'lucide-react';
+import { Check, Contact, Facebook, Loader2, Pencil, Plus, RefreshCw, Tags, Trash2, UserPlus, UsersRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { SearchInput } from '@/components/shared/SearchInput';
 import { IconButton } from '@/components/shared/IconButton';
 import { DeleteConfirmDialog } from '@/components/shared/DeleteConfirmDialog';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { useBranding } from '@/services/branding';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
 import {
   AUDIENCE_SOURCES,
+  AUDIENCE_TYPES,
   adsApi,
   audienceSourceLabel,
+  audienceTypeLabel,
   errorMessage,
   formatDate,
   formatNumber,
@@ -22,8 +26,12 @@ import {
   type Audience,
   type AudienceInput,
   type AudienceSource,
+  type AudienceType,
+  type FetchedList,
 } from './adsApi';
-import { AdsPage, EmptyCard, Field, cardCls, inputCls, outlineBtnCls, primaryBtnCls, textareaCls } from './AdsShared';
+import { Field, TablePager, UnderlineTabs, cardCls, inputCls, outlineBtnCls, primaryBtnCls, tdCls, textareaCls, thCls } from './AdsShared';
+import { AdsPage } from './AdsPageShell';
+import { AdsQuickGuide } from './AdsQuickGuide';
 
 const SOURCE_ICONS: Record<AudienceSource, React.ElementType> = {
   all_contacts: Contact,
@@ -31,38 +39,80 @@ const SOURCE_ICONS: Record<AudienceSource, React.ElementType> = {
   leads: UserPlus,
 };
 
+type Tab = 'ours' | 'fetched';
+type TypeFilter = 'all' | AudienceType;
+
+const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [{ value: 'all', label: 'All' }, ...AUDIENCE_TYPES.map((t) => ({ value: t.value, label: t.label }))];
+
 export const AdsAudiencesView: React.FC = () => {
   const { setup } = useAdsSetup();
+  const { platform_name } = useBranding();
   const { hasPermission } = useAuthStore();
   const canWrite = hasPermission('campaigns', 'write');
 
+  const [tab, setTab] = useState<Tab>('ours');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [audiences, setAudiences] = useState<Audience[]>([]);
+  const [fetched, setFetched] = useState<FetchedList<Audience> | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Audience | null>(null);
   const [toDelete, setToDelete] = useState<Audience | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setAudiences(await adsApi.listAudiences());
+      setAudiences(
+        await adsApi.listAudiences({ type: typeFilter === 'all' ? undefined : typeFilter, search: debouncedSearch || undefined })
+      );
       setLoadError(null);
     } catch (err) {
       setLoadError(errorMessage(err, 'Failed to load audiences'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [typeFilter, debouncedSearch]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (tab !== 'fetched' || fetched) return;
+    adsApi
+      .listFetchedAudiences()
+      .then(setFetched)
+      .catch((err) => toast.error(errorMessage(err, 'Failed to load fetched audiences')));
+  }, [tab, fetched]);
+
   const openCreate = () => {
     setEditing(null);
     setDialogOpen(true);
+  };
+
+  const sync = async () => {
+    setSyncing(true);
+    try {
+      await adsApi.sync();
+      toast.success('Audiences synced from Meta');
+      setFetched(null);
+    } catch (err) {
+      toast.error(errorMessage(err, 'Could not sync with Meta'));
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const remove = async () => {
@@ -80,104 +130,205 @@ export const AdsAudiencesView: React.FC = () => {
     }
   };
 
+  const rows = tab === 'fetched' ? (fetched?.items || []).filter((a) => typeFilter === 'all' || a.type === typeFilter) : audiences;
+  const paged = rows.slice((page - 1) * pageSize, page * pageSize);
+  const showActions = tab === 'ours' && canWrite;
+  const colCount = showActions ? 6 : 5;
+
   return (
     <AdsPage
       title="Audiences"
-      subtitle="Saved groups of people to target with your ads"
-      icon={UsersRound}
       setup={setup}
+      showCredits={false}
       actions={
         canWrite && (
           <Button size="sm" className={primaryBtnCls} onClick={openCreate}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" /> Create audience
+            <Plus className="h-3.5 w-3.5 mr-1.5" /> Create Audience
           </Button>
         )
       }
     >
-      {loadError ? (
-        <div className={cardCls}>
-          <ErrorState title="Couldn't load audiences" description={loadError} onRetry={load} />
-        </div>
-      ) : loading && audiences.length === 0 ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className={cn(cardCls, 'h-40 animate-pulse')} />
-          ))}
-        </div>
-      ) : audiences.length === 0 ? (
-        <EmptyCard
-          icon={UsersRound}
-          title="No audiences yet"
-          description="Target your existing contacts, contacts with specific tags, or people who already became leads — Meta finds similar people too."
-          action={
-            canWrite && (
-              <Button size="sm" className={primaryBtnCls} onClick={openCreate}>
-                <Plus className="h-3.5 w-3.5 mr-1.5" /> Create audience
-              </Button>
-            )
-          }
-        />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {audiences.map((a) => {
-            const Icon = SOURCE_ICONS[a.source] || UsersRound;
-            return (
-              <article key={a.id} className={cn(cardCls, 'flex flex-col p-4')}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-bold truncate">{a.name}</h3>
-                      <p className="text-[11px] text-gray-400">{audienceSourceLabel(a.source)}</p>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-lg font-bold tabular-nums leading-tight">{formatNumber(a.size)}</p>
-                    <p className="text-[10px] text-gray-400">people</p>
-                  </div>
-                </div>
-                {a.description && <p className="mt-3 text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{a.description}</p>}
-                {a.source === 'contacts_tag' && a.tags.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1">
-                    {a.tags.map((t) => (
-                      <span
-                        key={t}
-                        className="rounded-full border border-teal-200/60 bg-teal-50 px-2 py-0.5 text-[10px] font-medium text-teal-800 dark:bg-teal-950/50 dark:border-teal-900 dark:text-teal-300"
-                      >
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="mt-auto flex items-center justify-between gap-2 border-t border-gray-100 pt-3 mt-4 dark:border-white/[0.06]">
-                  <span className="text-[11px] text-gray-400">Created {formatDate(a.created_at)}</span>
-                  {canWrite && (
-                    <div className="flex items-center gap-0.5">
-                      <IconButton
-                        icon={Pencil}
-                        label="Edit"
-                        className="text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                        onClick={() => {
-                          setEditing(a);
-                          setDialogOpen(true);
-                        }}
-                      />
-                      <IconButton
-                        icon={Trash2}
-                        label="Delete"
-                        className="text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
-                        onClick={() => setToDelete(a)}
-                      />
-                    </div>
+      <AdsQuickGuide />
+
+      <section className={cn(cardCls, 'overflow-hidden')}>
+        <div className="space-y-4 px-4 pt-4 sm:px-5">
+          <UnderlineTabs
+            value={tab}
+            onChange={(v) => {
+              setTab(v);
+              setPage(1);
+            }}
+            options={[
+              { value: 'ours', label: `${platform_name} Audiences` },
+              { value: 'fetched', label: 'Fetched Audiences' },
+            ]}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-xl border border-gray-200 bg-gray-50 p-0.5 dark:border-white/10 dark:bg-white/[0.03]" role="radiogroup" aria-label="Audience type">
+              {TYPE_FILTERS.map((t) => (
+                <button
+                  key={t.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={typeFilter === t.value}
+                  onClick={() => {
+                    setTypeFilter(t.value);
+                    setPage(1);
+                  }}
+                  className={cn(
+                    'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                    typeFilter === t.value ? 'bg-white text-spruce-dark shadow-sm dark:bg-white/10 dark:text-teal-200' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
                   )}
-                </div>
-              </article>
-            );
-          })}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <Button variant="outline" size="sm" className={outlineBtnCls} onClick={sync} disabled={syncing || !canWrite}>
+              <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', syncing && 'animate-spin')} /> Sync
+            </Button>
+            <SearchInput
+              value={search}
+              onChange={(v) => {
+                setSearch(v);
+                setPage(1);
+              }}
+              placeholder="Search by audience name"
+              className="w-full sm:ml-auto sm:w-60"
+            />
+          </div>
         </div>
-      )}
+
+        {loadError && tab === 'ours' ? (
+          <ErrorState title="Couldn't load audiences" description={loadError} onRetry={load} />
+        ) : (
+          <>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[680px] border-t border-gray-100 dark:border-white/[0.06]">
+                <thead className="bg-gray-50/80 dark:bg-white/[0.03]">
+                  <tr>
+                    <th className={thCls}>Audience Name</th>
+                    <th className={thCls}>Type</th>
+                    <th className={thCls}>Source</th>
+                    <th className={cn(thCls, 'text-right')}>Size</th>
+                    <th className={thCls}>Created</th>
+                    {showActions && <th className={cn(thCls, 'text-right')}>Actions</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-white/[0.06]">
+                  {loading && tab === 'ours' && audiences.length === 0 ? (
+                    [0, 1, 2].map((i) => (
+                      <tr key={i}>
+                        <td colSpan={colCount} className="px-4 py-3">
+                          <div className="h-5 animate-pulse rounded bg-gray-100 dark:bg-white/[0.06]" />
+                        </td>
+                      </tr>
+                    ))
+                  ) : paged.length === 0 ? (
+                    <tr>
+                      <td colSpan={colCount} className="px-4 py-12 text-center">
+                        <UsersRound className="mx-auto h-8 w-8 text-gray-300" />
+                        <p className="mt-2 text-sm font-semibold">
+                          {tab === 'fetched' && fetched && !fetched.meta_connected
+                            ? 'Facebook is not connected'
+                            : debouncedSearch || typeFilter !== 'all'
+                              ? 'No audiences match your filters'
+                              : 'No audiences yet'}
+                        </p>
+                        <p className="mx-auto mt-1 max-w-sm text-xs text-gray-500 dark:text-gray-400">
+                          {tab === 'fetched'
+                            ? fetched?.message || 'Audiences from your Meta ad account appear here.'
+                            : 'Target your contacts, contacts with specific tags, or people who became leads — Meta finds similar people too.'}
+                        </p>
+                        <div className="mt-3 flex justify-center">
+                          {tab === 'fetched' && fetched && !fetched.meta_connected ? (
+                            <Link to="/ads/setup">
+                              <Button size="sm" className="h-9 rounded-xl bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-semibold px-4">
+                                <Facebook className="h-3.5 w-3.5 mr-1.5" /> Connect Facebook
+                              </Button>
+                            </Link>
+                          ) : (
+                            tab === 'ours' &&
+                            canWrite &&
+                            !debouncedSearch && (
+                              <Button size="sm" className={primaryBtnCls} onClick={openCreate}>
+                                <Plus className="h-3.5 w-3.5 mr-1.5" /> Create Audience
+                              </Button>
+                            )
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    paged.map((a) => {
+                      const Icon = SOURCE_ICONS[a.source] || UsersRound;
+                      return (
+                        <tr key={a.id} className="hover:bg-gray-50/70 dark:hover:bg-white/[0.02]">
+                          <td className={tdCls}>
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-spruce-light text-spruce-dark dark:bg-teal-950/50 dark:text-teal-300">
+                                <Icon className="h-4 w-4" />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="max-w-[240px] truncate font-semibold text-gray-900 dark:text-white">{a.name}</p>
+                                {a.source === 'contacts_tag' && a.tags.length > 0 ? (
+                                  <p className="max-w-[240px] truncate text-[11px] text-gray-400">{a.tags.join(', ')}</p>
+                                ) : (
+                                  a.description && <p className="max-w-[240px] truncate text-[11px] text-gray-400">{a.description}</p>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className={tdCls}>
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-700 dark:bg-white/[0.08] dark:text-gray-300">
+                              {audienceTypeLabel(a.type)}
+                            </span>
+                          </td>
+                          <td className={tdCls}>{audienceSourceLabel(a.source)}</td>
+                          <td className={cn(tdCls, 'text-right tabular-nums font-semibold')}>{formatNumber(a.size)}</td>
+                          <td className={cn(tdCls, 'whitespace-nowrap text-gray-500')}>{formatDate(a.created_at)}</td>
+                          {showActions && (
+                            <td className={cn(tdCls, 'text-right')}>
+                              <div className="flex items-center justify-end gap-0.5">
+                                <IconButton
+                                  icon={Pencil}
+                                  label="Edit"
+                                  className="text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                                  onClick={() => {
+                                    setEditing(a);
+                                    setDialogOpen(true);
+                                  }}
+                                />
+                                <IconButton
+                                  icon={Trash2}
+                                  label="Delete"
+                                  className="text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
+                                  onClick={() => setToDelete(a)}
+                                />
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <TablePager
+              page={page}
+              pageSize={pageSize}
+              total={rows.length}
+              onPageChange={setPage}
+              onPageSizeChange={(n) => {
+                setPageSize(n);
+                setPage(1);
+              }}
+              sizes={[10, 25, 50]}
+            />
+          </>
+        )}
+      </section>
 
       <AudienceDialog open={dialogOpen} onOpenChange={setDialogOpen} audience={editing} onSaved={load} />
 
@@ -199,7 +350,7 @@ const AudienceDialog: React.FC<{
   audience: Audience | null;
   onSaved: () => void;
 }> = ({ open, onOpenChange, audience, onSaved }) => {
-  const [data, setData] = useState<AudienceInput>({ name: '', source: 'all_contacts', tags: [], description: '' });
+  const [data, setData] = useState<AudienceInput>({ name: '', source: 'all_contacts', type: 'custom', tags: [], description: '' });
   const [allTags, setAllTags] = useState<string[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -209,8 +360,8 @@ const AudienceDialog: React.FC<{
     setError(null);
     setData(
       audience
-        ? { name: audience.name, source: audience.source, tags: audience.tags || [], description: audience.description || '' }
-        : { name: '', source: 'all_contacts', tags: [], description: '' }
+        ? { name: audience.name, source: audience.source, type: audience.type || 'custom', tags: audience.tags || [], description: audience.description || '' }
+        : { name: '', source: 'all_contacts', type: 'custom', tags: [], description: '' }
     );
     setAllTags(null);
     adsApi
@@ -230,6 +381,7 @@ const AudienceDialog: React.FC<{
     const body: AudienceInput = {
       name: data.name.trim(),
       source: data.source,
+      type: data.type || 'custom',
       tags: data.source === 'contacts_tag' ? data.tags : [],
       description: data.description.trim(),
     };
@@ -256,6 +408,20 @@ const AudienceDialog: React.FC<{
         <div className="space-y-4">
           <Field label="Audience name" htmlFor="aud-name" required>
             <Input id="aud-name" className={inputCls} value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder="Repeat customers" />
+          </Field>
+          <Field label="Audience type" htmlFor="aud-type">
+            <select
+              id="aud-type"
+              className="h-9 w-full rounded-lg border border-gray-200 bg-white px-2.5 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-teal-600 dark:bg-white/[0.04] dark:border-white/10 dark:text-gray-100"
+              value={data.type || 'custom'}
+              onChange={(e) => setData({ ...data, type: e.target.value as AudienceType })}
+            >
+              {AUDIENCE_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label} — {t.description}
+                </option>
+              ))}
+            </select>
           </Field>
           <div className="space-y-1.5">
             <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">Source</p>

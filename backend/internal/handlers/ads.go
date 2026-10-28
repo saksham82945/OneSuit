@@ -22,6 +22,7 @@ var (
 	adTypes           = map[string]bool{"click_to_whatsapp": true, "whatsapp_status": true, "website_to_whatsapp": true, "website": true, "lead_form": true}
 	adQuestionTypes   = map[string]bool{"full_name": true, "phone": true, "email": true, "city": true, "short_text": true}
 	adAudienceSources = map[string]bool{"all_contacts": true, "contacts_tag": true, "leads": true}
+	adAudienceTypes   = map[string]bool{"website": true, "custom": true, "lookalike": true}
 	adStandardEvents  = []struct{ Name, Description string }{
 		{"Lead", "Someone filled in a lead form or became a lead from an ad"},
 		{"ConversationStarted", "Someone opened a WhatsApp chat from a Click-to-WhatsApp ad"},
@@ -52,7 +53,7 @@ func (a *App) adsSetupResponse(setup *models.AdsSetup) map[string]any {
 		"whatsapp_account":       setup.WhatsAppAccount,
 		"lead_terms_accepted":    setup.LeadTermsAcceptedAt != nil,
 		"lead_terms_accepted_at": setup.LeadTermsAcceptedAt,
-		"ad_credit":              setup.AdCredit,
+		"ad_credit":              a.adWalletBalance(setup.OrganizationID, setup.AdCredit),
 		"currency":               a.loadPlatformConfig().DefaultCurrency,
 		"meta_ready":             a.adsMetaReady(),
 		"steps": map[string]bool{
@@ -707,6 +708,7 @@ type adAudienceRequest struct {
 	Source      *string   `json:"source"`
 	Tags        *[]string `json:"tags"`
 	Description *string   `json:"description"`
+	Type        *string   `json:"type"`
 }
 
 func applyAdAudience(req *adAudienceRequest, aud *models.AdAudience) string {
@@ -718,6 +720,12 @@ func applyAdAudience(req *adAudienceRequest, aud *models.AdAudience) string {
 	}
 	if req.Description != nil {
 		aud.Description = strings.TrimSpace(*req.Description)
+	}
+	if req.Type != nil && *req.Type != "" {
+		aud.Type = strings.ToLower(strings.TrimSpace(*req.Type))
+	}
+	if aud.Type == "" {
+		aud.Type = "custom"
 	}
 	if req.Tags != nil {
 		tags := models.StringArray{}
@@ -738,32 +746,44 @@ func applyAdAudience(req *adAudienceRequest, aud *models.AdAudience) string {
 		return "Source must be all_contacts, contacts_tag or leads"
 	case aud.Source == "contacts_tag" && len(aud.Tags) == 0:
 		return "Pick at least one tag"
+	case !adAudienceTypes[aud.Type]:
+		return "Audience type must be website, custom or lookalike"
 	}
 	return ""
 }
 
 func (a *App) adAudienceResponse(orgID uuid.UUID, aud *models.AdAudience) map[string]any {
 	return map[string]any{
-		"id": aud.ID, "name": aud.Name, "source": aud.Source, "tags": aud.Tags, "description": aud.Description,
+		"id": aud.ID, "name": aud.Name, "source": aud.Source, "type": aud.Type, "tags": aud.Tags, "description": aud.Description,
 		"size": a.adAudienceSize(orgID, aud), "created_at": aud.CreatedAt,
 	}
 }
 
-// ListAdAudiences lists audiences with their current size.
+// ListAdAudiences lists audiences with their current size. Optional ?type=website|custom|lookalike&search=.
 func (a *App) ListAdAudiences(r *fastglue.Request) error {
 	orgID, _, err := a.requireAuth(r, models.ResourceCampaigns, models.ActionRead)
 	if err != nil {
 		return nil
 	}
+	q := a.DB.Where("organization_id = ?", orgID)
+	if t := strings.ToLower(string(r.RequestCtx.QueryArgs().Peek("type"))); t != "" && t != "all" {
+		if !adAudienceTypes[t] {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Audience type must be website, custom or lookalike", nil, "")
+		}
+		q = q.Where("type = ?", t)
+	}
+	if s := strings.TrimSpace(string(r.RequestCtx.QueryArgs().Peek("search"))); s != "" {
+		q = q.Where("name ILIKE ?", "%"+s+"%")
+	}
 	var audiences []models.AdAudience
-	if err := a.DB.Where("organization_id = ?", orgID).Order("created_at DESC").Find(&audiences).Error; err != nil {
+	if err := q.Order("created_at DESC").Find(&audiences).Error; err != nil {
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to list audiences", nil, "")
 	}
 	out := make([]map[string]any, 0, len(audiences))
 	for i := range audiences {
 		out = append(out, a.adAudienceResponse(orgID, &audiences[i]))
 	}
-	return r.SendEnvelope(map[string]any{"audiences": out})
+	return r.SendEnvelope(map[string]any{"audiences": out, "total": len(out)})
 }
 
 // CreateAdAudience creates an audience.
@@ -867,7 +887,14 @@ func (a *App) ListAdEvents(r *fastglue.Request) error {
 	}
 	a.DB.Table("ad_events e").Select("e.*, c.name AS campaign_name").
 		Joins("LEFT JOIN ad_campaigns c ON c.id = e.campaign_id").
-		Where("e.organization_id = ?", orgID).Order("e.created_at DESC").Limit(50).Scan(&recent)
+		Where("e.organization_id = ?", orgID).
+		Scopes(func(db *gorm.DB) *gorm.DB {
+			if n := strings.TrimSpace(string(r.RequestCtx.QueryArgs().Peek("event_name"))); n != "" {
+				return db.Where("e.event_name = ?", n)
+			}
+			return db
+		}).
+		Order("e.created_at DESC").Limit(50).Scan(&recent)
 	if recent == nil {
 		recent = []struct {
 			models.AdEvent

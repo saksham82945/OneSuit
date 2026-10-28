@@ -1429,6 +1429,9 @@ type SuperAdminDashboardResponse struct {
 	TicketsSolved      int64                     `json:"tickets_solved"`
 	TicketsNew         int64                     `json:"tickets_new"`
 	RecentTickets      []SupportTicketResponse   `json:"recent_tickets"`
+
+	// Extra platform metrics (inlined): signups, revenue, messages, expiring plans...
+	SuperAdminOverview
 }
 
 // SuperAdminDashboard returns platform-wide totals for the dashboard.
@@ -1501,6 +1504,7 @@ func (a *App) SuperAdminDashboard(r *fastglue.Request) error {
 	if resp.RecentTickets == nil {
 		resp.RecentTickets = []SupportTicketResponse{}
 	}
+	resp.SuperAdminOverview = a.buildSuperAdminOverview()
 
 	return r.SendEnvelope(resp)
 }

@@ -138,6 +138,52 @@ export interface SuperAdminDashboard {
   tickets_solved: number;
   tickets_new: number;
   recent_tickets: SupportTicket[];
+
+  // Platform overview (revenue figures are derived from plan prices of paying vendors)
+  currency: string;
+  new_signups_today: number;
+  revenue_today: number;
+  payments_today: number;
+  messages_today: number;
+  total_revenue: number;
+  revenue_by_currency: Record<string, number>;
+  active_plans: number;
+  workspaces: number;
+  connected_numbers: number;
+  messages_sent_30d: number;
+  messages_received_30d: number;
+  ai_calls_30d: number;
+  calls_30d: number;
+  total_campaigns: number;
+  wallets_available: boolean;
+  wallets_total: number;
+  pending_topups: number;
+  expiring_soon: number;
+  expired_plans: number;
+  expiring_plans: SuperAdminExpiringPlan[];
+  recent_subscriptions: SuperAdminRecentSubscription[];
+}
+
+export interface SuperAdminExpiringPlan {
+  id: string;
+  name: string;
+  plan_name: string;
+  status: VendorStatus;
+  owner_email: string;
+  renewal_date: string;
+  days_left: number;
+}
+
+export interface SuperAdminRecentSubscription {
+  id: string;
+  name: string;
+  plan_name: string;
+  status: VendorStatus;
+  amount: number;
+  currency: string;
+  interval: string;
+  updated_at: string;
+  is_new: boolean;
 }
 
 const unwrap = <T>(p: Promise<{ data: { data: T } }>) => p.then((r) => r.data.data);

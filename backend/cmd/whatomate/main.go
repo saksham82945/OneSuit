@@ -802,6 +802,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 
 	// Analytics
 	g.GET("/api/analytics/dashboard", app.GetDashboardStats)
+	g.GET("/api/dashboard/overview", app.GetDashboardOverview)
 	g.GET("/api/analytics/messages", app.GetMessageAnalytics)
 	g.GET("/api/analytics/chatbot", app.GetChatbotAnalytics)
 	g.GET("/api/analytics/agents", app.GetAgentAnalytics)
@@ -887,6 +888,19 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.PUT("/api/ads/audiences/{id}", app.UpdateAdAudience)
 	g.DELETE("/api/ads/audiences/{id}", app.DeleteAdAudience)
 	g.GET("/api/ads/events", app.ListAdEvents)
+	g.POST("/api/ads/events", app.RecordAdEvent)
+	g.GET("/api/ads/event-definitions", app.ListAdEventDefinitions)
+	g.POST("/api/ads/event-definitions", app.CreateAdEventDefinition)
+	g.DELETE("/api/ads/event-definitions/{id}", app.DeleteAdEventDefinition)
+	g.GET("/api/ads/wallet", app.GetAdWallet)
+	g.POST("/api/ads/wallet/topup", app.TopupAdWallet)
+	g.POST("/api/ads/generate", app.GenerateAds)
+	g.GET("/api/ads/summary", app.AdsSummary)
+	g.GET("/api/ads/fetched", app.ListFetchedAds)
+	g.GET("/api/ads/audiences/fetched", app.ListFetchedAudiences)
+	g.POST("/api/ads/sync", app.SyncAds)
+	g.GET("/api/super-admin/ad-credits", app.SuperAdminListAdCredits)
+	g.POST("/api/super-admin/ad-credits/{id}/approve", app.SuperAdminApproveAdCredit)
 
 	// Invite links for team members
 	g.GET("/api/invites", app.ListInvites)

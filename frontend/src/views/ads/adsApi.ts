@@ -16,6 +16,9 @@ export type AdStatus = 'draft' | 'active' | 'paused' | 'ended';
 export type QuestionType = 'full_name' | 'phone' | 'email' | 'city' | 'short_text';
 export type LeadSource = 'lead_form' | 'click_to_whatsapp' | 'manual';
 export type AudienceSource = 'all_contacts' | 'contacts_tag' | 'leads';
+export type AudienceType = 'website' | 'custom' | 'lookalike';
+export type EventSource = 'website' | 'whatsapp' | 'server' | 'offline';
+export type MediaType = 'image' | 'video';
 
 export interface AdsSetupSteps {
   connect_facebook: boolean;
@@ -127,13 +130,14 @@ export interface Audience {
   id: string;
   name: string;
   source: AudienceSource;
+  type: AudienceType;
   tags: string[];
   description: string;
   size: number;
   created_at: string;
 }
 
-export type AudienceInput = Pick<Audience, 'name' | 'source' | 'tags' | 'description'>;
+export type AudienceInput = Pick<Audience, 'name' | 'source' | 'tags' | 'description'> & { type?: AudienceType };
 
 export interface AdEventSummary {
   name: string;
@@ -153,9 +157,98 @@ export interface AdEventRecord {
   created_at: string;
 }
 
+export interface AdCreditTransaction {
+  id: string;
+  amount: number;
+  currency: string;
+  type: 'credit' | 'debit';
+  status: 'pending' | 'completed' | 'rejected';
+  pack_name?: string;
+  note?: string;
+  created_at: string;
+}
+
+export interface AdWallet {
+  balance: number;
+  currency: string;
+  free_generations_left: number;
+  free_generations_total: number;
+  pending_amount: number;
+  transactions: AdCreditTransaction[];
+  packs: { key: string; name: string; amount: number }[];
+}
+
+export type CreditPack = 'starter' | 'growth';
+
+export interface GenerateAdsInput {
+  business_name: string;
+  website_url?: string;
+  audience?: string;
+  ad_type: AdType | 'auto';
+  media_type: MediaType;
+  size: string;
+  count: number;
+}
+
+export interface GeneratedAd {
+  id: string;
+  angle: string;
+  name: string;
+  headline: string;
+  primary_text: string;
+  cta: string;
+  welcome_message: string;
+  website_url: string;
+  suggested_ad_type: AdType;
+  suggested_audience: string;
+  media_type: MediaType;
+  size: string;
+}
+
+export interface AdsSummary {
+  leads: number;
+  ctr: number;
+  cost_per_lead: number;
+  total_spend: number;
+  capi_signals: number;
+  impressions: number;
+  clicks: number;
+  currency: string;
+}
+
+export interface FetchedList<T> {
+  items: T[];
+  total: number;
+  meta_connected: boolean;
+  message: string;
+}
+
+export interface AdEventDefinition {
+  id: string;
+  name: string;
+  description: string;
+  source: EventSource;
+  created_at: string;
+  count_today: number;
+  count_7d: number;
+  count_30d: number;
+  last_seen_at?: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // API
 // ---------------------------------------------------------------------------
+
+function readFetched<T>(res: Parameters<typeof readData>[0], key: string): FetchedList<T> {
+  const payload = readData<Record<string, unknown>>(res) || {};
+  const items = Array.isArray(payload[key]) ? (payload[key] as T[]) : [];
+  return {
+    items,
+    total: typeof payload.total === 'number' ? payload.total : items.length,
+    meta_connected: Boolean(payload.meta_connected),
+    message: typeof payload.message === 'string' ? payload.message : '',
+  };
+}
 
 export const adsApi = {
   // Setup
@@ -190,19 +283,43 @@ export const adsApi = {
   leadToContact: async (id: string) => readData<{ contact_id: string }>(await api.post(`/ads/leads/${id}/to-contact`)),
 
   // Audiences
-  listAudiences: async () => readList<Audience>(await api.get('/ads/audiences'), 'audiences'),
+  listAudiences: async (params: { type?: AudienceType; search?: string } = {}) =>
+    readList<Audience>(await api.get('/ads/audiences', { params }), 'audiences'),
+  listFetchedAudiences: async () => readFetched<Audience>(await api.get('/ads/audiences/fetched'), 'audiences'),
   createAudience: (body: AudienceInput) => api.post('/ads/audiences', body),
   updateAudience: (id: string, body: Partial<AudienceInput>) => api.put(`/ads/audiences/${id}`, body),
   deleteAudience: (id: string) => api.delete(`/ads/audiences/${id}`),
 
   // Events
-  getEvents: async () => {
-    const payload = readData<{ events?: AdEventSummary[]; recent?: AdEventRecord[] }>(await api.get('/ads/events'));
+  getEvents: async (params: { event_name?: string } = {}) => {
+    const payload = readData<{ events?: AdEventSummary[]; recent?: AdEventRecord[] }>(await api.get('/ads/events', { params }));
     return {
       events: Array.isArray(payload?.events) ? payload.events : [],
       recent: Array.isArray(payload?.recent) ? payload.recent : [],
     };
   },
+
+  listEventDefinitions: async (params: { search?: string } = {}) =>
+    readList<AdEventDefinition>(await api.get('/ads/event-definitions', { params }), 'events'),
+  createEventDefinition: async (body: { name: string; description?: string; source: EventSource }) =>
+    readData<AdEventDefinition>(await api.post('/ads/event-definitions', body)),
+  deleteEventDefinition: (id: string) => api.delete(`/ads/event-definitions/${id}`),
+
+  // Wallet, AI generation, metrics, Meta sync
+  getWallet: async () => readData<AdWallet>(await api.get('/ads/wallet')),
+  topupWallet: async (body: { pack?: CreditPack; amount?: number; note?: string }) =>
+    readData<{ message: string; transaction: AdCreditTransaction }>(await api.post('/ads/wallet/topup', body)),
+  generateAds: async (body: GenerateAdsInput) => {
+    const payload = readData<{ variants?: GeneratedAd[]; free_generations_left?: number }>(await api.post('/ads/generate', body));
+    return {
+      variants: Array.isArray(payload?.variants) ? payload.variants : [],
+      free_generations_left: Number(payload?.free_generations_left) || 0,
+    };
+  },
+  getSummary: async (params: { from?: string; to?: string; status?: string } = {}) =>
+    readData<AdsSummary>(await api.get('/ads/summary', { params })),
+  listFetchedAds: async () => readFetched<AdCampaign>(await api.get('/ads/fetched'), 'ads'),
+  sync: () => api.post('/ads/sync'),
 
   // Lookups from the rest of the app
   listAccountNames: async () =>
@@ -238,6 +355,22 @@ export function useAdsSetup() {
   }, [reload]);
 
   return { setup, error, loading, reload, setSetup };
+}
+
+/** Loads the org's ad credit wallet. */
+export function useAdWallet() {
+  const [wallet, setWallet] = useState<AdWallet | null>(null);
+  const reload = useCallback(async () => {
+    try {
+      setWallet(await adsApi.getWallet());
+    } catch {
+      // The header just hides the balance when the wallet can't be loaded.
+    }
+  }, []);
+  useEffect(() => {
+    reload();
+  }, [reload]);
+  return { wallet, reload, setWallet };
 }
 
 export const isSetupComplete = (s: AdsSetup | null | undefined) =>
@@ -340,6 +473,40 @@ export const AUDIENCE_SOURCES: { value: AudienceSource; label: string; descripti
   { value: 'contacts_tag', label: 'Contacts with tags', description: 'Contacts that carry any of the selected tags.' },
   { value: 'leads', label: 'Ad leads', description: 'People who submitted a lead from your ads.' },
 ];
+
+export const AUDIENCE_TYPES: { value: AudienceType; label: string; description: string }[] = [
+  { value: 'website', label: 'Website', description: 'People who visited your website.' },
+  { value: 'custom', label: 'Custom', description: 'Your own list: contacts, tags or leads.' },
+  { value: 'lookalike', label: 'Lookalike', description: 'New people similar to your best customers.' },
+];
+
+export const audienceTypeLabel = (t: string) => AUDIENCE_TYPES.find((a) => a.value === t)?.label || 'Custom';
+
+/** YYYY-MM-DD for `days` days ago (local time). */
+export function daysAgoISO(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** localStorage read/write that never throws (private mode, blocked storage…). */
+export function readStored<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function writeStored(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore
+  }
+}
 
 export const audienceSourceLabel = (s: string) => AUDIENCE_SOURCES.find((a) => a.value === s)?.label || s;
 

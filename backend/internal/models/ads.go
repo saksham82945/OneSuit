@@ -88,6 +88,7 @@ type AdAudience struct {
 	OrganizationID uuid.UUID   `gorm:"type:uuid;index;not null" json:"organization_id"`
 	Name           string      `gorm:"size:255;not null" json:"name"`
 	Source         string      `gorm:"size:30;not null" json:"source"` // all_contacts, contacts_tag, leads
+	Type           string      `gorm:"size:20;not null;default:custom" json:"type"` // website, custom, lookalike
 	Tags           StringArray `gorm:"type:jsonb" json:"tags"`
 	Description    string      `gorm:"type:text" json:"description"`
 }
@@ -108,3 +109,43 @@ type AdEvent struct {
 }
 
 func (AdEvent) TableName() string { return "ad_events" }
+
+// AdWallet is an organization's prepaid ad credit and its free AI generations.
+type AdWallet struct {
+	BaseModel
+	OrganizationID      uuid.UUID `gorm:"type:uuid;not null;uniqueIndex" json:"organization_id"`
+	Balance             float64   `gorm:"type:numeric(12,2);not null;default:0" json:"balance"`
+	Currency            string    `gorm:"size:3;not null;default:INR" json:"currency"`
+	FreeGenerationsUsed int       `gorm:"not null;default:0" json:"free_generations_used"`
+}
+
+func (AdWallet) TableName() string { return "ad_wallets" }
+
+// AdCreditTransaction is a top-up request or a movement of ad credit.
+// Top-ups stay pending until payment is confirmed (by a super admin for now).
+type AdCreditTransaction struct {
+	BaseModel
+	OrganizationID uuid.UUID  `gorm:"type:uuid;index;not null" json:"organization_id"`
+	Amount         float64    `gorm:"type:numeric(12,2);not null" json:"amount"`
+	Currency       string     `gorm:"size:3;not null" json:"currency"`
+	Type           string     `gorm:"size:10;not null" json:"type"`         // credit, debit
+	Status         string     `gorm:"size:20;not null;index" json:"status"` // pending, completed, rejected
+	PackName       string     `gorm:"size:100" json:"pack_name"`
+	Note           string     `gorm:"type:text" json:"note"`
+	RequestedByID  *uuid.UUID `gorm:"type:uuid" json:"requested_by_id,omitempty"`
+	ApprovedByID   *uuid.UUID `gorm:"type:uuid" json:"approved_by_id,omitempty"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+}
+
+func (AdCreditTransaction) TableName() string { return "ad_credit_transactions" }
+
+// AdEventDefinition is a custom conversion event an organization tracks.
+type AdEventDefinition struct {
+	BaseModel
+	OrganizationID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_ad_event_defs_org_name" json:"organization_id"`
+	Name           string    `gorm:"size:50;not null;uniqueIndex:idx_ad_event_defs_org_name" json:"name"`
+	Description    string    `gorm:"type:text" json:"description"`
+	Source         string    `gorm:"size:20;not null" json:"source"` // website, whatsapp, server, offline
+}
+
+func (AdEventDefinition) TableName() string { return "ad_event_definitions" }

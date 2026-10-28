@@ -24,7 +24,8 @@ import {
   type Lead,
   type LeadForm,
 } from './adsApi';
-import { AdsPage, Field, cardCls, inputCls, nativeSelectCls, outlineBtnCls, primaryBtnCls } from './AdsShared';
+import { Field, cardCls, inputCls, nativeSelectCls, outlineBtnCls, primaryBtnCls } from './AdsShared';
+import { AdsPage } from './AdsPageShell';
 
 const sourceStyles: Record<string, string> = {
   lead_form: 'bg-blue-50 text-blue-800 border-blue-200/60 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900',
@@ -244,7 +245,7 @@ export const AdsLeadsView: React.FC = () => {
             <Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV
           </Button>
           {canWrite && (
-            <Button size="sm" className={primaryBtnCls} onClick={() => setAddOpen(true)}>
+            <Button variant="outline" size="sm" className={outlineBtnCls} onClick={() => setAddOpen(true)}>
               <Plus className="h-3.5 w-3.5 mr-1.5" /> Add lead
             </Button>
           )}

@@ -142,6 +142,9 @@ func runMigrations(db *gorm.DB) error {
 		&models.AdLead{},
 		&models.AdAudience{},
 		&models.AdEvent{},
+		&models.AdWallet{},
+		&models.AdCreditTransaction{},
+		&models.AdEventDefinition{},
 	)
 }
 

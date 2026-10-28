@@ -6,14 +6,14 @@ import { widgetsService, type DashboardWidget, type WidgetData } from '@/service
 import { readList } from '@/services/response';
 import { Button } from '@/components/ui/button';
 import { HeroBanner } from '@/components/shared/HeroBanner';
+import { SectionTitle } from '@/components/dashboard';
+import { WorkspaceOverviewSections } from './WorkspaceOverviewSections';
 import {
-  LayoutDashboard,
   Plus,
   GripVertical,
   MessageSquare,
   Users,
   Bot,
-  Send,
   TrendingUp,
   TrendingDown,
   BarChart3,
@@ -36,10 +36,10 @@ import {
   CreditCard,
   LifeBuoy,
   Globe,
-  Activity,
   Play,
   Video,
   CheckCircle2,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -87,7 +87,8 @@ const formatRowTime = (iso: string) => {
 
 export const DashboardView: React.FC = () => {
   const { t } = useTranslation();
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, user } = useAuthStore();
+  const isExplorer = user?.role?.name === 'explorer';
 
   const [widgets, setWidgets] = useState<DashboardWidget[]>([]);
   const [widgetData, setWidgetData] = useState<Record<string, WidgetData>>({});
@@ -244,7 +245,7 @@ export const DashboardView: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#f8faf9] text-gray-900 overflow-y-auto">
+    <div className="flex flex-col h-full bg-[#f8faf9] text-gray-900 dark:bg-[#0b1110] dark:text-gray-100 overflow-y-auto">
       {/* Header Bar */}
       <header className="border-b border-gray-200/80 bg-white dark:bg-[#141b1a] px-6 py-4 shrink-0 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-7xl mx-auto w-full">
@@ -259,7 +260,7 @@ export const DashboardView: React.FC = () => {
 
           {/* Time Range Filter & Actions */}
           <div className="flex items-center gap-2 flex-wrap">
-            {canCreateWidget && (
+            {canCreateWidget && !isExplorer && (
               <Button
                 variant="outline"
                 size="sm"
@@ -270,7 +271,7 @@ export const DashboardView: React.FC = () => {
               </Button>
             )}
 
-            {canEditWidget && (
+            {canEditWidget && !isExplorer && (
               <Button
                 variant="outline"
                 size="sm"
@@ -306,7 +307,12 @@ export const DashboardView: React.FC = () => {
       </header>
 
       {/* Main Content Area */}
-      <div className="p-6 space-y-6 max-w-7xl mx-auto w-full">
+      <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto w-full">
+        {/* Role-aware overview: Today at a Glance / Workspace Overview / Action Needed */}
+        <WorkspaceOverviewSections />
+
+        <SectionTitle icon={Sparkles} title="Insights & Widgets" tone="purple" />
+
         {/* Nebula AI Hero Banner */}
         <HeroBanner
           title="Meet Campaign Agent, your AI campaign manager"
@@ -396,6 +402,8 @@ export const DashboardView: React.FC = () => {
               <div className="flex items-center gap-1.5 mt-2">
                 <Button
                   size="sm"
+                  disabled={isExplorer}
+                  title={isExplorer ? 'Not available in the demo workspace' : undefined}
                   onClick={() => setWalletRechargeOpen(true)}
                   className="h-7 px-2 text-[10px] font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white"
                 >

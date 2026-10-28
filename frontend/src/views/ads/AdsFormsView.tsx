@@ -23,7 +23,8 @@ import {
   type LeadFormInput,
   type QuestionType,
 } from './adsApi';
-import { AdsPage, EmptyCard, Field, StatusBadge, cardCls, inputCls, nativeSelectCls, outlineBtnCls, primaryBtnCls, textareaCls } from './AdsShared';
+import { AdsPage } from './AdsPageShell';
+import { EmptyCard, Field, StatusBadge, cardCls, inputCls, nativeSelectCls, outlineBtnCls, primaryBtnCls, textareaCls } from './AdsShared';
 
 export const AdsFormsView: React.FC = () => {
   const { setup } = useAdsSetup();
@@ -98,7 +99,7 @@ export const AdsFormsView: React.FC = () => {
       setup={setup}
       actions={
         canWrite && (
-          <Button size="sm" className={primaryBtnCls} onClick={openCreate}>
+          <Button variant="outline" size="sm" className={outlineBtnCls} onClick={openCreate}>
             <Plus className="h-3.5 w-3.5 mr-1.5" /> Create form
           </Button>
         )
