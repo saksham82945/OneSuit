@@ -14,8 +14,9 @@ export const api: AxiosInstance = axios.create({
 })
 
 // Helper to read a cookie by name
+// Helper to read a cookie by name
 function getCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
+  const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'))
   return match ? decodeURIComponent(match[1]) : null
 }
 
@@ -46,13 +47,21 @@ api.interceptors.request.use(
     if (method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH') {
       const csrfToken = getCookie('whm_csrf')
       if (csrfToken) {
-        config.headers['X-CSRF-Token'] = csrfToken
+        if (config.headers && typeof (config.headers as any).set === 'function') {
+          (config.headers as any).set('X-CSRF-Token', csrfToken)
+        } else {
+          config.headers['X-CSRF-Token'] = csrfToken
+        }
       }
     }
     // Add organization override header for org switching
     const selectedOrgId = localStorage.getItem('selected_organization_id')
     if (selectedOrgId) {
-      config.headers['X-Organization-ID'] = selectedOrgId
+      if (config.headers && typeof (config.headers as any).set === 'function') {
+        (config.headers as any).set('X-Organization-ID', selectedOrgId)
+      } else {
+        config.headers['X-Organization-ID'] = selectedOrgId
+      }
     }
     return config
   },
@@ -82,8 +91,14 @@ function onRefreshComplete(success: boolean) {
 // a single tab. Falls back to a plain request where Web Locks is unavailable
 // (older browsers / insecure contexts).
 async function refreshAccessToken(): Promise<void> {
-  const doRefresh = () =>
-    axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true })
+  const doRefresh = () => {
+    const csrfToken = getCookie('whm_csrf')
+    const headers: Record<string, string> = {}
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken
+    }
+    return axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true, headers })
+  }
 
   if (navigator.locks?.request) {
     await navigator.locks.request('whm-token-refresh', async () => {
@@ -103,8 +118,12 @@ api.interceptors.response.use(
     // Skip token refresh logic for auth endpoints
     const isAuthEndpoint = originalRequest?.url?.startsWith('/auth/')
 
-    // Handle 401 errors - try to refresh token (but not for auth endpoints)
-    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
+    // Handle 401 or 403 CSRF mismatch errors - try to refresh token (but not for auth endpoints)
+    const isCsrfMismatch =
+      error.response?.status === 403 &&
+      (error.response?.data as { message?: string } | undefined)?.message === 'CSRF token mismatch'
+
+    if ((error.response?.status === 401 || isCsrfMismatch) && !originalRequest._retry && !isAuthEndpoint) {
       originalRequest._retry = true
 
       // If a refresh is already in flight, queue this request to wait for it
@@ -185,7 +204,14 @@ export const apiKeysService = {
 }
 
 export const accountsService = {
-  list: () => api.get('/accounts')
+  list: () => api.get('/accounts'),
+  create: (data: any) => api.post('/accounts', data),
+  update: (id: string, data: any) => api.put(`/accounts/${id}`, data),
+  delete: (id: string) => api.delete(`/accounts/${id}`),
+  getEmbeddedConfig: () => api.get('/embedded-signup/config'),
+  exchangeToken: (data: { code: string; phone_id?: string; waba_id?: string; name?: string }) =>
+    api.post('/accounts/exchange-token', data),
+  testConnection: (id: string) => api.post(`/accounts/${id}/test`),
 }
 
 export const contactsService = {
@@ -321,6 +347,9 @@ export const templatesService = {
   list: (params?: { status?: string; category?: string; account?: string; search?: string; page?: number; limit?: number }) =>
     api.get<{ templates: any[]; total?: number }>('/templates', { params }),
   get: (id: string) => api.get(`/templates/${id}`),
+  create: (data: any) => api.post('/templates', data),
+  update: (id: string, data: any) => api.put(`/templates/${id}`, data),
+  delete: (id: string) => api.delete(`/templates/${id}`),
   uploadMedia: (accountName: string, file: File) => {
     const formData = new FormData()
     formData.append('file', file)

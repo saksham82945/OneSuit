@@ -1,0 +1,76 @@
+# =======================================================
+# Render Blueprint Configuration for Whatomate
+# Docs: https://render.com/docs/blueprint-spec
+# =======================================================
+version: "1"
+
+services:
+  # -------------------------------------------------------
+  # 1. Whatomate Backend API (Go Web Service)
+  # -------------------------------------------------------
+  - type: web
+    name: whatomate-backend
+    runtime: go
+    rootDir: backend
+    plan: starter
+    region: oregon
+    buildCommand: go build -ldflags="-s -w" -o whatomate ./cmd/whatomate
+    startCommand: ./whatomate server -config config.toml -migrate
+    healthCheckPath: /api/auth/me
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: WHATOMATE_SERVER__PORT
+        value: 8080
+      - key: WHATOMATE_SERVER__HOST
+        value: 0.0.0.0
+      - key: WHATOMATE_APP__ENVIRONMENT
+        value: production
+      - key: WHATOMATE_DATABASE__URL
+        fromDatabase:
+          name: whatomate-db
+          property: connectionString
+      - key: WHATOMATE_REDIS__URL
+        value: redis://localhost:6379 # Or provide an external Redis URL (Upstash / Redis Cloud)
+      - key: WHATOMATE_JWT__SECRET
+        generateValue: true
+      - key: WHATOMATE_COOKIE__SECURE
+        value: true
+      - key: WHATOMATE_COOKIE__SAME_SITE
+        value: None
+      - key: WHATOMATE_DEFAULT_ADMIN__EMAIL
+        value: admin@login.com
+      - key: WHATOMATE_DEFAULT_ADMIN__PASSWORD
+        value: admin123
+      - key: WHATOMATE_RATE_LIMIT__TRUST_PROXY
+        value: true
+
+  # -------------------------------------------------------
+  # 2. Whatomate Frontend Client (React Vite SPA)
+  # -------------------------------------------------------
+  - type: web
+    name: whatomate-frontend
+    runtime: static
+    rootDir: frontend
+    plan: free
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://whatomate-backend.onrender.com/api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://whatomate-backend.onrender.com/api
+
+# -------------------------------------------------------
+# 3. Managed PostgreSQL Database (Render Free Tier)
+# -------------------------------------------------------
+databases:
+  - name: whatomate-db
+    plan: free
+    databaseName: whatomate
+    user: whatomate

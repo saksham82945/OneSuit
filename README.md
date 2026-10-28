@@ -119,13 +119,13 @@ See [configuration docs](https://shridarpatil.github.io/whatomate/getting-starte
 
 ## Developers
 
-The backend is written in Go ([Fastglue](https://github.com/zerodha/fastglue)) and the frontend is Vue.js 3 with shadcn-vue.
+The backend is written in Go ([Fastglue](https://github.com/zerodha/fastglue)) and the frontend is React with Vite and Tailwind CSS.
 - If you are interested in contributing, please read [CONTRIBUTING.md](./CONTRIBUTING.md) first.
 
 ```bash
 # Development setup
-make run-migrate    # Backend (port 8080)
-cd frontend && npm run dev   # Frontend (port 3000)
+make run-migrate               # Backend (port 8080)
+cd frontend-react && npm run dev   # Frontend (port 3000)
 ```
 
 ## License

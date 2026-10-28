@@ -2,10 +2,10 @@ version: 2
 
 before:
   hooks:
-    - bash -c "cd frontend && npm ci"
-    - bash -c "cd frontend && npm run build"
+    - bash -c "cd frontend-react && npm ci"
+    - bash -c "cd frontend-react && npm run build"
     - rm -rf internal/frontend/dist/assets internal/frontend/dist/*.html internal/frontend/dist/*.svg internal/frontend/dist/*.mp3
-    - cp -r frontend/dist/. internal/frontend/dist/
+    - cp -r frontend-react/dist/. internal/frontend/dist/
 
 builds:
   - id: whatomate

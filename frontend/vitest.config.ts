@@ -1,16 +1,17 @@
-import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vitest/config'
+import path from 'path';
+import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
 
-// Unit tests only. Playwright owns frontend/e2e/**; keeping `include` scoped to
-// src/ stops the two runners from picking up each other's *.spec.ts files.
 export default defineConfig({
+  plugins: [react()],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
-    }
+      '@': path.resolve(__dirname, './src'),
+    },
   },
   test: {
-    include: ['src/**/*.spec.ts'],
-    environment: 'node'
-  }
-})
+    globals: true,
+    environment: 'happy-dom',
+    include: ['src/**/*.test.{ts,tsx}', 'src/**/*.spec.{ts,tsx}'],
+  },
+});

@@ -12,7 +12,7 @@ module.exports = {
   ],
   content: [
     "./index.html",
-    "./src/**/*.{vue,js,ts,jsx,tsx}",
+    "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
   	container: {
@@ -25,6 +25,8 @@ module.exports = {
   	extend: {
   		fontFamily: {
   			sans: ['Inter', ...defaultTheme.fontFamily.sans],
+  			ubuntu: ['Ubuntu', ...defaultTheme.fontFamily.sans],
+  			poppins: ['Poppins', ...defaultTheme.fontFamily.sans],
   		},
   		colors: {
   			border: 'hsl(var(--border))',
@@ -66,6 +68,30 @@ module.exports = {
   				'teal-dark': '#075E54',
   				light: '#DCF8C6'
   			},
+  			spruce: {
+  				DEFAULT: '#0f5c62',
+  				dark: '#0b4a4f',
+  				light: '#e6f2f1',
+  				hover: 'rgba(255, 255, 255, 0.08)',
+  				active: 'rgba(255, 255, 255, 0.15)'
+  			},
+  			mint: {
+  				50: '#f0fdf9',
+  				100: '#e6f4f1',
+  				200: '#c5ece3',
+  				300: '#94ddcc',
+  				400: '#5ac4af',
+  				500: '#34a893',
+  				600: '#0b7c68',
+  				700: '#1b6757',
+  				800: '#195247',
+  				900: '#17443c'
+  			},
+  			nebula: {
+  				start: '#4f39f6',
+  				middle: '#7c4dff',
+  				end: '#9d50bb'
+  			},
   			facebook: {
   				DEFAULT: '#1877F2',
   				dark: '#0C5DC7',
@@ -74,17 +100,17 @@ module.exports = {
   			},
   			// Violet color palette (primary accent)
   			violet: {
-  				50: '#f5f3ff',
-  				100: '#ede9fe',
-  				200: '#ddd6fe',
-  				300: '#c4b5fd',
-  				400: '#a78bfa',
-  				500: '#8b5cf6',
-  				600: '#7c3aed',
-  				700: '#6d28d9',
-  				800: '#5b21b6',
-  				900: '#4c1d95',
-  				950: '#2e1065'
+  				50: '#ecf6f4',
+  				100: '#d3ebe6',
+  				200: '#a8d6cc',
+  				300: '#72bcae',
+  				400: '#2e9a86',
+  				500: '#127569',
+  				600: '#0b5a55',
+  				700: '#0a4a47',
+  				800: '#0b3c3a',
+  				900: '#0a3230',
+  				950: '#061f1e'
   			},
   			// Glass effect colors
   			glass: {
@@ -114,11 +140,26 @@ module.exports = {
   				to: {
   					height: '0'
   				}
+  			},
+  			'pulse-glow': {
+  				'0%, 100%': { opacity: '0.6', transform: 'scale(1)' },
+  				'50%': { opacity: '1', transform: 'scale(1.03)' }
+  			},
+  			'float-slow': {
+  				'0%, 100%': { transform: 'translateY(0)' },
+  				'50%': { transform: 'translateY(-3px)' }
+  			},
+  			'slide-right': {
+  				from: { opacity: '0', transform: 'translateX(-8px)' },
+  				to: { opacity: '1', transform: 'translateX(0)' }
   			}
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
-  			'accordion-up': 'accordion-up 0.2s ease-out'
+  			'accordion-up': 'accordion-up 0.2s ease-out',
+  			'pulse-glow': 'pulse-glow 3s ease-in-out infinite',
+  			'float-slow': 'float-slow 3s ease-in-out infinite',
+  			'slide-right': 'slide-right 0.2s ease-out'
   		},
   		// Glass effect backdrop blur
   		backdropBlur: {

@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "mock-backend", "runtimeExecutable": "node", "runtimeArgs": ["mock-backend.cjs"], "port": 8080 },
+    { "name": "frontend-react", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "frontend-react", "run", "dev"], "port": 3000 }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "whatomate-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev:frontend",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "cd backend && (PATH=\"$PATH:/usr/local/go/bin:/opt/homebrew/bin:$HOME/go/bin\" go run ./cmd/whatomate server -config config.toml)",
+    "build": "npm run build:frontend && npm run build:backend",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "cd backend && (PATH=\"$PATH:/usr/local/go/bin:/opt/homebrew/bin:$HOME/go/bin\" go build -o whatomate ./cmd/whatomate)",
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "npm --prefix frontend run test",
+    "test:backend": "cd backend && (PATH=\"$PATH:/usr/local/go/bin:/opt/homebrew/bin:$HOME/go/bin\" go test ./internal/...)"
+  }
+}
