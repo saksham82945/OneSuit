@@ -81,7 +81,7 @@ import { ExploreView } from '@/views/public/ExploreView';
 
 // Super Admin Panel
 import { SuperAdminRoute } from '@/components/layout/SuperAdminRoute';
-import { EmbeddedSignupView } from '@/views/settings/EmbeddedSignupView';
+import { WhatsAppSetupView } from '@/views/settings/WhatsAppSetupView';
 import { SuperAdminDashboardView } from '@/views/super-admin/SuperAdminDashboardView';
 import { VendorsView } from '@/views/super-admin/VendorsView';
 import { SubscriptionsView } from '@/views/super-admin/SubscriptionsView';
@@ -215,7 +215,8 @@ export const App: React.FC = () => {
               <Route path="settings/roles" element={<RolesView />} />
               <Route path="settings/audit-logs" element={<AuditLogsView />} />
             </Route>
-            <Route path="settings/accounts/connect" element={<EmbeddedSignupView />} />
+            <Route path="settings/whatsapp-setup" element={<WhatsAppSetupView />} />
+            <Route path="settings/accounts/connect" element={<WhatsAppSetupView />} />
             <Route path="settings/chatbot" element={<ChatbotSettingsView />} />
             <Route path="settings/billing" element={<BillingView />} />
             <Route path="settings/opt-in" element={<OptInView />} />

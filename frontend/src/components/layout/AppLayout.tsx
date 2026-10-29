@@ -277,7 +277,8 @@ export const AppLayout: React.FC = () => {
     if (activeModuleId === 'settings') {
       const items = [
         hasPermission('settings.general', 'read') ? { name: 'nav.general', path: '/settings', icon: Settings, exact: true } : null,
-        hasPermission('accounts', 'read') ? { name: 'nav.accounts', path: '/settings/accounts', icon: Users, badge: 'Meta', badgeVariant: 'popular' as const } : null,
+        hasPermission('accounts', 'read') ? { name: 'nav.accounts', path: '/settings/accounts', icon: Users, badge: 'Meta', badgeVariant: 'popular' as const, exact: true } : null,
+        hasPermission('accounts', 'read') ? { name: 'WhatsApp Setup', path: '/settings/whatsapp-setup', icon: Phone } : null,
         hasPermission('contacts', 'read') ? { name: 'nav.contacts', path: '/settings/contacts', icon: Contact } : null,
         hasPermission('canned_responses', 'read') ? { name: 'nav.cannedResponses', path: '/settings/canned-responses', icon: MessageSquareText } : null,
         hasPermission('tags', 'read') ? { name: 'nav.tags', path: '/settings/tags', icon: Tags } : null,

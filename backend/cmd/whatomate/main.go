@@ -665,6 +665,10 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/accounts/{id}/business_profile", app.GetBusinessProfile)
 	g.PUT("/api/accounts/{id}/business_profile", app.UpdateBusinessProfile)
 	g.POST("/api/accounts/{id}/business_profile/photo", app.UpdateProfilePicture)
+	g.GET("/api/accounts/{id}/health", app.GetAccountHealth)
+	g.POST("/api/accounts/{id}/sync-phone-numbers", app.SyncAccountPhoneNumbers)
+	g.GET("/api/whatsapp-setup/test-contact", app.GetTestContact)
+	g.PUT("/api/whatsapp-setup/test-contact", app.UpdateTestContact)
 
 	// Contacts
 	g.GET("/api/contacts", app.ListContacts)
