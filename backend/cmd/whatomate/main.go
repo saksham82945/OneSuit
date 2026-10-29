@@ -156,14 +156,6 @@ func runServer(args []string) {
 	}
 	lo.Info("Connected to PostgreSQL")
 
-	// Ensure super admin and preset login accounts exist and are ready
-	if err := database.EnsureSuperAdmin(db, &cfg.SuperAdmin); err != nil {
-		lo.Warn("Failed to ensure super admin", "error", err)
-	}
-	if err := database.EnsurePresetLoginUsers(db); err != nil {
-		lo.Warn("Failed to ensure preset login users", "error", err)
-	}
-
 	// Run migrations if requested
 	if *migrate {
 		if err := database.RunMigrationWithProgress(db, &cfg.DefaultAdmin, &cfg.SuperAdmin); err != nil {
@@ -174,6 +166,15 @@ func runServer(args []string) {
 		if err := handlers.BackfillChatbotFlowGraph(db, lo); err != nil {
 			lo.Fatal("Chatbot flow graph backfill failed", "error", err)
 		}
+	}
+
+	// Ensure super admin and preset login accounts exist. This runs after
+	// migrations so a fresh database already has its tables.
+	if err := database.EnsureSuperAdmin(db, &cfg.SuperAdmin); err != nil {
+		lo.Warn("Failed to ensure super admin", "error", err)
+	}
+	if err := database.EnsurePresetLoginUsers(db); err != nil {
+		lo.Warn("Failed to ensure preset login users", "error", err)
 	}
 
 	// Connect to Redis
