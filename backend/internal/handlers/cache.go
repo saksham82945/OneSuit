@@ -546,13 +546,45 @@ func (a *App) HasAnyPermission(userID uuid.UUID, permissions ...string) bool {
 	return false
 }
 
-// IsSuperAdmin checks if a user is a super admin
+// IsSuperAdmin checks if a user is a super admin.
 func (a *App) IsSuperAdmin(userID uuid.UUID) bool {
-	perms, err := a.getUserPermissionsCached(userID)
-	if err != nil {
+	if userID == uuid.Nil {
 		return false
 	}
-	return perms.IsSuperAdmin
+	if perms, err := a.getUserPermissionsCached(userID); err == nil && perms.IsSuperAdmin {
+		return true
+	}
+	// The cached permissions can be stale (the flag was set outside the app,
+	// e.g. by the startup account seeding) or fail to load (missing role), so
+	// the users row has the final say.
+	var flag bool
+	if err := a.DB.Model(&models.User{}).Select("is_super_admin").Where("id = ?", userID).Row().Scan(&flag); err != nil {
+		return false
+	}
+	if flag {
+		a.clearUserPermissionKeys(userID)
+	}
+	return flag
+}
+
+// clearUserPermissionKeys drops a user's cached permissions without the
+// websocket notification InvalidateUserPermissionsCache sends.
+func (a *App) clearUserPermissionKeys(userID uuid.UUID) {
+	if a.Redis == nil {
+		return
+	}
+	ctx := context.Background()
+	a.Redis.Del(ctx, userPermissionsCachePrefix+userID.String())
+	a.deleteKeysByPattern(ctx, userPermissionsCachePrefix+userID.String()+":*")
+}
+
+// ClearAllUserPermissionCaches drops every cached user permission set. Called
+// at startup because account seeding changes users directly in the database.
+func (a *App) ClearAllUserPermissionCaches() {
+	if a.Redis == nil {
+		return
+	}
+	a.deleteKeysByPattern(context.Background(), userPermissionsCachePrefix+"*")
 }
 
 // ScopedQuery returns a gorm query scoped to the organization

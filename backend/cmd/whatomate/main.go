@@ -222,6 +222,10 @@ func runServer(args []string) {
 		HTTPClient: httpClient,
 	}
 
+	// Startup seeding edits users (e.g. the super admin flag) straight in the
+	// database, so cached permission sets from before this boot may be stale.
+	app.ClearAllUserPermissionCaches()
+
 	// Initialize S3 client for call recordings (optional)
 	var s3Client *storage.S3Client
 	if cfg.Calling.RecordingEnabled && cfg.Storage.S3Bucket != "" {
