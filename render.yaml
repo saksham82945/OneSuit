@@ -26,6 +26,11 @@ services:
         value: 0.0.0.0
       - key: WHATOMATE_APP__ENVIRONMENT
         value: production
+      # The frontend (Vercel) address people open in the browser
+      - key: WHATOMATE_SERVER__PUBLIC_URL
+        value: https://one-suit-roan.vercel.app
+      - key: WHATOMATE_SERVER__ALLOWED_ORIGINS
+        value: https://one-suit-roan.vercel.app
       - key: WHATOMATE_DATABASE__URL
         fromDatabase:
           name: whatomate-db

@@ -5,6 +5,7 @@ import (
 	"crypto/sha1" //nolint:gosec // SHA-1 is mandated by the coturn TURN REST API (RFC draft)
 	"encoding/base64"
 	"strconv"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -114,6 +115,10 @@ type ServerConfig struct {
 	WriteTimeout   int    `koanf:"write_timeout"`
 	BasePath       string `koanf:"base_path"`       // Base path for frontend (e.g., "/whatomate" for proxy pass)
 	AllowedOrigins string `koanf:"allowed_origins"` // Comma-separated list of allowed CORS origins
+	// PublicURL is the address people open in the browser (e.g. the Vercel
+	// site). Used for sign-in return links, and as the allowed origin when
+	// allowed_origins is empty.
+	PublicURL string `koanf:"public_url"`
 }
 
 type DatabaseConfig struct {
@@ -268,6 +273,13 @@ func setDefaults(cfg *Config) {
 	if cfg.Server.WriteTimeout == 0 {
 		cfg.Server.WriteTimeout = 30
 	}
+	cfg.Server.PublicURL = strings.TrimRight(strings.TrimSpace(cfg.Server.PublicURL), "/")
+	if strings.TrimSpace(cfg.Server.AllowedOrigins) == "" && cfg.Server.PublicURL != "" {
+		if u, err := url.Parse(cfg.Server.PublicURL); err == nil && u.Scheme != "" && u.Host != "" {
+			cfg.Server.AllowedOrigins = u.Scheme + "://" + u.Host
+		}
+	}
+
 	// Platforms such as Render and Heroku hand out plain DATABASE_URL / REDIS_URL,
 	// or INTERNAL_DATABASE_URL / POSTGRES_URL / REDIS_TLS_URL.
 	if cfg.Database.URL == "" {

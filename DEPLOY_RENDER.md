@@ -78,6 +78,8 @@ If you prefer to configure each service individually on Render:
    | `WHATOMATE_SERVER__PORT` | `8080` | Server listen port |
    | `WHATOMATE_SERVER__HOST` | `0.0.0.0` | Bind to all interfaces |
    | `WHATOMATE_APP__ENVIRONMENT` | `production` | Production mode |
+   | `WHATOMATE_SERVER__PUBLIC_URL` | `https://one-suit-roan.vercel.app` | Frontend address people open; used for sign-in return links |
+   | `WHATOMATE_SERVER__ALLOWED_ORIGINS` | `https://one-suit-roan.vercel.app` | Sites allowed to call the API (comma-separated) |
    | `WHATOMATE_DATABASE__URL` | `postgresql://...` | **Internal Database URL** from Step 1 (plain `DATABASE_URL` also works) |
    | `WHATOMATE_REDIS__URL` | `redis://...` | **Internal Key Value URL** from Render (New + → Key Value), or an Upstash `rediss://` URL. Plain `REDIS_URL` also works |
    | `WHATOMATE_JWT__SECRET` | *(click Generate)* | 64-char random secret |

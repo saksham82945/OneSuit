@@ -549,6 +549,11 @@ func (a *App) buildOAuthConfig(provider string, ssoConfig *models.SSOProvider, r
 	host := string(r.RequestCtx.Host())
 	basePath := sanitizeRedirectPath(a.Config.Server.BasePath)
 	callbackURL := fmt.Sprintf("%s://%s%s/api/auth/sso/%s/callback", scheme, host, basePath, provider)
+	// Behind a proxy (e.g. Vercel forwarding /api to the backend) the request
+	// host is the backend's, so use the public site address when it's set.
+	if a.Config.Server.PublicURL != "" {
+		callbackURL = fmt.Sprintf("%s/api/auth/sso/%s/callback", a.Config.Server.PublicURL, provider)
+	}
 
 	// Decrypt SSO client secret
 	decryptedSecret, err := appcrypto.Decrypt(ssoConfig.ClientSecret, a.Config.App.EncryptionKey)

@@ -219,3 +219,17 @@ func TestLoad_ConnectionURLs(t *testing.T) {
 	assert.Equal(t, "postgres://ignored@other/db", cfg.Database.URL)
 	assert.Equal(t, "redis://plain-host:6379", cfg.Redis.URL)
 }
+
+func TestLoad_PublicURLSetsAllowedOrigin(t *testing.T) {
+	t.Setenv("WHATOMATE_SERVER__PUBLIC_URL", " https://one-suit-roan.vercel.app/ ")
+	cfg, err := config.Load(writeConfig(t, ""))
+	require.NoError(t, err)
+	assert.Equal(t, "https://one-suit-roan.vercel.app", cfg.Server.PublicURL)
+	assert.Equal(t, "https://one-suit-roan.vercel.app", cfg.Server.AllowedOrigins)
+
+	// An explicit allowed_origins list is kept as is.
+	t.Setenv("WHATOMATE_SERVER__ALLOWED_ORIGINS", "https://a.example.com,https://b.example.com")
+	cfg, err = config.Load(writeConfig(t, ""))
+	require.NoError(t, err)
+	assert.Equal(t, "https://a.example.com,https://b.example.com", cfg.Server.AllowedOrigins)
+}
