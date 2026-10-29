@@ -2,10 +2,13 @@ package database
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/shridarpatil/whatomate/internal/config"
 	"github.com/shridarpatil/whatomate/internal/models"
 	"golang.org/x/crypto/bcrypt"
@@ -14,6 +17,61 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// SanitizePostgresURL ensures a connection string can be safely parsed by pgx/v5,
+// even if the password contains unescaped special characters, brackets, spaces,
+// or quotes.
+func SanitizePostgresURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.Trim(raw, `"'`)
+
+	// If pgx can already parse it directly, return as-is
+	if _, err := pgx.ParseConfig(raw); err == nil {
+		return raw
+	}
+
+	// Check if this is a URL scheme
+	var scheme string
+	var rest string
+	if strings.HasPrefix(raw, "postgresql://") {
+		scheme = "postgresql"
+		rest = strings.TrimPrefix(raw, "postgresql://")
+	} else if strings.HasPrefix(raw, "postgres://") {
+		scheme = "postgres"
+		rest = strings.TrimPrefix(raw, "postgres://")
+	} else {
+		return raw
+	}
+
+	// Find the last '@' separating userinfo from host
+	atIdx := strings.LastIndex(rest, "@")
+	if atIdx == -1 {
+		return raw
+	}
+
+	userinfo := rest[:atIdx]
+	hostPart := rest[atIdx+1:]
+
+	// Split username and password at first ':'
+	colonIdx := strings.Index(userinfo, ":")
+	var username, password string
+	if colonIdx != -1 {
+		username = userinfo[:colonIdx]
+		password = userinfo[colonIdx+1:]
+	} else {
+		username = userinfo
+	}
+
+	// Encode userinfo cleanly with RFC 3986 compliance
+	uInfo := url.UserPassword(username, password)
+	sanitizedURL := fmt.Sprintf("%s://%s@%s", scheme, uInfo.String(), hostPart)
+
+	if _, err := pgx.ParseConfig(sanitizedURL); err == nil {
+		return sanitizedURL
+	}
+
+	return raw
+}
+
 // NewPostgres creates a new PostgreSQL connection
 func NewPostgres(cfg *config.DatabaseConfig, debug bool) (*gorm.DB, error) {
 	dsn := fmt.Sprintf(
@@ -21,7 +79,7 @@ func NewPostgres(cfg *config.DatabaseConfig, debug bool) (*gorm.DB, error) {
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Name, cfg.SSLMode,
 	)
 	if cfg.URL != "" {
-		dsn = cfg.URL
+		dsn = SanitizePostgresURL(cfg.URL)
 	}
 
 	logLevel := logger.Silent

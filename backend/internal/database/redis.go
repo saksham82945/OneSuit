@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"strings"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/shridarpatil/whatomate/internal/config"
@@ -18,7 +19,8 @@ func NewRedis(cfg *config.RedisConfig) (*redis.Client, error) {
 		DB:       cfg.DB,
 	}
 	if cfg.URL != "" {
-		parsed, err := redis.ParseURL(cfg.URL)
+		cleanURL := strings.Trim(strings.TrimSpace(cfg.URL), `"'`)
+		parsed, err := redis.ParseURL(cleanURL)
 		if err != nil {
 			return nil, fmt.Errorf("invalid redis url: %w", err)
 		}
