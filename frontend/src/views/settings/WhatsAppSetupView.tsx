@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { useEmbeddedSignup, type EmbeddedSignupResult } from './useEmbeddedSignup';
+import { ConnectWhatsAppButton, useConnectWhatsApp } from '@/components/whatsapp/ConnectWhatsAppButton';
 
 // WhatsApp Cloud API Setup: connect a number with Facebook (Embedded Signup),
 // set a test contact, and see the number's phone numbers and health.
@@ -104,6 +105,7 @@ export const WhatsAppSetupView: React.FC = () => {
   const branding = useBranding();
   const { hasPermission } = useAuthStore();
   const canWrite = hasPermission('accounts', 'write');
+  const { visible: connectVisible } = useConnectWhatsApp();
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
@@ -251,6 +253,25 @@ export const WhatsAppSetupView: React.FC = () => {
               {cfgLoading ? (
                 <div className="flex justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                </div>
+              ) : connectVisible ? (
+                <div className="flex flex-col items-center gap-3 py-4 text-center">
+                  <ConnectWhatsAppButton size="lg" />
+                  <p className="max-w-md text-xs text-gray-500 dark:text-gray-400">
+                    Facebook opens in a new tab. Log in, pick or create your Business portfolio, WhatsApp Business
+                    Account and phone number, and finish. Then come back and click “Re-sync Phone Numbers”.
+                  </p>
+                  {embeddedAvailable && canWrite && (
+                    <button
+                      type="button"
+                      onClick={() => launch()}
+                      disabled={connecting}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1877F2] hover:underline disabled:opacity-60"
+                    >
+                      {connecting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Or connect in a popup and add the number here automatically
+                    </button>
+                  )}
                 </div>
               ) : embeddedAvailable ? (
                 <div className="flex flex-col items-center gap-3 py-4 text-center">

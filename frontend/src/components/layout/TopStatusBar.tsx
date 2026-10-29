@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Sparkles, CheckCircle2, ShieldCheck, Zap, LifeBuoy } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
+import { ConnectWhatsAppButton } from '@/components/whatsapp/ConnectWhatsAppButton';
 
 interface TopStatusBarProps {
   className?: string;
@@ -53,8 +54,9 @@ export const TopStatusBar: React.FC<TopStatusBarProps> = ({ className }) => {
         className
       )}
     >
-      <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-        <span className="font-medium text-gray-700 dark:text-gray-200">WhatsApp Official Business Line</span>
+      <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 shrink-0">
+        <ConnectWhatsAppButton size="sm" />
+        <span className="hidden sm:inline font-medium text-gray-700 dark:text-gray-200">WhatsApp Official Business Line</span>
       </div>
 
       <div className="flex items-center gap-3 shrink-0">

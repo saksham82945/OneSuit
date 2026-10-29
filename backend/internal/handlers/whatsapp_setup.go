@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -227,4 +228,22 @@ func (a *App) UpdateTestContact(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to save the test contact", nil, "")
 	}
 	return r.SendEnvelope(map[string]any{"phone": phone, "configured": phone != ""})
+}
+
+// defaultWhatsAppConnectURL is Meta's hosted WhatsApp onboarding page for the
+// platform's Meta app, used when nothing else is configured.
+const defaultWhatsAppConnectURL = "https://business.facebook.com/messaging/whatsapp/onboard/?app_id=1732716131427334&config_id=860928616411834&extras=%7B%22featureType%22%3A%22whatsapp_business_app_onboarding%22%2C%22sessionInfoVersion%22%3A%223%22%2C%22version%22%3A%22v4%22%2C%22features%22%3A[]%7D"
+
+// whatsAppConnectURL picks the link for "Connect WhatsApp with Facebook": the
+// super admin's own link, else one built from the Meta app's IDs, else the default.
+func whatsAppConnectURL(custom, appID, configID string) string {
+	if custom != "" {
+		return custom
+	}
+	if appID != "" && configID != "" {
+		return "https://business.facebook.com/messaging/whatsapp/onboard/?app_id=" + url.QueryEscape(appID) +
+			"&config_id=" + url.QueryEscape(configID) +
+			"&extras=%7B%22featureType%22%3A%22whatsapp_business_app_onboarding%22%2C%22sessionInfoVersion%22%3A%223%22%2C%22version%22%3A%22v4%22%2C%22features%22%3A[]%7D"
+	}
+	return defaultWhatsAppConnectURL
 }

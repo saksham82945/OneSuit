@@ -150,3 +150,51 @@ func TestApp_WhatsAppSetup_AgentCannotChangeTestContact(t *testing.T) {
 	require.NoError(t, app.UpdateTestContact(req))
 	assert.Equal(t, fasthttp.StatusForbidden, testutil.GetResponseStatusCode(req))
 }
+
+func TestApp_ConnectButton_VisibilityAndLink(t *testing.T) {
+	f := newSuperAdminFixture(t)
+	t.Cleanup(func() {
+		f.app.DB.Where("key = ?", "platform_config").Delete(&models.PlatformSetting{})
+	})
+	f.app.Config.WhatsApp.AppID = ""
+	f.app.Config.WhatsApp.ConfigID = ""
+	adminRole := testutil.CreateAdminRole(t, f.app.DB, f.org.ID)
+	admin := testutil.CreateTestUser(t, f.app.DB, f.org.ID, testutil.WithRoleID(&adminRole.ID))
+
+	read := func(asSuper bool) (bool, string) {
+		req := testutil.NewGETRequest(t)
+		if asSuper {
+			f.asSuperAdmin(req)
+		} else {
+			testutil.SetFullAuthContext(req, f.org.ID, admin.ID, &adminRole.ID, false)
+		}
+		require.NoError(t, f.app.GetEmbeddedSignupConfig(req))
+		var out struct {
+			Visible bool   `json:"connect_button_visible"`
+			URL     string `json:"connect_url"`
+		}
+		testutil.ParseEnvelopeResponse(t, req, &out)
+		return out.Visible, out.URL
+	}
+
+	visible, link := read(false)
+	assert.True(t, visible, "shown by default")
+	assert.Contains(t, link, "business.facebook.com/messaging/whatsapp/onboard/?app_id=1732716131427334")
+
+	bad := f.asSuperAdmin(testutil.NewJSONRequest(t, map[string]any{"connect_url": "http://example.com"}))
+	require.NoError(t, f.app.SuperAdminUpdateConfig(bad))
+	testutil.AssertErrorResponse(t, bad, fasthttp.StatusBadRequest, "https://")
+
+	upd := f.asSuperAdmin(testutil.NewJSONRequest(t, map[string]any{
+		"hide_connect_button": true, "connect_url": "https://business.facebook.com/messaging/whatsapp/onboard/?app_id=1&config_id=2",
+		"embedded_signup_enabled": true, "manual_signup_enabled": true,
+	}))
+	require.NoError(t, f.app.SuperAdminUpdateConfig(upd))
+	require.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(upd), string(testutil.GetResponseBody(upd)))
+
+	visible, link = read(false)
+	assert.False(t, visible, "hidden for business users")
+	assert.Equal(t, "https://business.facebook.com/messaging/whatsapp/onboard/?app_id=1&config_id=2", link)
+	visible, _ = read(true)
+	assert.True(t, visible, "super admins still see it")
+}

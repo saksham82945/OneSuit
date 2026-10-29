@@ -76,6 +76,12 @@ type PlatformConfig struct {
 	// Button text businesses see on Settings → Accounts (editable by the super admin)
 	EmbeddedButtonLabel string `json:"embedded_button_label"`
 	ManualButtonLabel   string `json:"manual_button_label"`
+	// Hides the "Connect WhatsApp with Facebook" shortcut button (top bar,
+	// Settings, Ads Manager) for every business user. Off by default.
+	HideConnectButton bool `json:"hide_connect_button"`
+	// Where that button goes: Meta's hosted WhatsApp onboarding link. Empty
+	// means build it from the Meta App ID and Configuration ID.
+	ConnectURL string `json:"connect_url"`
 	// Read-only in responses; the secret itself is stored encrypted under its own key.
 	HasMetaAppSecret bool `json:"has_meta_app_secret"`
 }
@@ -172,6 +178,10 @@ func (a *App) SuperAdminUpdateConfig(r *fastglue.Request) error {
 	}
 	if len(cfg.ContactAddress) > 500 {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Contact address must be 500 characters or fewer", nil, "")
+	}
+	cfg.ConnectURL = strings.TrimSpace(cfg.ConnectURL)
+	if cfg.ConnectURL != "" && (!strings.HasPrefix(cfg.ConnectURL, "https://") || len(cfg.ConnectURL) > 1000) {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Connect link must start with https:// and be 1000 characters or fewer", nil, "")
 	}
 	cfg.EmbeddedButtonLabel = strings.TrimSpace(cfg.EmbeddedButtonLabel)
 	cfg.ManualButtonLabel = strings.TrimSpace(cfg.ManualButtonLabel)

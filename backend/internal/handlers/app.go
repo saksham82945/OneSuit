@@ -154,6 +154,10 @@ func (a *App) GetEmbeddedSignupConfig(r *fastglue.Request) error {
 		ManualEnabled      bool   `json:"manual_enabled"`
 		EmbeddedLabel      string `json:"embedded_label"`
 		ManualLabel        string `json:"manual_label"`
+		// Whether to show the "Connect WhatsApp with Facebook" shortcut buttons.
+		ConnectButtonVisible bool `json:"connect_button_visible"`
+		// Meta's hosted WhatsApp onboarding page the button opens.
+		ConnectURL string `json:"connect_url"`
 	}
 
 	// Which ways of connecting a number the super admin allows; super admins can use both.
@@ -169,6 +173,9 @@ func (a *App) GetEmbeddedSignupConfig(r *fastglue.Request) error {
 		ManualEnabled:      platform.ManualSignupEnabled || superAdmin,
 		EmbeddedLabel:      platform.EmbeddedButtonLabel,
 		ManualLabel:        platform.ManualButtonLabel,
+		// Super admins always see it so they can try the flow.
+		ConnectButtonVisible: !platform.HideConnectButton || superAdmin,
+		ConnectURL:           whatsAppConnectURL(platform.ConnectURL, appID, configID),
 	}
 	if config.EmbeddedLabel == "" {
 		config.EmbeddedLabel = "Connect with Facebook"

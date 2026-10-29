@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { adsApi, errorMessage, formatDate, formatMoney, useAdWallet, type AdType, type AdWallet, type AdsSetup, type CreditPack } from './adsApi';
 import { inputCls, outlineBtnCls, primaryBtnCls } from './AdsShared';
 import { AdCampaignDialog } from './AdCampaignDialog';
+import { ConnectWhatsAppButton } from '@/components/whatsapp/ConnectWhatsAppButton';
 
 interface AdsPageContextValue {
   brand: string;
@@ -90,6 +91,7 @@ export const AdsPage: React.FC<AdsPageProps> = ({ title, setup, actions, onCreat
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3 min-h-16">
             <h1 className="text-lg font-semibold leading-tight truncate">{title}</h1>
             <div className="flex flex-wrap items-center gap-2">
+              <ConnectWhatsAppButton size="md" />
               {showCredits && (
                 <>
                   <div

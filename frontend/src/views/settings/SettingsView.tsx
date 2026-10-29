@@ -4,6 +4,7 @@ import { useAuthStore, type CallRingtone, type User, type UserSettings } from '@
 import { organizationService, usersService } from '@/services/api';
 import { readData } from '@/services/response';
 import { PageHeader } from '@/components/shared/PageHeader';
+import { ConnectWhatsAppButton } from '@/components/whatsapp/ConnectWhatsAppButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -167,6 +168,7 @@ export const SettingsView: React.FC = () => {
         subtitle={t('settings.subtitle') || 'Configure organization parameters, credentials and alerts'}
         icon={Settings}
         iconGradient="bg-gradient-to-br from-gray-500 to-gray-600 shadow-gray-500/20"
+        actions={<ConnectWhatsAppButton size="md" />}
       />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-4xl mx-auto w-full">

@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { refreshConnectWhatsAppConfig } from '@/components/whatsapp/ConnectWhatsAppButton';
 import { Badge } from '@/components/ui/badge';
 import {
   SlidersHorizontal,
@@ -194,6 +195,8 @@ export const ConfigurationView: React.FC = () => {
         meta_config_id: config.meta_config_id.trim(),
         embedded_button_label: (config.embedded_button_label ?? '').trim(),
         manual_button_label: (config.manual_button_label ?? '').trim(),
+        hide_connect_button: Boolean(config.hide_connect_button),
+        connect_url: (config.connect_url ?? '').trim(),
       };
 
       if (clearSecretFlag) {
@@ -205,6 +208,7 @@ export const ConfigurationView: React.FC = () => {
       const updated = await superAdminService.updateConfig(payload);
       setConfig(updated);
       setSaved(updated);
+      refreshConnectWhatsAppConfig();
       setMetaSecretInput('');
       setClearSecretFlag(false);
 
@@ -604,6 +608,37 @@ export const ConfigurationView: React.FC = () => {
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  {/* Connect WhatsApp with Facebook shortcut button */}
+                  <div className="rounded-xl p-4 bg-white/[0.02] border border-white/[0.06] light:bg-gray-50 light:border-gray-200">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-white light:text-gray-900">
+                          "Connect WhatsApp with Facebook" button
+                        </p>
+                        <p className="text-xs text-white/50 light:text-gray-500 mt-0.5">
+                          Blue button in the top bar, Settings, Ads Manager and WhatsApp Setup. It opens Meta's WhatsApp onboarding page. Turn off to hide it for admins and all other users.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={!config.hide_connect_button}
+                        onCheckedChange={(v) => update('hide_connect_button', !v)}
+                        aria-label="Show the Connect WhatsApp with Facebook button"
+                      />
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-white/[0.06] light:border-gray-200 grid gap-1.5">
+                      <Label className="text-xs font-medium">Facebook onboarding link</Label>
+                      <Input
+                        placeholder="https://business.facebook.com/messaging/whatsapp/onboard/?app_id=…&config_id=…"
+                        value={config.connect_url ?? ''}
+                        onChange={(e) => update('connect_url', e.target.value)}
+                        className={fieldClass}
+                      />
+                      <p className="text-[11px] text-white/40 light:text-gray-500">
+                        Leave blank to build it from the Meta App ID and Configuration ID above.
+                      </p>
+                    </div>
                   </div>
 
                   {/* Manual Signup Toggle */}

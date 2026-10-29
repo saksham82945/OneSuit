@@ -111,6 +111,10 @@ export interface PlatformConfig {
   /** Button text businesses see on Settings → Accounts (max 40 chars; blank = default). */
   embedded_button_label?: string;
   manual_button_label?: string;
+  /** Hide the "Connect WhatsApp with Facebook" shortcut button for business users. */
+  hide_connect_button?: boolean;
+  /** Meta hosted WhatsApp onboarding link that button opens (blank = built from the Meta IDs). */
+  connect_url?: string;
   /** Read-only: whether an App Secret is stored (the secret itself is never returned). */
   has_meta_app_secret: boolean;
 }
