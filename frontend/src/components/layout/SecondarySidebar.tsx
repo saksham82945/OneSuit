@@ -91,6 +91,7 @@ export const SecondarySidebar: React.FC<SecondarySidebarProps> = ({
               <NavLink
                 key={item.path}
                 to={item.path}
+                end={item.exact}
                 className={({ isActive }) =>
                   cn(
                     'group flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150',

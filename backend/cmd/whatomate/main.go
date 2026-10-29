@@ -147,6 +147,9 @@ func runServer(args []string) {
 	}
 
 	// Connect to PostgreSQL
+	if cfg.Database.URL == "" && cfg.Database.Host == "db" {
+		lo.Warn("DATABASE_URL is not set. Falling back to default host 'db'. If hosting on Render, set DATABASE_URL in the Environment tab.")
+	}
 	db, err := database.NewPostgres(&cfg.Database, cfg.App.Debug)
 	if err != nil {
 		lo.Fatal("Failed to connect to database", "error", err)

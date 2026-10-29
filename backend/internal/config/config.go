@@ -268,12 +268,23 @@ func setDefaults(cfg *Config) {
 	if cfg.Server.WriteTimeout == 0 {
 		cfg.Server.WriteTimeout = 30
 	}
-	// Platforms such as Render and Heroku hand out plain DATABASE_URL / REDIS_URL.
+	// Platforms such as Render and Heroku hand out plain DATABASE_URL / REDIS_URL,
+	// or INTERNAL_DATABASE_URL / POSTGRES_URL / REDIS_TLS_URL.
 	if cfg.Database.URL == "" {
-		cfg.Database.URL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+		for _, key := range []string{"DATABASE_URL", "INTERNAL_DATABASE_URL", "POSTGRES_URL"} {
+			if val := strings.TrimSpace(os.Getenv(key)); val != "" {
+				cfg.Database.URL = val
+				break
+			}
+		}
 	}
 	if cfg.Redis.URL == "" {
-		cfg.Redis.URL = strings.TrimSpace(os.Getenv("REDIS_URL"))
+		for _, key := range []string{"REDIS_URL", "INTERNAL_REDIS_URL", "REDIS_TLS_URL", "KV_URL"} {
+			if val := strings.TrimSpace(os.Getenv(key)); val != "" {
+				cfg.Redis.URL = val
+				break
+			}
+		}
 	}
 	if cfg.Database.Port == 0 {
 		cfg.Database.Port = 5432
