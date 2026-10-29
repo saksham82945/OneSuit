@@ -86,7 +86,7 @@ If you prefer to configure each service individually on Render:
    | `WHATOMATE_DEFAULT_ADMIN__EMAIL` | `admin@login.com` | Default admin email |
    | `WHATOMATE_DEFAULT_ADMIN__PASSWORD`| `admin123` | Default admin password |
    | `WHATOMATE_RATE_LIMIT__TRUST_PROXY`| `true` | Required behind Render reverse proxy |
-5. Click **Create Web Service**. Note your backend URL (e.g. `https://whatomate-backend.onrender.com`).
+5. Click **Create Web Service**. Note your backend URL (e.g. `https://onesuit.onrender.com`).
 
 ---
 
@@ -101,12 +101,12 @@ If you prefer to configure each service individually on Render:
 4. In **Environment Variables**, add:
    | Variable | Value |
    | :--- | :--- |
-   | `VITE_API_URL` | `https://whatomate-backend.onrender.com/api` |
+   | `VITE_API_URL` | `https://onesuit.onrender.com/api` |
 5. In **Redirects / Rewrites**, add the following rules:
    - **Rule 1 (API Proxy):**
      - Type: `Rewrite`
      - Source: `/api/*`
-     - Destination: `https://whatomate-backend.onrender.com/api/*`
+     - Destination: `https://onesuit.onrender.com/api/*`
    - **Rule 2 (SPA Routing):**
      - Type: `Rewrite`
      - Source: `/*`

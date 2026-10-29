@@ -71,13 +71,13 @@ services:
     routes:
       - type: rewrite
         source: /api/*
-        destination: https://whatomate-backend.onrender.com/api/*
+        destination: https://onesuit.onrender.com/api/*
       - type: rewrite
         source: /*
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        value: https://whatomate-backend.onrender.com/api
+        value: https://onesuit.onrender.com/api
 
 # -------------------------------------------------------
 # 3. Managed PostgreSQL Database (Render Free Tier)

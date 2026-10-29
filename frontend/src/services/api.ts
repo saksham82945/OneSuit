@@ -2,7 +2,7 @@ import axios, { type AxiosInstance, type AxiosError, type InternalAxiosRequestCo
 
 // Get base path from server-injected config or fallback
 const basePath = ((window as any).__BASE_PATH__ ?? '').replace(/\/$/, '')
-const API_BASE_URL = import.meta.env.VITE_API_URL || `${basePath}/api`
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://onesuit.onrender.com/api' : `${basePath}/api`)
 
 export const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,

@@ -324,7 +324,7 @@ export const AccountsView: React.FC = () => {
                 onClick={() => setCreateOpen(true)}
               >
                 <Plus className="h-4 w-4 mr-1.5" />
-                {signupConfig?.manual_label || 'Configure WABA API'}
+                {signupConfig?.manual_label || 'Enter details manually'}
               </Button>
             )}
           </div>
