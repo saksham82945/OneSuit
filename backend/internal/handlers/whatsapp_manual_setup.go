@@ -161,12 +161,7 @@ func (a *App) ManualWhatsAppSetup(r *fastglue.Request) error {
 	} else {
 		var count int64
 		a.DB.Model(&models.WhatsAppAccount{}).Where("organization_id = ?", orgID).Count(&count)
-		// The name must be unique in the workspace.
-		var clash int64
-		a.DB.Model(&models.WhatsAppAccount{}).Where("organization_id = ? AND name = ?", orgID, name).Count(&clash)
-		if clash > 0 {
-			name = fmt.Sprintf("%s (%s)", name, chosen.DisplayPhoneNumber)
-		}
+		name = a.uniqueAccountName(name, chosen.DisplayPhoneNumber)
 		account = models.WhatsAppAccount{
 			OrganizationID:     orgID,
 			Name:               name,
@@ -185,8 +180,33 @@ func (a *App) ManualWhatsAppSetup(r *fastglue.Request) error {
 		}
 	}
 
+	ctx := context.Background()
+
+	// Meta shows a number as "Offline" until it is registered for the Cloud API,
+	// and an unregistered number can't send or receive. Register it now.
+	registered := strings.EqualFold(chosen.Status, "CONNECTED")
+	registrationError := ""
+	if registered {
+		account.Status = "active"
+	} else {
+		info, _ := a.WhatsApp.GetPhoneNumberInfo(ctx, chosen.PhoneID, req.AccessToken, apiVersion)
+		if info != nil {
+			account.IsSMB = info.IsOnBizApp || info.PlatformType == "SMB" || info.PlatformType == "SMB_CLOUD_API"
+		}
+		if regErr := a.attemptAutoRegistration(ctx, &account, info, req.AccessToken, ""); regErr != nil {
+			registrationError = regErr.Error()
+		} else {
+			registered = true
+		}
+	}
+
+	newPin := ""
+	if registered && !strings.EqualFold(chosen.Status, "CONNECTED") {
+		newPin = account.Pin // shown once so the client can keep it
+	}
+
 	// Subscribe our app to the account's events while the token is still plain.
-	subscribed := a.WhatsApp.SubscribeApp(context.Background(), a.toWhatsAppAccount(&account)) == nil
+	subscribed := a.WhatsApp.SubscribeApp(ctx, a.toWhatsAppAccount(&account)) == nil
 
 	if err := a.encryptAccountSecrets(&account); err != nil {
 		a.Log.Error("Manual setup: encrypt failed", "error", err)
@@ -214,7 +234,34 @@ func (a *App) ManualWhatsAppSetup(r *fastglue.Request) error {
 		"account":              accountToResponse(account),
 		"display_phone_number": chosen.DisplayPhoneNumber,
 		"webhook_subscribed":   subscribed,
+		"registered":           registered,
+		"registration_error":   registrationError,
+		"pin":                  newPin,
 		"webhook_url":          a.webhookURL(r),
 		"verify_token":         account.WebhookVerifyToken,
 	})
+}
+
+// uniqueAccountName keeps account names unique across the whole platform
+// (messages refer to the account by name).
+func (a *App) uniqueAccountName(name, phone string) string {
+	taken := func(n string) bool {
+		var c int64
+		a.DB.Model(&models.WhatsAppAccount{}).Where("name = ?", n).Count(&c)
+		return c > 0
+	}
+	if !taken(name) {
+		return name
+	}
+	if phone != "" {
+		if n := fmt.Sprintf("%s (%s)", name, phone); !taken(n) {
+			return n
+		}
+	}
+	for i := 2; i < 1000; i++ {
+		if n := fmt.Sprintf("%s %d", name, i); !taken(n) {
+			return n
+		}
+	}
+	return fmt.Sprintf("%s %s", name, generateVerifyToken()[:6])
 }

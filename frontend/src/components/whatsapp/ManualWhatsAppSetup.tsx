@@ -27,6 +27,9 @@ interface Connected {
   webhook_url: string;
   verify_token: string;
   updated: boolean;
+  registered: boolean;
+  registration_error: string;
+  pin: string;
 }
 
 const errorMessage = (err: unknown, fallback: string) =>
@@ -145,6 +148,19 @@ export const ManualWhatsAppSetupDialog: React.FC<{
                 ? ' Messages will start arriving here.'
                 : ' Meta did not confirm the webhook yet; add the details below in your Facebook App.'}
             </div>
+            {done.registered ? (
+              done.pin && (
+                <p className="text-sm">
+                  Registered with Meta. Two-step verification PIN: <code className="font-mono font-semibold">{done.pin}</code>. Keep it
+                  safe.
+                </p>
+              )
+            ) : (
+              <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                Meta shows this number as not registered yet, so it can’t send or receive messages. Use “Register number” on the
+                WhatsApp Setup page{done.registration_error ? ` (Meta said: ${done.registration_error})` : ''}.
+              </div>
+            )}
             <p className="text-xs text-gray-500 dark:text-gray-400">
               In your Facebook App → WhatsApp → Configuration, set the callback URL and verify token below, then subscribe to the
               “messages” field.

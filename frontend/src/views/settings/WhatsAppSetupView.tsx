@@ -66,6 +66,7 @@ interface Health {
   verified_name?: string;
   quality_rating?: string;
   account_review_status?: string;
+  phone_status?: string;
 }
 
 const errorMessage = (err: unknown, fallback: string) =>
@@ -126,6 +127,7 @@ export const WhatsAppSetupView: React.FC = () => {
   const [testConfigured, setTestConfigured] = useState(false);
   const [savingTest, setSavingTest] = useState(false);
 
+  const [registering, setRegistering] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
 
@@ -193,6 +195,27 @@ export const WhatsAppSetupView: React.FC = () => {
       toast.error(errorMessage(err, 'Could not save the test contact'));
     } finally {
       setSavingTest(false);
+    }
+  };
+
+  const registerNumber = async () => {
+    if (!selected) return;
+    const pin = window.prompt(
+      'If this number already has a two-step verification PIN, enter it. Leave empty to set a new one.',
+      ''
+    );
+    if (pin === null) return;
+    setRegistering(true);
+    try {
+      const res = await api.post(`/accounts/${selected.id}/register`, pin.trim() ? { pin: pin.trim() } : {});
+      const data = readData<{ pin?: string }>(res);
+      toast.success(data?.pin ? `Number registered. PIN: ${data.pin} (keep it safe)` : 'Number registered');
+      void loadAccounts();
+      void refreshHealth(selected.id);
+    } catch (err) {
+      toast.error(errorMessage(err, 'Meta could not register this number'));
+    } finally {
+      setRegistering(false);
     }
   };
 
@@ -464,6 +487,21 @@ export const WhatsAppSetupView: React.FC = () => {
                       </div>
                     </div>
                   </Section>
+
+                  {health?.phone_status && health.phone_status !== 'CONNECTED' && (
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/50 dark:bg-amber-900/30 dark:text-amber-100">
+                      <p className="font-medium">Number is {health.phone_status.toLowerCase()} in Meta</p>
+                      <p className="mt-1 text-xs">
+                        It isn’t registered for the Cloud API yet, so messages can’t be sent or received.
+                      </p>
+                      {canWrite && (
+                        <Button size="sm" className="mt-2 bg-amber-600 text-white hover:bg-amber-500" onClick={registerNumber} disabled={registering}>
+                          {registering && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                          Register number
+                        </Button>
+                      )}
+                    </div>
+                  )}
 
                   <Section title="Overall Health">
                     <dl className="space-y-3 text-sm">
