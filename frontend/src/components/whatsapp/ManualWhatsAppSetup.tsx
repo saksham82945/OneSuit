@@ -41,7 +41,7 @@ const HelpLink: React.FC<{ href: string; children: React.ReactNode }> = ({ href,
   </a>
 );
 
-const CopyRow: React.FC<{ label: string; value: string }> = ({ label, value }) => {
+export const CopyRow: React.FC<{ label: string; value: string }> = ({ label, value }) => {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {

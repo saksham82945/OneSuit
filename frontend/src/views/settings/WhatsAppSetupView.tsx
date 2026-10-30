@@ -35,7 +35,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useEmbeddedSignup, type EmbeddedSignupResult } from './useEmbeddedSignup';
 import { ConnectWhatsAppButton, useConnectWhatsApp } from '@/components/whatsapp/ConnectWhatsAppButton';
-import { ManualWhatsAppSetupButton } from '@/components/whatsapp/ManualWhatsAppSetup';
+import { CopyRow, ManualWhatsAppSetupButton } from '@/components/whatsapp/ManualWhatsAppSetup';
 
 // WhatsApp Cloud API Setup: connect a number with Facebook (Embedded Signup),
 // set a test contact, and see the number's phone numbers and health.
@@ -46,6 +46,7 @@ interface Account {
   phone_id: string;
   business_id: string;
   status: string;
+  webhook_verify_token?: string;
 }
 
 interface SyncedNumber {
@@ -362,6 +363,20 @@ export const WhatsAppSetupView: React.FC = () => {
                 </div>
               )}
             </Section>
+
+            {selected && canWrite && (
+              <Section title="Meta webhook settings">
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Messages show in Live Chat only after Meta knows where to send them. In developers.facebook.com → your
+                    app → Webhooks, pick <b>Whatsapp Business Account</b>, paste these two values, click “Verify and save”, then
+                    subscribe to the <b>messages</b> field. Keep the app in <b>Live</b> mode.
+                  </p>
+                  <CopyRow label="Callback URL" value={health?.webhook_url || `${window.location.origin}/api/webhook`} />
+                  {selected.webhook_verify_token && <CopyRow label="Verify token" value={selected.webhook_verify_token} />}
+                </div>
+              </Section>
+            )}
 
             <Section
               title={
