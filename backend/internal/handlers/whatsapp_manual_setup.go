@@ -41,11 +41,7 @@ func (a *App) webhookURL(r *fastglue.Request) string {
 	if a.Config.Server.PublicURL != "" {
 		return strings.TrimRight(a.Config.Server.PublicURL, "/") + "/api/webhook"
 	}
-	scheme := "https"
-	if !r.RequestCtx.IsTLS() && a.Config.App.Environment == "development" {
-		scheme = "http"
-	}
-	return fmt.Sprintf("%s://%s%s/api/webhook", scheme, string(r.RequestCtx.Host()),
+	return fmt.Sprintf("%s://%s%s/api/webhook", requestScheme(r), string(r.RequestCtx.Host()),
 		sanitizeRedirectPath(a.Config.Server.BasePath))
 }
 
@@ -270,4 +266,24 @@ func (a *App) uniqueAccountName(name, phone string) string {
 		}
 	}
 	return fmt.Sprintf("%s %s", name, generateVerifyToken()[:6])
+}
+
+// requestScheme is the scheme people reach us on. Hosts such as Render end
+// HTTPS in front of the app, so the app itself sees plain HTTP; trust the
+// proxy's X-Forwarded-Proto, and only use http for a local address.
+func requestScheme(r *fastglue.Request) string {
+	if r.RequestCtx.IsTLS() {
+		return "https"
+	}
+	if p := strings.ToLower(strings.TrimSpace(strings.Split(string(r.RequestCtx.Request.Header.Peek("X-Forwarded-Proto")), ",")[0])); p == "https" || p == "http" {
+		return p
+	}
+	host := string(r.RequestCtx.Host())
+	if h, _, ok := strings.Cut(host, ":"); ok {
+		host = h
+	}
+	if host == "localhost" || host == "127.0.0.1" || host == "[::1]" || strings.HasSuffix(host, ".localhost") {
+		return "http"
+	}
+	return "https"
 }

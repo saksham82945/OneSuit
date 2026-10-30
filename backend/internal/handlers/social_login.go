@@ -77,11 +77,7 @@ func (a *App) socialCallbackURL(r *fastglue.Request, provider string) string {
 	if a.Config.Server.PublicURL != "" {
 		return fmt.Sprintf("%s/api/auth/sso/%s/callback", a.Config.Server.PublicURL, provider)
 	}
-	scheme := "https"
-	if !r.RequestCtx.IsTLS() && a.Config.App.Environment == "development" {
-		scheme = "http"
-	}
-	return fmt.Sprintf("%s://%s%s/api/auth/sso/%s/callback", scheme, string(r.RequestCtx.Host()),
+	return fmt.Sprintf("%s://%s%s/api/auth/sso/%s/callback", requestScheme(r), string(r.RequestCtx.Host()),
 		sanitizeRedirectPath(a.Config.Server.BasePath), provider)
 }
 

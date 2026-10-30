@@ -222,3 +222,29 @@ func TestApp_ManualWhatsAppSetup_NameHeldByDisconnectedNumberElsewhere(t *testin
 	require.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req), string(testutil.GetResponseBody(req)))
 	assert.Equal(t, name+" (99)", manualSetupResp(t, testutil.GetResponseBody(req))["account"].(map[string]any)["name"])
 }
+
+func TestApp_AccountHealth_WebhookURLIsHTTPSBehindProxy(t *testing.T) {
+	meta := newFakeMetaServer(t)
+	app := newAppWithMeta(t, meta)
+	app.Config.App.Environment = "development" // what Render runs with by default
+	org := testutil.CreateTestOrganization(t, app.DB)
+	user := createAdminUser(t, app, org.ID)
+	acc := createTestAccountForValidation(t, app.DB, org.ID, uniq("ph-h"), "biz-h")
+
+	for _, tc := range []struct{ host, proto, want string }{
+		{"onesuit.onrender.com", "", "https://onesuit.onrender.com/api/webhook"},
+		{"onesuit.onrender.com", "https", "https://onesuit.onrender.com/api/webhook"},
+		{"localhost:8080", "", "http://localhost:8080/api/webhook"},
+	} {
+		req := testutil.NewGETRequest(t)
+		req.RequestCtx.Request.Header.SetHost(tc.host)
+		if tc.proto != "" {
+			req.RequestCtx.Request.Header.Set("X-Forwarded-Proto", tc.proto)
+		}
+		testutil.SetAuthContext(req, org.ID, user.ID)
+		testutil.SetPathParam(req, "id", acc.ID.String())
+		require.NoError(t, app.GetAccountHealth(req))
+		require.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req), string(testutil.GetResponseBody(req)))
+		assert.Equal(t, tc.want, manualSetupResp(t, testutil.GetResponseBody(req))["webhook_url"], tc.host)
+	}
+}
