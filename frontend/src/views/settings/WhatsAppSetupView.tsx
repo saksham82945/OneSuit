@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Activity,
@@ -35,6 +35,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useEmbeddedSignup, type EmbeddedSignupResult } from './useEmbeddedSignup';
 import { ConnectWhatsAppButton, useConnectWhatsApp } from '@/components/whatsapp/ConnectWhatsAppButton';
+import { ManualWhatsAppSetupButton } from '@/components/whatsapp/ManualWhatsAppSetup';
 
 // WhatsApp Cloud API Setup: connect a number with Facebook (Embedded Signup),
 // set a test contact, and see the number's phone numbers and health.
@@ -149,7 +150,7 @@ export const WhatsAppSetupView: React.FC = () => {
     },
     [loadAccounts]
   );
-  const { loading: cfgLoading, connecting, embeddedAvailable, manualAvailable, embeddedLabel, manualLabel, launch } =
+  const { loading: cfgLoading, connecting, embeddedAvailable, manualAvailable, embeddedLabel, launch } =
     useEmbeddedSignup(onConnected);
 
   const refreshHealth = useCallback(async (id: string) => {
@@ -256,7 +257,10 @@ export const WhatsAppSetupView: React.FC = () => {
                 </div>
               ) : connectVisible ? (
                 <div className="flex flex-col items-center gap-3 py-4 text-center">
-                  <ConnectWhatsAppButton size="lg" />
+                  <div className="flex w-full flex-wrap items-center justify-center gap-3">
+                    <ManualWhatsAppSetupButton size="lg" className="w-auto max-w-full px-5" onConnected={loadAccounts} />
+                    <ConnectWhatsAppButton size="lg" className="w-auto max-w-full px-5" />
+                  </div>
                   <p className="max-w-md text-xs text-gray-500 dark:text-gray-400">
                     Facebook opens in a new tab. Log in, pick or create your Business portfolio, WhatsApp Business
                     Account and phone number, and finish. Then come back and click “Re-sync Phone Numbers”.
@@ -275,15 +279,18 @@ export const WhatsAppSetupView: React.FC = () => {
                 </div>
               ) : embeddedAvailable ? (
                 <div className="flex flex-col items-center gap-3 py-4 text-center">
-                  <Button
-                    size="lg"
-                    onClick={() => launch()}
-                    disabled={connecting || !canWrite}
-                    className="h-14 w-full max-w-md bg-[#1877F2] px-8 text-base font-semibold text-white shadow-md shadow-blue-500/20 hover:bg-[#166fe5]"
-                  >
-                    {connecting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FacebookIcon className="mr-2.5 h-5 w-5" />}
-                    {embeddedLabel}
-                  </Button>
+                  <div className="flex w-full flex-wrap items-center justify-center gap-3">
+                    <ManualWhatsAppSetupButton size="lg" className="w-auto max-w-full px-5" onConnected={loadAccounts} />
+                    <Button
+                      size="lg"
+                      onClick={() => launch()}
+                      disabled={connecting || !canWrite}
+                      className="h-14 w-full max-w-md bg-[#1877F2] px-8 text-base font-semibold text-white shadow-md shadow-blue-500/20 hover:bg-[#166fe5] w-auto max-w-full px-5"
+                    >
+                      {connecting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FacebookIcon className="mr-2.5 h-5 w-5" />}
+                      {embeddedLabel}
+                    </Button>
+                  </div>
                   <p className="max-w-md text-xs text-gray-500 dark:text-gray-400">
                     A Facebook window opens. Log in, pick or create your Business portfolio, WhatsApp Business Account
                     and phone number, then confirm. The number is added here automatically.
@@ -301,11 +308,7 @@ export const WhatsAppSetupView: React.FC = () => {
                       The platform administrator needs to finish the Meta setup.
                       {branding.support_email && ` Contact ${branding.support_email} for help.`}
                     </p>
-                    {manualAvailable && (
-                      <Button asChild variant="outline" size="sm">
-                        <Link to="/settings/accounts">{manualLabel}</Link>
-                      </Button>
-                    )}
+                    {manualAvailable && <ManualWhatsAppSetupButton size="md" onConnected={loadAccounts} />}
                   </div>
                 </div>
               )}

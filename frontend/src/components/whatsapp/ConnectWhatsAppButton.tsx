@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 interface ConnectConfig {
   connect_button_visible?: boolean;
   connect_url?: string;
+  manual_enabled?: boolean;
 }
 
 let configPromise: Promise<ConnectConfig | null> | null = null;
@@ -50,6 +51,8 @@ export function useConnectWhatsApp() {
   return {
     visible: Boolean(allowed && config?.connect_button_visible && config.connect_url),
     url: config?.connect_url ?? '',
+    /** Manual setup (own Facebook App details) is allowed for this user. */
+    manualVisible: Boolean(allowed && config?.manual_enabled),
   };
 }
 

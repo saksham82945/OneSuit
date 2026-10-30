@@ -1,9 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Sparkles, CheckCircle2, ShieldCheck, Zap, LifeBuoy } from 'lucide-react';
+import { CheckCircle2, ShieldCheck, Zap, LifeBuoy } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
 import { ConnectWhatsAppButton } from '@/components/whatsapp/ConnectWhatsAppButton';
+import { ManualWhatsAppSetupButton } from '@/components/whatsapp/ManualWhatsAppSetup';
 
 interface TopStatusBarProps {
   className?: string;
@@ -55,6 +56,7 @@ export const TopStatusBar: React.FC<TopStatusBarProps> = ({ className }) => {
       )}
     >
       <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 shrink-0">
+        <ManualWhatsAppSetupButton size="sm" />
         <ConnectWhatsAppButton size="sm" />
         <span className="hidden sm:inline font-medium text-gray-700 dark:text-gray-200">WhatsApp Official Business Line</span>
       </div>
@@ -65,20 +67,6 @@ export const TopStatusBar: React.FC<TopStatusBarProps> = ({ className }) => {
           <span className="text-[11px] text-gray-500 dark:text-gray-400">Quality Rating:</span>
           <span className="flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full text-[10px]">
             <CheckCircle2 className="h-3 w-3" /> High
-          </span>
-        </div>
-
-        {/* Messaging Tier */}
-        <div className="telemetry-pill" title="Current 24-hour limit tier">
-          <span className="text-[11px] text-gray-500 dark:text-gray-400">Template Tier:</span>
-          <span className="font-semibold text-gray-700 dark:text-gray-300 text-[11px]">Tier 3 (100K/24h)</span>
-        </div>
-
-        {/* Remaining Quota */}
-        <div className="telemetry-pill" title="Daily remaining message credits">
-          <span className="text-[11px] text-gray-500 dark:text-gray-400">Remaining Quota:</span>
-          <span className="font-semibold text-teal-700 dark:text-teal-400 text-[11px] flex items-center gap-1">
-            100,000 <Sparkles className="h-3 w-3 text-teal-500" />
           </span>
         </div>
 

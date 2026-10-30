@@ -689,6 +689,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.POST("/api/accounts/{id}/sync-phone-numbers", app.SyncAccountPhoneNumbers)
 	g.GET("/api/whatsapp-setup/test-contact", app.GetTestContact)
 	g.PUT("/api/whatsapp-setup/test-contact", app.UpdateTestContact)
+	g.POST("/api/whatsapp-setup/manual", app.ManualWhatsAppSetup)
 
 	// Contacts
 	g.GET("/api/contacts", app.ListContacts)
