@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import { VendorAccessBanner } from './VendorAccessBanner';
+import { isInsideClient } from '@/services/superAdmin';
 import { ExplorerBanner } from './ExplorerBanner';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   Menu,
   X,
@@ -22,14 +24,12 @@ import {
   Settings,
   Handshake,
   CreditCard,
-  SlidersHorizontal,
   Ticket,
   Phone,
   Sparkles,
   MessageSquareText,
   Tags,
   Users,
-  Shield,
   Key,
   Webhook,
   Zap,
@@ -43,12 +43,65 @@ import {
   ClipboardList,
   Activity,
   Settings2,
+  Layers,
+  MessageCircle,
+  LogIn,
+  Cable,
 } from 'lucide-react';
 import { PrimaryRail } from './PrimaryRail';
 import { SecondarySidebar, type SecondaryNavGroup } from './SecondarySidebar';
 import { TopStatusBar } from './TopStatusBar';
+import { SuperAdminNavbar, type SuperAdminNavSection } from './SuperAdminNavbar';
 import { useBrandedTitle, useBranding } from '@/services/branding';
 import { BrandMark } from '@/views/public/PublicLayout';
+
+/** Platform Admin pages (super admin only). */
+const PLATFORM_ITEMS: SecondaryNavGroup['items'] = [
+  { name: 'nav.superAdminDashboard', path: '/super-admin', icon: ShieldCheck, exact: true },
+  { name: 'nav.agencies', path: '/super-admin/clients', icon: Handshake },
+  { name: 'nav.subscriptions', path: '/super-admin/subscriptions', icon: CreditCard },
+  { name: 'Subscription Plans', path: '/super-admin/plans', icon: Layers },
+  { name: 'Ads Manager', path: '/super-admin/ads', icon: Radio },
+  { name: 'Website', path: '/super-admin/website', icon: Globe },
+  { name: 'nav.pagesManagement', path: '/super-admin/pages', icon: FileText },
+  { name: 'WhatsApp Onboarding', path: '/super-admin/whatsapp-onboarding', icon: MessageCircle },
+  { name: 'Social Login', path: '/super-admin/social-login', icon: LogIn },
+  { name: 'Setup & Integrations', path: '/super-admin/integrations', icon: Cable },
+  { name: 'nav.manageTickets', path: '/super-admin/tickets', icon: Ticket },
+  { name: 'nav.aiCallSetup', path: '/super-admin/ai-call-setup', icon: Phone },
+  { name: 'nav.aiAgents', path: '/chatbot/ai', icon: Sparkles, badge: 'AI', badgeVariant: 'ai' },
+];
+
+/**
+ * Settings pages. `business` adds the pages only a business needs (WhatsApp
+ * setup, contacts, tags, billing...); the super admin's own Settings skip them.
+ */
+function settingsItems(
+  hasPermission: (resource: string, action: string) => boolean,
+  isSuperAdmin: boolean,
+  business: boolean
+): SecondaryNavGroup['items'] {
+  return [
+    hasPermission('settings.general', 'read') ? { name: 'nav.general', path: '/settings', icon: Settings, exact: true } : null,
+    hasPermission('accounts', 'read') ? { name: 'nav.accounts', path: '/settings/accounts', icon: Users, badge: 'Meta', badgeVariant: 'popular' as const, exact: true } : null,
+    business && hasPermission('accounts', 'read') ? { name: 'WhatsApp Setup', path: '/settings/whatsapp-setup', icon: Phone } : null,
+    business && hasPermission('contacts', 'read') ? { name: 'nav.contacts', path: '/settings/contacts', icon: Contact } : null,
+    business && hasPermission('canned_responses', 'read') ? { name: 'nav.cannedResponses', path: '/settings/canned-responses', icon: MessageSquareText } : null,
+    business && hasPermission('tags', 'read') ? { name: 'nav.tags', path: '/settings/tags', icon: Tags } : null,
+    business && hasPermission('settings.chatbot', 'read') ? { name: 'nav.chatbot', path: '/settings/chatbot', icon: Bot } : null,
+    hasPermission('teams', 'read') ? { name: 'nav.teams', path: '/settings/teams', icon: Users } : null,
+    // Team users are managed by each business's admin; the super admin doesn't need this page.
+    !isSuperAdmin && hasPermission('users', 'read') ? { name: 'nav.users', path: '/settings/users', icon: Users } : null,
+    hasPermission('api_keys', 'read') ? { name: 'nav.apiKeys', path: '/settings/api-keys', icon: Key } : null,
+    hasPermission('webhooks', 'read') ? { name: 'nav.webhooks', path: '/settings/webhooks', icon: Webhook } : null,
+    hasPermission('custom_actions', 'read') ? { name: 'nav.customActions', path: '/settings/custom-actions', icon: Zap } : null,
+    hasPermission('settings.sso', 'read') ? { name: 'nav.sso', path: '/settings/sso', icon: ShieldCheck } : null,
+    isSuperAdmin ? { name: 'nav.auditLogs', path: '/settings/audit-logs', icon: ScrollText } : null,
+    business ? { name: 'nav.billing', path: '/settings/billing', icon: CreditCard, badge: 'Plan', badgeVariant: 'popular' as const } : null,
+    business ? { name: 'nav.optIn', path: '/settings/opt-in', icon: Globe } : null,
+    business && hasPermission('contacts', 'read') ? { name: 'Integrations', path: '/settings/integrations', icon: Cable, badge: 'Leads', badgeVariant: 'new' as const } : null,
+  ].filter(Boolean) as SecondaryNavGroup['items'];
+}
 
 export const AppLayout: React.FC = () => {
   const { t } = useTranslation();
@@ -56,6 +109,7 @@ export const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const { hasPermission, user, refreshUser } = useAuthStore();
   const isSuperAdmin = Boolean(user?.is_super_admin);
+  const insideClient = isInsideClient(user);
   const { platform_name: platformName } = useBranding();
   useBrandedTitle();
 
@@ -127,16 +181,7 @@ export const AppLayout: React.FC = () => {
         moduleId: 'super-admin',
         title: 'nav.sectionSuperAdmin',
         subtitle: 'Platform Operations',
-        items: [
-          { name: 'nav.superAdminDashboard', path: '/super-admin', icon: ShieldCheck, exact: true },
-          { name: 'nav.agencies', path: '/super-admin/vendors', icon: Handshake },
-          { name: 'nav.subscriptions', path: '/super-admin/subscriptions', icon: CreditCard },
-          { name: 'nav.pagesManagement', path: '/super-admin/pages', icon: FileText },
-          { name: 'nav.configuration', path: '/super-admin/configuration', icon: SlidersHorizontal },
-          { name: 'nav.manageTickets', path: '/super-admin/tickets', icon: Ticket },
-          { name: 'nav.aiCallSetup', path: '/super-admin/ai-call-setup', icon: Phone },
-          { name: 'nav.aiAgents', path: '/chatbot/ai', icon: Sparkles, badge: 'AI', badgeVariant: 'ai' },
-        ],
+        items: PLATFORM_ITEMS,
       };
     }
 
@@ -275,27 +320,10 @@ export const AppLayout: React.FC = () => {
     }
 
     if (activeModuleId === 'settings') {
-      const items = [
-        hasPermission('settings.general', 'read') ? { name: 'nav.general', path: '/settings', icon: Settings, exact: true } : null,
-        hasPermission('accounts', 'read') ? { name: 'nav.accounts', path: '/settings/accounts', icon: Users, badge: 'Meta', badgeVariant: 'popular' as const, exact: true } : null,
-        hasPermission('accounts', 'read') ? { name: 'WhatsApp Setup', path: '/settings/whatsapp-setup', icon: Phone } : null,
-        hasPermission('contacts', 'read') ? { name: 'nav.contacts', path: '/settings/contacts', icon: Contact } : null,
-        hasPermission('canned_responses', 'read') ? { name: 'nav.cannedResponses', path: '/settings/canned-responses', icon: MessageSquareText } : null,
-        hasPermission('tags', 'read') ? { name: 'nav.tags', path: '/settings/tags', icon: Tags } : null,
-        hasPermission('settings.chatbot', 'read') ? { name: 'nav.chatbot', path: '/settings/chatbot', icon: Bot } : null,
-        hasPermission('teams', 'read') ? { name: 'nav.teams', path: '/settings/teams', icon: Users } : null,
-        // Team users are managed by each business's admin; the super admin doesn't need this page.
-        !isSuperAdmin && hasPermission('users', 'read') ? { name: 'nav.users', path: '/settings/users', icon: Users } : null,
-        // Roles and audit logs are platform controls: super admin only.
-        isSuperAdmin ? { name: 'nav.roles', path: '/settings/roles', icon: Shield } : null,
-        hasPermission('api_keys', 'read') ? { name: 'nav.apiKeys', path: '/settings/api-keys', icon: Key } : null,
-        hasPermission('webhooks', 'read') ? { name: 'nav.webhooks', path: '/settings/webhooks', icon: Webhook } : null,
-        hasPermission('custom_actions', 'read') ? { name: 'nav.customActions', path: '/settings/custom-actions', icon: Zap } : null,
-        hasPermission('settings.sso', 'read') ? { name: 'nav.sso', path: '/settings/sso', icon: ShieldCheck } : null,
-        isSuperAdmin ? { name: 'nav.auditLogs', path: '/settings/audit-logs', icon: ScrollText } : null,
-        { name: 'nav.billing', path: '/settings/billing', icon: CreditCard, badge: 'Plan', badgeVariant: 'popular' as const },
-        { name: 'nav.optIn', path: '/settings/opt-in', icon: Globe },
-      ].filter(Boolean) as SecondaryNavGroup['items'];
+      // The super admin's own Settings skip the business-only pages (they're
+      // still there while the super admin is inside a client's account).
+      const business = !isSuperAdmin || insideClient;
+      const items = settingsItems(hasPermission, isSuperAdmin, business);
 
       return {
         moduleId: 'settings',
@@ -306,7 +334,25 @@ export const AppLayout: React.FC = () => {
     }
 
     return null;
-  }, [activeModuleId, hasPermission, isSuperAdmin]);
+  }, [activeModuleId, hasPermission, isSuperAdmin, insideClient]);
+
+  // The super admin (outside a client's account) gets one navbar with every
+  // Platform Admin and Settings page instead of the rail + sub-menu.
+  const singleNav = isSuperAdmin && !insideClient;
+  const superAdminSections = useMemo<SuperAdminNavSection[]>(
+    () => [
+      { title: 'Platform', items: PLATFORM_ITEMS },
+      {
+        title: 'Settings',
+        // Configuration and General are one Settings page for the super admin.
+        items: [
+          { name: 'Settings', path: '/super-admin/settings', icon: Settings },
+          ...settingsItems(hasPermission, true, false).filter((i) => i.path !== '/settings'),
+        ],
+      },
+    ],
+    [hasPermission]
+  );
 
   const handleSelectPrimaryModule = (_id: string, defaultPath: string) => {
     navigate(defaultPath);
@@ -338,8 +384,15 @@ export const AppLayout: React.FC = () => {
         />
       )}
 
+      {/* Super admin: one navbar with every Platform Admin and Settings page */}
+      {singleNav && (
+        <div className="hidden md:flex shrink-0 h-full">
+          <SuperAdminNavbar sections={superAdminSections} />
+        </div>
+      )}
+
       {/* Dual Rail Navigation Structure for Desktop (>=md) */}
-      <div className="hidden md:flex shrink-0 h-full relative">
+      <div className={cn('hidden md:flex shrink-0 h-full relative', singleNav && 'md:hidden')}>
         {/* Rail 1: Expandable Primary Navigation Rail */}
         <PrimaryRail
           activeModuleId={activeModuleId}
@@ -394,7 +447,32 @@ export const AppLayout: React.FC = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto p-3">
-          {currentNavGroup && (
+          {singleNav &&
+            superAdminSections.map((section) => (
+              <div key={section.title} className="mb-4">
+                <h3 className="px-3 text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">{section.title}</h3>
+                <div className="mt-2 space-y-1">
+                  {section.items.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.path}
+                        type="button"
+                        onClick={() => {
+                          setIsMobileMenuOpen(false);
+                          navigate(item.path);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/[0.06]"
+                      >
+                        <Icon className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                        <span>{t(item.name) || item.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          {!singleNav && currentNavGroup && (
             <div className="mb-4">
               <h3 className="px-3 text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
                 {t(currentNavGroup.title) || currentNavGroup.title}

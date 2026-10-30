@@ -89,7 +89,7 @@ type PlatformConfig struct {
 func defaultPlatformConfig() PlatformConfig {
 	return PlatformConfig{
 		PlatformName:          "onesuit",
-		DefaultCurrency:       "USD",
+		DefaultCurrency:       models.PlatformCurrency,
 		TrialDays:             14,
 		RenewalReminderDays:   7,
 		AllowVendorSignup:     true,
@@ -114,6 +114,7 @@ func (a *App) loadPlatformConfig() PlatformConfig {
 	if cfg.PlatformName == "" || cfg.PlatformName == "Whatomate" {
 		cfg.PlatformName = "onesuit"
 	}
+	cfg.DefaultCurrency = models.PlatformCurrency // the platform bills in rupees only
 	return cfg
 }
 
@@ -194,7 +195,7 @@ func (a *App) SuperAdminUpdateConfig(r *fastglue.Request) error {
 
 	cfg.PlatformName = strings.TrimSpace(cfg.PlatformName)
 	cfg.SupportEmail = strings.TrimSpace(cfg.SupportEmail)
-	cfg.DefaultCurrency = strings.ToUpper(strings.TrimSpace(cfg.DefaultCurrency))
+	cfg.DefaultCurrency = models.PlatformCurrency
 	cfg.DefaultPlanID = strings.TrimSpace(cfg.DefaultPlanID)
 
 	switch {
@@ -202,8 +203,6 @@ func (a *App) SuperAdminUpdateConfig(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Platform name is required", nil, "")
 	case cfg.SupportEmail != "" && !validEmail(cfg.SupportEmail):
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Support email is not a valid email address", nil, "")
-	case !validCurrency(cfg.DefaultCurrency):
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Currency must be a 3-letter code such as USD", nil, "")
 	case cfg.TrialDays < 0 || cfg.TrialDays > 365:
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Trial days must be between 0 and 365", nil, "")
 	case cfg.RenewalReminderDays < 0 || cfg.RenewalReminderDays > 365:
@@ -278,6 +277,10 @@ type VendorResponse struct {
 	Status        string     `json:"status"`
 	PlanID        *uuid.UUID `json:"plan_id"`
 	PlanName      string     `json:"plan_name"`
+	BillingCycle  string     `json:"billing_cycle"`
+	PlanAmount    float64    `json:"plan_amount"`   // price of one billing cycle, after its offer
+	SubscribedAt  *time.Time `json:"subscribed_at"` // when the subscription record was created
+	OwnerActive   bool       `json:"owner_active"`  // the owner's login is active
 	UsersCount    int64      `json:"users_count"`
 	ContactsCount int64      `json:"contacts_count"`
 	CreatedAt     time.Time  `json:"created_at"`
@@ -292,21 +295,23 @@ type orgCount struct {
 // loadVendors builds vendor rows for all organizations, or only the given ones.
 func (a *App) loadVendors(ids ...uuid.UUID) ([]VendorResponse, error) {
 	var rows []struct {
-		ID          uuid.UUID
-		Name        string
-		Slug        string
-		CreatedAt   time.Time
-		Status      *string
-		PlanID      *uuid.UUID
-		PlanName    *string
-		RenewalDate *time.Time
-		OwnerName   *string
-		OwnerEmail  *string
-		OwnerPhone  *string
+		ID           uuid.UUID
+		Name         string
+		Slug         string
+		CreatedAt    time.Time
+		Status       *string
+		PlanID       *uuid.UUID
+		PlanName     *string
+		RenewalDate  *time.Time
+		BillingCycle *string
+		SubscribedAt *time.Time
+		OwnerName    *string
+		OwnerEmail   *string
+		OwnerPhone   *string
 	}
 	q := a.DB.Table("organizations o").
 		Select(`o.id, o.name, o.slug, o.created_at, s.status, s.plan_id, p.name AS plan_name,
-			s.renewal_date, s.owner_name, s.owner_email, s.owner_phone`).
+			s.renewal_date, s.billing_cycle, s.created_at AS subscribed_at, s.owner_name, s.owner_email, s.owner_phone`).
 		Joins("LEFT JOIN organization_subscriptions s ON s.organization_id = o.id AND s.deleted_at IS NULL").
 		Joins("LEFT JOIN subscription_plans p ON p.id = s.plan_id").
 		Where("o.deleted_at IS NULL")
@@ -354,6 +359,28 @@ func (a *App) loadVendors(ids ...uuid.UUID) ([]VendorResponse, error) {
 		return nil, err
 	}
 
+	var planRows []models.SubscriptionPlan
+	if err := a.DB.Find(&planRows).Error; err != nil {
+		return nil, err
+	}
+	planByID := make(map[uuid.UUID]models.SubscriptionPlan, len(planRows))
+	for _, p := range planRows {
+		planByID[p.ID] = p
+	}
+
+	// Whether each login (by email) is active, to show the owner's status.
+	var logins []struct {
+		Email    string
+		IsActive bool
+	}
+	if err := a.DB.Raw(`SELECT LOWER(email) AS email, is_active FROM users WHERE deleted_at IS NULL`).Scan(&logins).Error; err != nil {
+		return nil, err
+	}
+	activeByEmail := make(map[string]bool, len(logins))
+	for _, l := range logins {
+		activeByEmail[l.Email] = l.IsActive
+	}
+
 	users := countMap(userCounts)
 	contacts := countMap(contactCounts)
 	ownerByOrg := make(map[uuid.UUID]int, len(owners))
@@ -376,10 +403,20 @@ func (a *App) loadVendors(ids ...uuid.UUID) ([]VendorResponse, error) {
 			OwnerName:     deref(row.OwnerName),
 			OwnerEmail:    deref(row.OwnerEmail),
 			Phone:         deref(row.OwnerPhone),
+			SubscribedAt:  row.SubscribedAt,
 			PlanName:      deref(row.PlanName),
 		}
 		if row.Status != nil && *row.Status != "" {
 			v.Status = *row.Status
+		}
+		v.BillingCycle = models.BillingIntervalMonthly
+		if row.BillingCycle != nil && models.BillingCycleMonths(*row.BillingCycle) > 0 {
+			v.BillingCycle = *row.BillingCycle
+		}
+		if row.PlanID != nil {
+			if p, ok := planByID[*row.PlanID]; ok {
+				v.PlanAmount = p.PriceFor(v.BillingCycle)
+			}
 		}
 		if i, ok := ownerByOrg[row.ID]; ok {
 			if v.OwnerName == "" {
@@ -389,6 +426,7 @@ func (a *App) loadVendors(ids ...uuid.UUID) ([]VendorResponse, error) {
 				v.OwnerEmail = owners[i].Email
 			}
 		}
+		v.OwnerActive = activeByEmail[strings.ToLower(v.OwnerEmail)]
 		out = append(out, v)
 	}
 	return out, nil
@@ -428,6 +466,7 @@ type VendorRequest struct {
 	Status        *string `json:"status"`
 	PlanID        *string `json:"plan_id"`
 	RenewalDate   *string `json:"renewal_date"`
+	BillingCycle  *string `json:"billing_cycle"`
 	OwnerPassword string  `json:"owner_password"` // create only: also creates the owner's admin login
 }
 
@@ -454,6 +493,15 @@ func (a *App) applyVendorRequest(req *VendorRequest, sub *models.OrganizationSub
 		default:
 			return "Status must be active, trial or suspended"
 		}
+	}
+	if req.BillingCycle != nil {
+		if models.BillingCycleMonths(*req.BillingCycle) == 0 {
+			return "Billing cycle must be monthly, quarterly, half_yearly or yearly"
+		}
+		sub.BillingCycle = *req.BillingCycle
+	}
+	if sub.BillingCycle == "" {
+		sub.BillingCycle = models.BillingIntervalMonthly
 	}
 	if req.PlanID != nil {
 		if *req.PlanID == "" {
@@ -721,6 +769,10 @@ type PlanRequest struct {
 	MaxAccounts *int      `json:"max_accounts"`
 	Features    *[]string `json:"features"`
 	IsActive    *bool     `json:"is_active"`
+
+	QuarterlyDiscount  *float64 `json:"quarterly_discount"`
+	HalfYearlyDiscount *float64 `json:"half_yearly_discount"`
+	YearlyDiscount     *float64 `json:"yearly_discount"`
 }
 
 // apply validates the request and copies it onto plan. Returns a user-facing
@@ -735,9 +787,8 @@ func (req *PlanRequest) apply(plan *models.SubscriptionPlan) string {
 	if req.Price != nil {
 		plan.Price = *req.Price
 	}
-	if req.Currency != nil {
-		plan.Currency = strings.ToUpper(strings.TrimSpace(*req.Currency))
-	}
+	// Prices are always in rupees; any currency sent is ignored.
+	plan.Currency = models.PlatformCurrency
 	if req.Interval != nil {
 		plan.Interval = *req.Interval
 	}
@@ -762,6 +813,15 @@ func (req *PlanRequest) apply(plan *models.SubscriptionPlan) string {
 	if req.IsActive != nil {
 		plan.IsActive = *req.IsActive
 	}
+	if req.QuarterlyDiscount != nil {
+		plan.QuarterlyDiscount = *req.QuarterlyDiscount
+	}
+	if req.HalfYearlyDiscount != nil {
+		plan.HalfYearlyDiscount = *req.HalfYearlyDiscount
+	}
+	if req.YearlyDiscount != nil {
+		plan.YearlyDiscount = *req.YearlyDiscount
+	}
 	if plan.Features == nil {
 		plan.Features = models.StringArray{}
 	}
@@ -771,12 +831,12 @@ func (req *PlanRequest) apply(plan *models.SubscriptionPlan) string {
 		return "Plan name is required"
 	case plan.Price < 0:
 		return "Price cannot be negative"
-	case !validCurrency(plan.Currency):
-		return "Currency must be a 3-letter code such as USD"
 	case plan.Interval != models.BillingIntervalMonthly && plan.Interval != models.BillingIntervalYearly:
 		return "Billing interval must be monthly or yearly"
-	case plan.MaxUsers < 0 || plan.MaxContacts < 0 || plan.MaxAccounts < 0:
-		return "Limits cannot be negative (use 0 for unlimited)"
+	case !validDiscount(plan.QuarterlyDiscount) || !validDiscount(plan.HalfYearlyDiscount) || !validDiscount(plan.YearlyDiscount):
+		return "Offers must be between 0% and 90%"
+	case plan.MaxUsers < -1 || plan.MaxContacts < -1 || plan.MaxAccounts < -1:
+		return "Limits must be a number, or -1 for unlimited"
 	}
 	return ""
 }
@@ -1424,6 +1484,11 @@ type SuperAdminDashboardPlan struct {
 	Interval    string    `json:"interval"`
 	IsActive    bool      `json:"is_active"`
 	VendorCount int       `json:"vendor_count"`
+	// Price of each billing cycle after its offer.
+	MonthlyPrice    float64 `json:"monthly_price"`
+	QuarterlyPrice  float64 `json:"quarterly_price"`
+	HalfYearlyPrice float64 `json:"half_yearly_price"`
+	YearlyPrice     float64 `json:"yearly_price"`
 }
 
 // SuperAdminDashboardResponse is the payload for the Super Admin dashboard.
@@ -1500,6 +1565,10 @@ func (a *App) SuperAdminDashboard(r *fastglue.Request) error {
 		resp.Plans = append(resp.Plans, SuperAdminDashboardPlan{
 			ID: p.ID, Name: p.Name, Price: p.Price, Currency: p.Currency,
 			Interval: p.Interval, IsActive: p.IsActive, VendorCount: perPlan[p.ID],
+			MonthlyPrice:    p.PriceFor(models.BillingIntervalMonthly),
+			QuarterlyPrice:  p.PriceFor(models.BillingIntervalQuarterly),
+			HalfYearlyPrice: p.PriceFor(models.BillingIntervalHalfYearly),
+			YearlyPrice:     p.PriceFor(models.BillingIntervalYearly),
 		})
 	}
 
@@ -1527,6 +1596,8 @@ func validEmail(s string) bool {
 	addr, err := mail.ParseAddress(s)
 	return err == nil && addr.Address == s
 }
+
+func validDiscount(d float64) bool { return d >= 0 && d <= 90 }
 
 func validCurrency(s string) bool {
 	if len(s) != 3 {

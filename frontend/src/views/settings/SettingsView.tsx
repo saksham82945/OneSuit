@@ -40,11 +40,9 @@ const KNOWN_DATE_FORMATS = ['YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY'];
 const errorMessage = (err: unknown, fallback: string) =>
   (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
 
-export const SettingsView: React.FC = () => {
+/** `embedded` hides the page header (used inside the super admin's Settings page). */
+export const SettingsView: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const { t, i18n } = useTranslation();
-  const { hasPermission } = useAuthStore();
-  // Meta App credentials are gated on accounts:write by PUT /org/settings.
-  const canWriteAccounts = hasPermission('accounts', 'write');
 
   const [activeTab, setActiveTab] = useState('general');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -54,8 +52,6 @@ export const SettingsView: React.FC = () => {
   const [timezone, setTimezone] = useState('UTC');
   const [dateFormat, setDateFormat] = useState('YYYY-MM-DD');
   const [maskPhone, setMaskPhone] = useState(false);
-  const [metaAppId, setMetaAppId] = useState('');
-  const [metaConfigId, setMetaConfigId] = useState('');
 
   // Notification Settings
   const [emailAlerts, setEmailAlerts] = useState(true);
@@ -77,8 +73,6 @@ export const SettingsView: React.FC = () => {
       if (s.timezone) setTimezone(s.timezone);
       if (s.date_format) setDateFormat(s.date_format);
       if (s.mask_phone_numbers !== undefined) setMaskPhone(s.mask_phone_numbers);
-      setMetaAppId(s.meta_app_id || '');
-      setMetaConfigId(s.meta_config_id || '');
       if (s.calling_enabled !== undefined) setCallingEnabled(s.calling_enabled);
       if (s.max_call_duration) setMaxDuration(s.max_call_duration);
       if (s.transfer_timeout_secs) setTransferTimeout(s.transfer_timeout_secs);
@@ -103,8 +97,6 @@ export const SettingsView: React.FC = () => {
         timezone,
         date_format: dateFormat,
         mask_phone_numbers: maskPhone,
-        // Sending these without accounts:write makes the whole save fail with 403.
-        ...(canWriteAccounts ? { meta_app_id: metaAppId.trim(), meta_config_id: metaConfigId.trim() } : {}),
       });
       toast.success(t('settings.generalSaved') || 'Organization settings saved');
     } catch (err) {
@@ -163,13 +155,13 @@ export const SettingsView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-[#0a0a0b] light:bg-gray-50 overflow-hidden">
-      <PageHeader
+      {!embedded && <PageHeader
         title={t('settings.title') || 'Workspace Settings'}
         subtitle={t('settings.subtitle') || 'Configure organization parameters, credentials and alerts'}
         icon={Settings}
         iconGradient="bg-gradient-to-br from-gray-500 to-gray-600 shadow-gray-500/20"
         actions={<ConnectWhatsAppButton size="md" />}
-      />
+      />}
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-4xl mx-auto w-full">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -290,50 +282,6 @@ export const SettingsView: React.FC = () => {
               </CardContent>
             </Card>
 
-            {/* Meta App Credentials */}
-            <Card className="card-depth border-white/[0.08] bg-[#141415] text-white light:border-gray-200 light:bg-white light:text-gray-900">
-              <CardHeader>
-                <CardTitle className="text-base font-semibold">Meta Developer Credentials</CardTitle>
-                <CardDescription className="text-xs text-white/50 light:text-gray-500">
-                  Configure WhatsApp Cloud API App ID and Embedded Signup configuration
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="metaAppId" className="text-xs">Meta App ID</Label>
-                    <Input
-                      id="metaAppId"
-                      placeholder="e.g. 10293847561029"
-                      value={metaAppId}
-                      onChange={(e) => setMetaAppId(e.target.value)}
-                      disabled={!canWriteAccounts}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="metaConfigId" className="text-xs">Embedded Config ID</Label>
-                    <Input
-                      id="metaConfigId"
-                      placeholder="e.g. 982347102938"
-                      value={metaConfigId}
-                      onChange={(e) => setMetaConfigId(e.target.value)}
-                      disabled={!canWriteAccounts}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-2">
-                  <Button
-                    size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white"
-                    disabled={isSubmitting || !canWriteAccounts}
-                    onClick={saveGeneral}
-                  >
-                    Save Credentials
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
           </TabsContent>
 
           {/* Notifications Tab */}

@@ -16,6 +16,8 @@ type TeamRequest struct {
 	AssignmentStrategy  models.AssignmentStrategy `json:"assignment_strategy"` // round_robin, load_balanced, manual
 	PerAgentTimeoutSecs int                       `json:"per_agent_timeout_secs"`
 	IsActive            bool                      `json:"is_active"`
+	// Parts of the app members can use; nil leaves it unchanged on update.
+	Access *[]string `json:"access"`
 }
 
 // TeamMemberRequest represents add member request
@@ -32,6 +34,7 @@ type TeamResponse struct {
 	AssignmentStrategy  models.AssignmentStrategy `json:"assignment_strategy"`
 	PerAgentTimeoutSecs int                       `json:"per_agent_timeout_secs"`
 	IsActive            bool                      `json:"is_active"`
+	Access              []string                  `json:"access"`
 	MemberCount         int                       `json:"member_count"`
 	Members             []TeamMemberResponse      `json:"members,omitempty"`
 	CreatedByID         *uuid.UUID                `json:"created_by_id,omitempty"`
@@ -165,7 +168,16 @@ func (a *App) CreateTeam(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Invalid assignment strategy", nil, "")
 	}
 
+	access := models.StringArray{}
+	if req.Access != nil {
+		var ok bool
+		if access, ok = cleanTeamAccess(*req.Access); !ok {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Unknown access option", nil, "")
+		}
+	}
+
 	team := models.Team{
+		Access:              access,
 		OrganizationID:      orgID,
 		Name:                req.Name,
 		Description:         req.Description,
@@ -243,6 +255,14 @@ func (a *App) UpdateTeam(r *fastglue.Request) error {
 		team.AssignmentStrategy = req.AssignmentStrategy
 	}
 	team.PerAgentTimeoutSecs = req.PerAgentTimeoutSecs
+	accessChanged := false
+	if req.Access != nil {
+		access, ok := cleanTeamAccess(*req.Access)
+		if !ok {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Unknown access option", nil, "")
+		}
+		team.Access, accessChanged = access, true
+	}
 	team.UpdatedByID = &userID
 
 	if err := a.DB.Save(&team).Error; err != nil {
@@ -252,6 +272,9 @@ func (a *App) UpdateTeam(r *fastglue.Request) error {
 
 	if a.Assigner != nil {
 		a.Assigner.InvalidateTeamCache(teamID)
+	}
+	if accessChanged || !team.IsActive || oldTeam.IsActive != team.IsActive {
+		a.clearTeamMemberPermissionCaches(teamID)
 	}
 
 	// Preload relations for response
@@ -278,6 +301,9 @@ func (a *App) DeleteTeam(r *fastglue.Request) error {
 	// Load team for audit log before deleting
 	var teamForAudit models.Team
 	a.DB.Where("id = ? AND organization_id = ?", teamID, orgID).First(&teamForAudit)
+
+	// Members lose this team's access.
+	a.clearTeamMemberPermissionCaches(teamID)
 
 	// Delete team members first
 	if err := a.DB.Where("team_id = ?", teamID).Delete(&models.TeamMember{}).Error; err != nil {
@@ -437,6 +463,7 @@ func (a *App) AddTeamMember(r *fastglue.Request) error {
 		a.Log.Error("Failed to add team member", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to add member", nil, "")
 	}
+	a.clearUserPermissionKeys(member.UserID) // picks up the team's access
 
 	if a.Assigner != nil {
 		a.Assigner.InvalidateTeamCache(teamID)
@@ -508,6 +535,7 @@ func (a *App) RemoveTeamMember(r *fastglue.Request) error {
 	if result.RowsAffected == 0 {
 		return r.SendErrorEnvelope(fasthttp.StatusNotFound, "Member not found in team", nil, "")
 	}
+	a.clearUserPermissionKeys(memberUserID) // drops the team's access
 
 	if a.Assigner != nil {
 		a.Assigner.InvalidateTeamCache(teamID)
@@ -525,6 +553,7 @@ func buildTeamResponse(team *models.Team, includeMembers bool) TeamResponse {
 		AssignmentStrategy:  team.AssignmentStrategy,
 		PerAgentTimeoutSecs: team.PerAgentTimeoutSecs,
 		IsActive:            team.IsActive,
+		Access:              append([]string{}, team.Access...),
 		MemberCount:         len(team.Members),
 		CreatedByID:         team.CreatedByID,
 		UpdatedByID:         team.UpdatedByID,

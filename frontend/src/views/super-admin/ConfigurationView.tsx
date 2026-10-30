@@ -55,7 +55,8 @@ const Row: React.FC<{ label: string; hint?: string; children: React.ReactNode }>
   </div>
 );
 
-export const ConfigurationView: React.FC = () => {
+/** `embedded` swaps the page header for a small save bar (used inside Settings). */
+export const ConfigurationView: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const [config, setConfig] = useState<PlatformConfig | null>(null);
   const [saved, setSaved] = useState<PlatformConfig | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -181,7 +182,7 @@ export const ConfigurationView: React.FC = () => {
         contact_address: config.contact_address.trim(),
         website_url: config.website_url.trim(),
         timezone: config.timezone.trim() || 'UTC',
-        default_currency: config.default_currency.trim().toUpperCase(),
+        default_currency: 'INR',
         default_plan_id: config.default_plan_id,
         trial_days: config.trial_days,
         renewal_reminder_days: config.renewal_reminder_days,
@@ -235,13 +236,10 @@ export const ConfigurationView: React.FC = () => {
 
   return (
     <form onSubmit={handleSave} className="flex flex-col min-h-full bg-[#0a0a0b] light:bg-gray-50 text-foreground">
-      <PageHeader
-        title="Configuration"
-        subtitle="Branding, signup methods, subscriptions, and platform settings"
-        icon={SlidersHorizontal}
-        iconGradient="bg-gradient-to-br from-violet-500 to-indigo-600 shadow-violet-500/20"
-        actions={
-          config && (
+      {embedded ? (
+        <div className="flex items-center justify-between gap-3 px-6 pt-4">
+          <p className="text-xs text-white/50 light:text-gray-500">Branding, signup, subscription defaults and registration for the whole platform.</p>
+          {config && (
             <Button
               type="submit"
               size="sm"
@@ -250,9 +248,28 @@ export const ConfigurationView: React.FC = () => {
             >
               <Save className="h-4 w-4 mr-2" /> {saving ? 'Saving…' : 'Save changes'}
             </Button>
-          )
-        }
-      />
+          )}
+        </div>
+      ) : (
+      <PageHeader
+          title="Configuration"
+          subtitle="Branding, signup methods, subscriptions, and platform settings"
+          icon={SlidersHorizontal}
+          iconGradient="bg-gradient-to-br from-violet-500 to-indigo-600 shadow-violet-500/20"
+          actions={
+            config && (
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!dirty || saving || Boolean(isBothSignupDisabled)}
+                className="bg-violet-600 hover:bg-violet-500 text-white shadow-md shadow-violet-600/20"
+              >
+                <Save className="h-4 w-4 mr-2" /> {saving ? 'Saving…' : 'Save changes'}
+              </Button>
+            )
+          }
+        />
+      )}
 
       {error ? (
         <div className="p-6">
@@ -359,7 +376,7 @@ export const ConfigurationView: React.FC = () => {
                     <Building className="h-4 w-4 text-violet-400" /> Brand & Contact Details
                   </CardTitle>
                   <CardDescription className="text-xs text-white/50 light:text-gray-500">
-                    Shown to every visitor, explorer, vendor customer, and team member
+                    Shown to every visitor, explorer, client and team member
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -444,7 +461,7 @@ export const ConfigurationView: React.FC = () => {
                       onChange={(tz) => update('timezone', tz)}
                     />
                     <p className="text-[11px] text-white/40 light:text-gray-500">
-                      Assigned to all newly created businesses (sign-up, explorer upgrade, "Add vendor"). Existing businesses keep their own time zone.
+                      Assigned to all newly created businesses (sign-up, explorer upgrade, "Add client"). Existing businesses keep their own time zone.
                     </p>
                   </div>
                 </CardContent>
@@ -704,12 +721,12 @@ export const ConfigurationView: React.FC = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-semibold">Subscription Defaults</CardTitle>
                   <CardDescription className="text-xs text-white/50 light:text-gray-500">
-                    Default plans and trial duration applied to new vendor organizations
+                    Default plans and trial duration applied to new clients
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
                   <div className="grid gap-1.5">
-                    <Label className="text-xs font-medium">Default plan for new vendors</Label>
+                    <Label className="text-xs font-medium">Default plan for new clients</Label>
                     <Select
                       value={config.default_plan_id || NO_PLAN}
                       onValueChange={(v) => update('default_plan_id', v === NO_PLAN ? '' : v)}
@@ -729,13 +746,9 @@ export const ConfigurationView: React.FC = () => {
                   </div>
 
                   <div className="grid gap-1.5">
-                    <Label className="text-xs font-medium">Default currency</Label>
-                    <Input
-                      maxLength={3}
-                      value={config.default_currency}
-                      onChange={(e) => update('default_currency', e.target.value.toUpperCase())}
-                      className={fieldClass}
-                    />
+                    <Label className="text-xs font-medium">Currency</Label>
+                    <Input value="₹ INR (Indian Rupee)" readOnly disabled className={fieldClass} />
+                    <p className="text-[11px] text-white/40 light:text-gray-500">All plans and payments are in rupees.</p>
                   </div>
 
                   <div className="grid gap-1.5">
@@ -775,19 +788,19 @@ export const ConfigurationView: React.FC = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Row label="Allow vendor sign-up" hint="New businesses can register themselves on the pricing / signup page">
+                  <Row label="Allow client sign-up" hint="New businesses can register themselves on the pricing / signup page">
                     <Switch
                       checked={config.allow_vendor_signup}
                       onCheckedChange={(v) => update('allow_vendor_signup', v)}
                     />
                   </Row>
-                  <Row label="Require email verification" hint="Vendors must confirm their email before entering workspace">
+                  <Row label="Require email verification" hint="Clients must confirm their email before entering workspace">
                     <Switch
                       checked={config.require_email_verification}
                       onCheckedChange={(v) => update('require_email_verification', v)}
                     />
                   </Row>
-                  <Row label="Maintenance mode" hint="Blocks regular vendor access and displays maintenance banner">
+                  <Row label="Maintenance mode" hint="Blocks regular client access and displays maintenance banner">
                     <Switch
                       checked={config.maintenance_mode}
                       onCheckedChange={(v) => update('maintenance_mode', v)}

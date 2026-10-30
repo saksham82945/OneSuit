@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { teamsService, type Team } from '@/services/api';
 import { readData } from '@/services/response';
-import { ASSIGNMENT_STRATEGIES, type AssignmentStrategy } from '@/lib/constants';
+import { TEAM_ACCESS_OPTIONS } from '@/lib/teamAccess';
 import {
   Dialog,
   DialogContent,
@@ -15,12 +15,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Check } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { getErrorMessage } from '../users/shared';
-
-const MAX_TIMEOUT_SECS = 300;
 
 export interface TeamFormDialogProps {
   open: boolean;
@@ -30,12 +28,12 @@ export interface TeamFormDialogProps {
   onSaved: (team: Team) => void;
 }
 
+/** Create or edit a team: its name, description and what its members can access. */
 export const TeamFormDialog: React.FC<TeamFormDialogProps> = ({ open, onOpenChange, team, onSaved }) => {
   const isEdit = !!team;
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [strategy, setStrategy] = useState<AssignmentStrategy>('round_robin');
-  const [timeoutSecs, setTimeoutSecs] = useState('0');
+  const [access, setAccess] = useState<string[]>([]);
   const [isActive, setIsActive] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -44,32 +42,23 @@ export const TeamFormDialog: React.FC<TeamFormDialogProps> = ({ open, onOpenChan
     if (!open) return;
     setName(team?.name || '');
     setDescription(team?.description || '');
-    setStrategy(team?.assignment_strategy || 'round_robin');
-    setTimeoutSecs(String(team?.per_agent_timeout_secs ?? 0));
+    setAccess(team?.access ?? []);
     setIsActive(team ? team.is_active : true);
     setFormError('');
   }, [open, team]);
+
+  const toggle = (key: string) => setAccess((a) => (a.includes(key) ? a.filter((k) => k !== key) : [...a, key]));
+  const allSelected = access.length === TEAM_ACCESS_OPTIONS.length;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
     const trimmedName = name.trim();
     if (!trimmedName) return setFormError('Team name is required.');
-    const timeout = timeoutSecs.trim() === '' ? 0 : Number(timeoutSecs);
-    if (!Number.isInteger(timeout) || timeout < 0 || timeout > MAX_TIMEOUT_SECS) {
-      return setFormError(`Ring timeout must be a whole number from 0 to ${MAX_TIMEOUT_SECS} seconds.`);
-    }
 
     setIsSubmitting(true);
     try {
-      // The update handler overwrites description, is_active and the timeout from
-      // the body, so always send every field.
-      const body = {
-        name: trimmedName,
-        description: description.trim(),
-        assignment_strategy: strategy,
-        per_agent_timeout_secs: timeout,
-      };
+      const body = { name: trimmedName, description: description.trim(), access };
       const res = isEdit
         ? await teamsService.update(team.id, { ...body, is_active: isActive })
         : await teamsService.create(body);
@@ -86,22 +75,20 @@ export const TeamFormDialog: React.FC<TeamFormDialogProps> = ({ open, onOpenChan
     }
   };
 
-  const selectedStrategy = ASSIGNMENT_STRATEGIES.find((s) => s.value === strategy);
-
   return (
     <Dialog open={open} onOpenChange={(o) => !isSubmitting && onOpenChange(o)}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>{isEdit ? 'Edit Team' : 'New Team'}</DialogTitle>
             <DialogDescription>
-              Teams receive transferred conversations and route them to their members.
+              Name the team and choose what its members can use. Add people to the team from the Members button.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-3 py-4">
+          <div className="grid gap-4 py-4">
             <div className="grid gap-1.5">
-              <Label htmlFor="team-name" className="text-xs">Name *</Label>
+              <Label htmlFor="team-name" className="text-xs">Team name *</Label>
               <Input
                 id="team-name"
                 placeholder="e.g. Customer Support"
@@ -123,47 +110,67 @@ export const TeamFormDialog: React.FC<TeamFormDialogProps> = ({ open, onOpenChan
               />
             </div>
 
-            <div className="grid gap-1.5">
-              <Label className="text-xs">Assignment Strategy</Label>
-              <Select value={strategy} onValueChange={(v) => setStrategy(v as AssignmentStrategy)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ASSIGNMENT_STRATEGIES.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedStrategy && (
-                <p className="text-[11px] text-white/40 light:text-gray-500">{selectedStrategy.description}</p>
-              )}
-            </div>
-
-            {strategy !== 'manual' && (
-              <div className="grid gap-1.5">
-                <Label htmlFor="team-timeout" className="text-xs">Per-Agent Ring Timeout (seconds)</Label>
-                <Input
-                  id="team-timeout"
-                  type="number"
-                  min={0}
-                  max={MAX_TIMEOUT_SECS}
-                  step={1}
-                  value={timeoutSecs}
-                  onChange={(e) => setTimeoutSecs(e.target.value)}
-                />
-                <p className="text-[11px] text-white/40 light:text-gray-500">
-                  For calls: seconds to ring each agent before trying the next. 0 uses the global default.
-                </p>
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-xs">Access</Label>
+                  <p className="text-[11px] text-white/40 light:text-gray-500">
+                    Members can use these on top of what their own role allows.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="text-[11px] font-medium text-emerald-400 light:text-emerald-600 hover:underline"
+                  onClick={() => setAccess(allSelected ? [] : TEAM_ACCESS_OPTIONS.map((o) => o.key))}
+                >
+                  {allSelected ? 'Clear all' : 'Select all'}
+                </button>
               </div>
-            )}
+              <div className="grid gap-2 sm:grid-cols-2">
+                {TEAM_ACCESS_OPTIONS.map((o) => {
+                  const on = access.includes(o.key);
+                  const Icon = o.icon;
+                  return (
+                    <button
+                      key={o.key}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={on}
+                      onClick={() => toggle(o.key)}
+                      className={cn(
+                        'flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors',
+                        on
+                          ? 'border-emerald-500/60 bg-emerald-500/10 light:bg-emerald-50'
+                          : 'border-white/[0.08] hover:bg-white/[0.03] light:border-gray-200 light:hover:bg-gray-50'
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border',
+                          on ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-white/25 light:border-gray-300'
+                        )}
+                      >
+                        {on && <Check className="h-3 w-3" />}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="flex items-center gap-1.5 text-xs font-medium">
+                          <Icon className="h-3.5 w-3.5 text-white/50 light:text-gray-500" />
+                          {o.label}
+                        </span>
+                        <span className="block text-[11px] text-white/40 light:text-gray-500">{o.description}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             {isEdit && (
               <div className="flex items-center justify-between rounded-lg border border-white/[0.08] light:border-gray-200 px-3 py-2.5">
                 <div>
                   <Label htmlFor="team-active" className="text-xs">Active</Label>
                   <p className="text-[11px] text-white/40 light:text-gray-500">
-                    Inactive teams don't receive new assignments.
+                    An inactive team gives its members no access and gets no chats.
                   </p>
                 </div>
                 <Switch id="team-active" checked={isActive} onCheckedChange={setIsActive} />

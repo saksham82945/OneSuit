@@ -23,6 +23,7 @@ import { BrandMark } from '@/views/public/PublicLayout';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
 import { useTheme } from '@/hooks/useTheme';
+import { isInsideClient } from '@/services/superAdmin';
 
 export interface PrimaryModule {
   id: string;
@@ -123,6 +124,26 @@ export const primaryModules: PrimaryModule[] = [
   },
 ];
 
+/** Rail modules the super admin keeps outside a client's account: platform tools only. */
+export const SUPER_ADMIN_RAIL = ['super-admin', 'settings'];
+
+/**
+ * Which rail modules to show. The super admin only gets Platform Admin and
+ * Settings; inside a client's account they see that client's full workspace.
+ */
+export function visibleRailModules(
+  isSuperAdmin: boolean,
+  insideClient: boolean,
+  hasPermission: (resource: string, action: string) => boolean
+): PrimaryModule[] {
+  return primaryModules.filter((m) => {
+    if (m.superAdminOnly && !isSuperAdmin) return false;
+    if (isSuperAdmin && !insideClient) return SUPER_ADMIN_RAIL.includes(m.id);
+    if (!isSuperAdmin && m.permission && !hasPermission(m.permission, 'read')) return false;
+    return true;
+  });
+}
+
 interface PrimaryRailProps {
   activeModuleId: string;
   onSelectModule: (id: string, defaultPath: string) => void;
@@ -142,11 +163,7 @@ export const PrimaryRail: React.FC<PrimaryRailProps> = ({
   const { isDark, toggleTheme } = useTheme();
   const isSuperAdmin = Boolean(user?.is_super_admin);
 
-  const visibleModules = primaryModules.filter((m) => {
-    if (m.superAdminOnly && !isSuperAdmin) return false;
-    if (!isSuperAdmin && m.permission && !hasPermission(m.permission, 'read')) return false;
-    return true;
-  });
+  const visibleModules = visibleRailModules(isSuperAdmin, isInsideClient(user), hasPermission);
 
   return (
     <aside

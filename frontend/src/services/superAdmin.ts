@@ -3,7 +3,7 @@ import { useAuthStore } from '@/stores/auth';
 import type { Branding } from '@/services/branding';
 
 export type VendorStatus = 'active' | 'trial' | 'suspended';
-export type BillingInterval = 'monthly' | 'yearly';
+export type BillingInterval = 'monthly' | 'quarterly' | 'half_yearly' | 'yearly';
 
 export interface Vendor {
   id: string;
@@ -15,6 +15,14 @@ export interface Vendor {
   status: VendorStatus;
   plan_id: string | null;
   plan_name?: string;
+  /** How often the client pays for its plan. */
+  billing_cycle?: BillingInterval;
+  /** Price of one billing cycle after its offer (INR). */
+  plan_amount?: number;
+  /** When the subscription record was created. */
+  subscribed_at?: string | null;
+  /** Whether the owner's login is active. */
+  owner_active?: boolean;
   users_count: number;
   contacts_count: number;
   created_at: string;
@@ -30,6 +38,7 @@ export interface VendorInput {
   status?: VendorStatus;
   plan_id?: string;
   renewal_date?: string;
+  billing_cycle?: BillingInterval;
   /** Create only: also creates the owner's admin login. */
   owner_password?: string;
 }
@@ -47,6 +56,10 @@ export interface Plan {
   max_accounts: number;
   features: string[];
   is_active: boolean;
+  /** Offers for longer billing cycles, as % off the monthly price. */
+  quarterly_discount?: number;
+  half_yearly_discount?: number;
+  yearly_discount?: number;
 }
 
 export interface SupportTicketReply {
@@ -138,7 +151,13 @@ export interface SuperAdminDashboard {
   next_renewal: Vendor | null;
   renewals_next_30_days: number;
   upcoming_renewals: Vendor[];
-  plans: (Pick<Plan, 'id' | 'name' | 'price' | 'currency' | 'interval' | 'is_active'> & { vendor_count: number })[];
+  plans: (Pick<Plan, 'id' | 'name' | 'price' | 'currency' | 'interval' | 'is_active'> & {
+    vendor_count: number;
+    monthly_price?: number;
+    quarterly_price?: number;
+    half_yearly_price?: number;
+    yearly_price?: number;
+  })[];
   tickets_solved: number;
   tickets_new: number;
   recent_tickets: SupportTicket[];
@@ -247,6 +266,17 @@ const readKey = (key: string): string | null => {
 };
 
 export const getImpersonationReturnOrg = () => readKey(RETURN_ORG_KEY);
+
+/**
+ * True only while a super admin is really inside a client's account: the
+ * marker is set and the session's organization is a different one. A marker
+ * left over from an old session (e.g. it expired while inside a client) is
+ * ignored, so the super admin keeps their own platform-only menu.
+ */
+export const isInsideClient = (user: { is_super_admin?: boolean; organization_id?: string } | null | undefined) => {
+  const returnOrg = getImpersonationReturnOrg();
+  return Boolean(user?.is_super_admin && returnOrg && user.organization_id && returnOrg !== user.organization_id);
+};
 /** Name of the vendor the super admin is currently inside. */
 export const getImpersonatedVendorName = () => readKey(VENDOR_NAME_KEY);
 
@@ -282,7 +312,56 @@ export const NO_PLAN = 'none';
 export const daysUntil = (iso: string | null) =>
   iso ? Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000) : 0;
 
-export const formatPrice = (price: number, currency = 'USD') =>
-  new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }).format(price);
+/** Prices are always shown in rupees (the platform bills in INR only). */
+export const formatPrice = (price: number) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price);
 
-export const formatLimit = (n: number) => (n === 0 ? 'Unlimited' : n.toLocaleString());
+// --- Billing cycles and offers -----------------------------------------------
+
+export const BILLING_CYCLES: { id: BillingInterval; label: string; short: string; months: number }[] = [
+  { id: 'monthly', label: 'Monthly', short: 'month', months: 1 },
+  { id: 'quarterly', label: 'Quarterly', short: '3 months', months: 3 },
+  { id: 'half_yearly', label: 'Half-yearly', short: '6 months', months: 6 },
+  { id: 'yearly', label: 'Yearly', short: 'year', months: 12 },
+];
+
+export const cycleInfo = (cycle: string | undefined) => BILLING_CYCLES.find((c) => c.id === cycle) ?? BILLING_CYCLES[0];
+
+type PricedPlan = Pick<Plan, 'price' | 'interval'> & Partial<Pick<Plan, 'quarterly_discount' | 'half_yearly_discount' | 'yearly_discount'>>;
+
+/** The plan's price for one month (older plans priced per year are spread over 12 months). */
+export const planMonthlyPrice = (p: PricedPlan) => (p.interval === 'yearly' ? p.price / 12 : p.price);
+
+/** The offer (% off) a plan gives for a billing cycle. */
+export const cycleDiscount = (p: PricedPlan, cycle: BillingInterval) =>
+  cycle === 'quarterly'
+    ? p.quarterly_discount ?? 0
+    : cycle === 'half_yearly'
+      ? p.half_yearly_discount ?? 0
+      : cycle === 'yearly'
+        ? p.yearly_discount ?? 0
+        : 0;
+
+/** What one billing cycle costs: full price, price after the offer and the saving. Matches the backend. */
+export const cyclePrice = (p: PricedPlan, cycle: BillingInterval) => {
+  const full = Math.round(planMonthlyPrice(p) * cycleInfo(cycle).months);
+  const discount = cycleDiscount(p, cycle);
+  const total = Math.round(planMonthlyPrice(p) * cycleInfo(cycle).months * (1 - discount / 100));
+  return { full, total, discount, saving: Math.max(0, full - total), perMonth: Math.round(total / cycleInfo(cycle).months) };
+};
+
+// --- Client subscription state ------------------------------------------------
+
+export type SubscriptionState = 'active' | 'trial' | 'idle' | 'expired' | 'suspended';
+
+/** Active: paid plan running. Trial: on trial. Idle: no plan. Expired: renewal date passed. */
+export const subscriptionState = (v: Pick<Vendor, 'status' | 'plan_id' | 'renewal_date'>): SubscriptionState => {
+  if (v.status === 'suspended') return 'suspended';
+  if (v.renewal_date && new Date(v.renewal_date).getTime() < Date.now()) return 'expired';
+  if (v.status === 'trial') return 'trial';
+  if (!v.plan_id) return 'idle';
+  return 'active';
+};
+
+/** -1 (or 0 on older plans) means unlimited. */
+export const formatLimit = (n: number) => (n <= 0 ? 'Unlimited' : n.toLocaleString());

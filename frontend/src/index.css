@@ -832,3 +832,37 @@
 
 /* App shell: AiSensy-style light page */
 .light body { background: hsl(var(--background)); color: hsl(var(--foreground)); }
+
+/* ---- Public website animations (controlled by the super admin) ---- */
+.site-reveal {
+  opacity: 0;
+  transition-property: opacity, transform;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-duration: var(--site-anim-duration, 700ms);
+  will-change: opacity, transform;
+}
+.site-reveal[data-anim='fade-up'] { transform: translateY(28px); }
+.site-reveal[data-anim='zoom'] { transform: scale(0.94); }
+.site-reveal[data-anim='slide-left'] { transform: translateX(-36px); }
+.site-reveal.is-visible { opacity: 1; transform: none; }
+
+@keyframes site-gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.site-hero-gradient {
+  background: linear-gradient(120deg, rgba(39, 196, 98, 0.16), rgba(15, 92, 98, 0.12), rgba(255, 214, 0, 0.12), rgba(39, 196, 98, 0.16));
+  background-size: 300% 300%;
+  animation: site-gradient-shift 14s ease infinite;
+}
+@keyframes site-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.site-float { animation: site-float 6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .site-reveal { opacity: 1; transform: none; transition: none; }
+  .site-hero-gradient, .site-float { animation: none; }
+}

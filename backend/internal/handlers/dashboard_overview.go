@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -448,7 +447,7 @@ func (a *App) buildSuperAdminOverview() SuperAdminOverview {
 	demoID := a.demoOrgID() // uuid.Nil never matches a real org
 
 	ov := SuperAdminOverview{
-		Currency:            strings.ToUpper(strings.TrimSpace(cfg.DefaultCurrency)),
+		Currency:            models.PlatformCurrency,
 		RevenueByCurrency:   map[string]float64{},
 		ExpiringPlans:       []SuperAdminExpiringPlan{},
 		RecentSubscriptions: []SuperAdminRecentSubscription{},
@@ -502,12 +501,11 @@ func (a *App) buildSuperAdminOverview() SuperAdminOverview {
 		CreatedAt      time.Time
 		UpdatedAt      time.Time
 		PlanName       *string
-		Price          *float64
-		Currency       *string
-		Interval       *string
+		PlanID         *uuid.UUID
+		BillingCycle   *string
 	}
 	if err := a.DB.Raw(`SELECT s.organization_id, o.name AS org_name, s.status, s.renewal_date, s.owner_email,
-			s.created_at, s.updated_at, p.name AS plan_name, p.price, p.currency, p.interval
+			s.created_at, s.updated_at, p.name AS plan_name, s.plan_id, s.billing_cycle
 		FROM organization_subscriptions s
 		JOIN organizations o ON o.id = s.organization_id AND o.deleted_at IS NULL
 		LEFT JOIN subscription_plans p ON p.id = s.plan_id
@@ -515,26 +513,31 @@ func (a *App) buildSuperAdminOverview() SuperAdminOverview {
 		a.Log.Error("Super admin subscription load failed", "error", err)
 	}
 
+	var planRows []models.SubscriptionPlan
+	a.DB.Find(&planRows)
+	planByID := make(map[uuid.UUID]models.SubscriptionPlan, len(planRows))
+	for _, p := range planRows {
+		planByID[p.ID] = p
+	}
+
+	// Everything is billed in rupees; revenue is what each client's billing cycle costs.
+	currency := models.PlatformCurrency
 	revenueToday := map[string]float64{}
-	planCurrencies := map[string]int{}
 	for _, s := range subs {
-		planName, price, currency, interval := "", 0.0, "", ""
+		planName, price := "", 0.0
+		interval := models.BillingIntervalMonthly
+		if s.BillingCycle != nil && models.BillingCycleMonths(*s.BillingCycle) > 0 {
+			interval = *s.BillingCycle
+		}
 		if s.PlanName != nil {
 			planName = *s.PlanName
 		}
-		if s.Price != nil {
-			price = *s.Price
-		}
-		if s.Currency != nil {
-			currency = strings.ToUpper(*s.Currency)
-		}
-		if s.Interval != nil {
-			interval = *s.Interval
+		if s.PlanID != nil {
+			if p, ok := planByID[*s.PlanID]; ok {
+				price = p.PriceFor(interval)
+			}
 		}
 		hasPlan := s.PlanName != nil
-		if hasPlan && currency != "" {
-			planCurrencies[currency]++
-		}
 		notExpired := s.RenewalDate == nil || !s.RenewalDate.Before(now)
 
 		if hasPlan && s.Status != models.VendorStatusSuspended && notExpired {
@@ -567,30 +570,6 @@ func (a *App) buildSuperAdminOverview() SuperAdminOverview {
 		})
 	}
 
-	// Pick the headline currency: the platform default if it has revenue,
-	// otherwise the currency with the most revenue, otherwise the currency
-	// most vendors' plans are priced in.
-	if ov.Currency == "" || ov.RevenueByCurrency[ov.Currency] == 0 {
-		best := ""
-		for c, v := range ov.RevenueByCurrency {
-			if best == "" || v > ov.RevenueByCurrency[best] || (v == ov.RevenueByCurrency[best] && c < best) {
-				best = c
-			}
-		}
-		if best == "" {
-			for c, n := range planCurrencies {
-				if best == "" || n > planCurrencies[best] || (n == planCurrencies[best] && c < best) {
-					best = c
-				}
-			}
-		}
-		if best != "" {
-			ov.Currency = best
-		}
-	}
-	if ov.Currency == "" {
-		ov.Currency = "INR"
-	}
 	ov.TotalRevenue = ov.RevenueByCurrency[ov.Currency]
 	ov.RevenueToday = revenueToday[ov.Currency]
 

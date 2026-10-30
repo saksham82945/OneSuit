@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button';
 import { PanelLeftClose, ChevronLeft, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { OrganizationSwitcher } from './OrganizationSwitcher';
+import { useAuthStore } from '@/stores/auth';
+import { useBranding } from '@/services/branding';
+import { getImpersonatedVendorName, isInsideClient } from '@/services/superAdmin';
 import { UserMenu } from './UserMenu';
 
 export interface SecondaryNavItem {
@@ -40,8 +42,16 @@ export const SecondarySidebar: React.FC<SecondarySidebarProps> = ({
 }) => {
   const { t } = useTranslation();
   const location = useLocation();
+  const user = useAuthStore((s) => s.user);
+  const { platform_name: platformName } = useBranding();
 
   if (!currentGroup) return null;
+
+  // Workspace name only: switching between organizations from here was removed.
+  const workspaceName =
+    user?.is_super_admin && !isInsideClient(user)
+      ? platformName
+      : getImpersonatedVendorName() || user?.organization_name || platformName;
 
   return (
     <aside
@@ -51,9 +61,11 @@ export const SecondarySidebar: React.FC<SecondarySidebarProps> = ({
         className
       )}
     >
-      {/* Top Organization Header */}
-      <div className="h-14 border-b border-gray-200/80 dark:border-[#1c2725] flex items-center justify-between px-3 shrink-0">
-        <OrganizationSwitcher collapsed={false} />
+      {/* Top Header: workspace name */}
+      <div className="h-14 border-b border-gray-200/80 dark:border-[#1c2725] flex items-center justify-between gap-2 px-3 shrink-0">
+        <span className="min-w-0 truncate px-1 text-sm font-semibold text-gray-900 dark:text-gray-100" title={workspaceName}>
+          {workspaceName}
+        </span>
         <Button
           variant="ghost"
           size="icon"

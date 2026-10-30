@@ -1,99 +1,68 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
+
+const plans = [
+  { id: 'p1', name: 'Free', description: '', price: 0, currency: 'INR', interval: 'monthly', max_users: 1, max_contacts: 50, max_accounts: 1, features: [] },
+  { id: 'p2', name: 'Basic Plan', description: '', price: 1000, currency: 'INR', interval: 'monthly', max_users: 5, max_contacts: 5000, max_accounts: 1, features: ['Campaigns'], yearly_discount: 20 },
+  { id: 'p3', name: 'Advance Plan', description: '', price: 2500, currency: 'INR', interval: 'monthly', max_users: -1, max_contacts: -1, max_accounts: -1, features: [] },
+];
+
+vi.mock('@/services/api', () => ({
+  api: {
+    get: vi.fn((url: string) => {
+      if (url === '/public/plans') return Promise.resolve({ data: { status: 'success', data: { plans } } });
+      if (url === '/public/site-content')
+        return Promise.resolve({
+          data: {
+            status: 'success',
+            data: {
+              content: { hero_title: 'Grow faster on WhatsApp', instagram_url: 'https://instagram.com/onesuit', whatsapp_number: '919876543210' },
+              pages: [{ title: 'Privacy Policy', slug: 'privacy-policy' }],
+            },
+          },
+        });
+      return Promise.reject(new Error('not found'));
+    }),
+  },
+}));
+
 import { LandingPageView } from './LandingPageView';
 
-const renderWithRouter = (ui: React.ReactElement) => {
-  return render(<BrowserRouter>{ui}</BrowserRouter>);
-};
+const renderPage = () => render(<BrowserRouter><LandingPageView /></BrowserRouter>);
 
 describe('LandingPageView', () => {
-  beforeEach(() => {
-    sessionStorage.clear();
-  });
+  beforeEach(() => sessionStorage.clear());
 
-  it('renders masthead hero with headline, subtitle, and CTA buttons', () => {
-    renderWithRouter(<LandingPageView />);
-
-    // Masthead headline & highlights
-    expect(
-      screen.getByText(/Engage Your Customers on WhatsApp Like Never Before/i)
-    ).toBeDefined();
-
-    // CTA buttons
+  it('shows the super admin hero text, buttons and no Flow Builder menu item', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText(/Grow faster on WhatsApp/i)).toBeDefined());
     expect(screen.getAllByRole('link', { name: /get started/i }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('link', { name: /signup now/i }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('link', { name: /login/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('link', { name: /login|log in/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('link', { name: /register/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /flow builder/i })).toBeNull();
   });
 
-  it('renders Why Choose section with engagement and conversion cards', () => {
-    renderWithRouter(<LandingPageView />);
-
-    expect(screen.getByText(/Why Choose/i)).toBeDefined();
-    expect(screen.getByText(/Increased Engagement/i)).toBeDefined();
-    expect(screen.getByText(/Higher Conversion Rates/i)).toBeDefined();
-    expect(screen.getByText(/24\/7 Customer Support/i)).toBeDefined();
+  it('shows the logo only once in the header', () => {
+    renderPage();
+    const header = document.querySelector('header')!;
+    expect(header.querySelectorAll('img').length).toBe(1);
   });
 
-  it('renders Tech Empowerment feature grid', () => {
-    renderWithRouter(<LandingPageView />);
-
-    expect(screen.getByText(/Tech Empowerment/i)).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'Embedded Signup' })).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'Template Management' })).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'Multiple Phone Numbers' })).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'WhatsApp Chat' })).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'Bot Replies / Chat Bot' })).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'Manage Contacts' })).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'Realtime Updates' })).toBeDefined();
+  it('shows plans from the super admin with -1 as Unlimited and yearly offers', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Advance Plan')).toBeDefined());
+    expect(screen.getAllByText('Unlimited').length).toBeGreaterThan(0);
+    expect(screen.getByText('₹1,000')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /^yearly/i }));
+    expect(screen.getByText('₹9,600')).toBeDefined();
   });
 
-  it('renders detailed spotlight sections matching wa.onesuit.in', () => {
-    renderWithRouter(<LandingPageView />);
-
-    expect(screen.getByRole('heading', { name: 'Campaign Management' })).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'Integrated WhatsApp Chat' })).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'Bot Flow Builder' })).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'Reached to the Customers' })).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'QR Code Generation' })).toBeDefined();
-  });
-
-  it('renders Pricing cards and toggles between monthly and yearly billing', () => {
-    renderWithRouter(<LandingPageView />);
-
-    expect(screen.getByText(/Simple and Clear Pricing/i)).toBeDefined();
-    expect(screen.getAllByText('Free').length).toBeGreaterThan(0);
-    expect(screen.getByText('Basic Plan')).toBeDefined();
-    expect(screen.getByText('Advance Plan')).toBeDefined();
-
-    // Default monthly price for Basic Plan
-    expect(screen.getByText('₹999.00')).toBeDefined();
-
-    // Toggle to yearly
-    const yearlyButton = screen.getByRole('button', { name: /yearly billing/i });
-    fireEvent.click(yearlyButton);
-
-    // Shows yearly price
-    expect(screen.getByText('₹9,999.00')).toBeDefined();
-  });
-
-  it('renders FAQ and opens page dialog modal', () => {
-    renderWithRouter(<LandingPageView />);
-
-    expect(screen.getByRole('heading', { name: /Frequently Asked Questions/i })).toBeDefined();
-    expect(screen.getByText(/How do I sign up for One Suit\?/i)).toBeDefined();
-
-    // Open Privacy Policy modal from footer
-    const privacyButtons = screen.getAllByRole('button', { name: /privacy policy/i });
-    fireEvent.click(privacyButtons[0]);
-
-    // Modal dialog title should now be visible
-    expect(screen.getByRole('heading', { name: 'Privacy Policy' })).toBeDefined();
-
-    // Close modal
-    const closeButtons = screen.getAllByRole('button', { name: /close/i });
-    fireEvent.click(closeButtons[0]);
+  it('links published pages, social media and WhatsApp', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getAllByRole('link', { name: 'Privacy Policy' }).length).toBeGreaterThan(0));
+    expect(screen.getByRole('link', { name: 'Instagram' }).getAttribute('href')).toBe('https://instagram.com/onesuit');
+    expect(screen.getByRole('link', { name: /chat on whatsapp/i }).getAttribute('href')).toBe('https://wa.me/919876543210');
   });
 });

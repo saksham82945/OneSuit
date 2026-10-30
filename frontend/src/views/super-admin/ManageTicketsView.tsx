@@ -236,7 +236,7 @@ export const ManageTicketsView: React.FC = () => {
             Support Helpdesk & Tickets
           </h1>
           <p className="text-sm text-white/50 light:text-gray-500 mt-0.5">
-            View, investigate, reply, and resolve tickets raised by all organizations and vendors
+            View, investigate, reply, and resolve tickets raised by all clients
           </p>
         </div>
         <Button
@@ -280,7 +280,7 @@ export const ManageTicketsView: React.FC = () => {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search tickets by subject, agency/vendor, client email, or ID…"
+            placeholder="Search tickets by subject, client, email or ID…"
             className="pl-9 bg-white/[0.04] border-white/[0.08] text-white placeholder:text-white/30 light:bg-white light:border-gray-200 light:text-gray-900 light:placeholder:text-gray-400"
           />
         </div>
@@ -312,7 +312,7 @@ export const ManageTicketsView: React.FC = () => {
               <tr className="border-b border-white/[0.06] light:border-gray-100 bg-white/[0.02] light:bg-gray-50">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-white/40 light:text-gray-500 uppercase tracking-wider">Ticket</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-white/40 light:text-gray-500 uppercase tracking-wider">Subject & Raiser</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-white/40 light:text-gray-500 uppercase tracking-wider">Agency / Vendor</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-white/40 light:text-gray-500 uppercase tracking-wider">Client</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-white/40 light:text-gray-500 uppercase tracking-wider">Priority</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-white/40 light:text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-white/40 light:text-gray-500 uppercase tracking-wider">Created</th>

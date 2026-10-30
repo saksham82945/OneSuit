@@ -11,13 +11,25 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { useBrandedTitle, useBranding } from '@/services/branding';
-import { BrandMark } from '@/views/public/PublicLayout';
+import { BrandMark, PublicTopBar } from '@/views/public/PublicLayout';
 import { cn } from '@/lib/utils';
 
 interface SSOProvider {
   provider: string;
   name: string;
 }
+
+/** Brand mark for a sign-in provider button. */
+const ProviderIcon: React.FC<{ provider: string }> = ({ provider }) =>
+  provider === 'google' ? (
+    <svg viewBox="0 0 24 24" className="mr-2 h-4 w-4" aria-hidden>
+      <path fill="#EA4335" d="M12 10.2v3.9h5.4c-.2 1.3-1.6 3.8-5.4 3.8-3.2 0-5.9-2.7-5.9-6s2.7-6 5.9-6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.8 3.4 14.6 2.4 12 2.4 6.7 2.4 2.4 6.7 2.4 12s4.3 9.6 9.6 9.6c5.5 0 9.2-3.9 9.2-9.4 0-.6-.1-1.1-.2-1.6H12z" />
+    </svg>
+  ) : provider === 'facebook' ? (
+    <svg viewBox="0 0 24 24" className="mr-2 h-4 w-4" fill="#1877F2" aria-hidden>
+      <path d="M24 12.07C24 5.41 18.63 0 12 0S0 5.41 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.25h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z" />
+    </svg>
+  ) : null;
 
 export const LoginView: React.FC = () => {
   const { t } = useTranslation();
@@ -92,7 +104,8 @@ export const LoginView: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0a0a0b] light:bg-gradient-to-br light:from-gray-50 light:to-gray-100 p-4">
+    <div className="relative min-h-screen flex items-center justify-center bg-[#0a0a0b] light:bg-gradient-to-br light:from-gray-50 light:to-gray-100 p-4 pt-16">
+      <PublicTopBar />
       <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur light:bg-white light:border-gray-200 light:shadow-xl">
         <div className="p-8 space-y-1 text-center">
           <div className="flex flex-col items-center gap-2 mb-4">
@@ -211,7 +224,8 @@ export const LoginView: React.FC = () => {
                   className="w-full border-white/[0.08] text-white/80 hover:bg-white/[0.04] light:border-gray-200 light:text-gray-800 light:hover:bg-gray-100"
                   onClick={() => initiateSSO(sso.provider)}
                 >
-                  {sso.name}
+                  <ProviderIcon provider={sso.provider} />
+                  Continue with {sso.name}
                 </Button>
               ))}
             </div>

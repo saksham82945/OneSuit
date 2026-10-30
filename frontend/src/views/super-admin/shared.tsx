@@ -2,7 +2,7 @@ import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
-import type { VendorStatus } from '@/services/superAdmin';
+import type { SubscriptionState } from '@/services/superAdmin';
 
 export const cardClass =
   'card-depth border-white/[0.08] bg-[#141415] text-white light:bg-white light:border-gray-200 light:text-gray-900';
@@ -40,14 +40,27 @@ export const StatCard: React.FC<{
   );
 };
 
-const statusStyles: Record<VendorStatus, string> = {
+const stateStyles: Record<SubscriptionState, string> = {
   active: 'bg-emerald-500/15 text-emerald-400 light:bg-emerald-100 light:text-emerald-700',
   trial: 'bg-blue-500/15 text-blue-400 light:bg-blue-100 light:text-blue-700',
+  idle: 'bg-gray-500/15 text-gray-300 light:bg-gray-100 light:text-gray-600',
+  expired: 'bg-amber-500/15 text-amber-400 light:bg-amber-100 light:text-amber-700',
   suspended: 'bg-rose-500/15 text-rose-400 light:bg-rose-100 light:text-rose-700',
 };
 
-export const VendorStatusBadge: React.FC<{ status: VendorStatus }> = ({ status }) => (
-  <Badge className={cn('border-0 text-[11px] capitalize shadow-none', statusStyles[status])}>{status}</Badge>
+const stateHints: Record<SubscriptionState, string> = {
+  active: 'On a plan and paid up',
+  trial: 'Trying the platform',
+  idle: 'No plan yet',
+  expired: 'Renewal date has passed',
+  suspended: 'Access turned off',
+};
+
+/** A client's subscription state: active, trial, idle, expired or suspended. */
+export const SubscriptionStateBadge: React.FC<{ state: SubscriptionState }> = ({ state }) => (
+  <Badge title={stateHints[state]} className={cn('border-0 text-[11px] capitalize shadow-none', stateStyles[state])}>
+    {state}
+  </Badge>
 );
 
 export const LoadingBlock: React.FC = () => (

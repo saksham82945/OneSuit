@@ -28,6 +28,7 @@ import {
   Handshake,
   Phone,
   Globe,
+  Radio,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -62,10 +63,14 @@ export const navigationSections: NavSection[] = [
     permissions: [],
     items: [
       { name: 'nav.superAdminDashboard', path: '/super-admin', icon: ShieldCheck, superAdminOnly: true, exact: true },
-      { name: 'nav.agencies', path: '/super-admin/vendors', icon: Handshake, superAdminOnly: true },
+      { name: 'nav.agencies', path: '/super-admin/clients', icon: Handshake, superAdminOnly: true },
       { name: 'nav.subscriptions', path: '/super-admin/subscriptions', icon: CreditCard, superAdminOnly: true },
+      { name: 'Subscription Plans', path: '/super-admin/plans', icon: CreditCard, superAdminOnly: true },
+      { name: 'Ads Manager', path: '/super-admin/ads', icon: Radio, superAdminOnly: true },
+      { name: 'Website', path: '/super-admin/website', icon: Globe, superAdminOnly: true },
       { name: 'nav.pagesManagement', path: '/super-admin/pages', icon: FileText, superAdminOnly: true },
       { name: 'nav.configuration', path: '/super-admin/configuration', icon: SlidersHorizontal, superAdminOnly: true },
+      { name: 'WhatsApp Onboarding', path: '/super-admin/whatsapp-onboarding', icon: Phone, superAdminOnly: true },
       { name: 'nav.manageTickets', path: '/super-admin/tickets', icon: Ticket, superAdminOnly: true },
       { name: 'nav.aiCallSetup', path: '/super-admin/ai-call-setup', icon: Phone, superAdminOnly: true },
       { name: 'nav.aiAgents', path: '/chatbot/ai', icon: Sparkles, superAdminOnly: true },

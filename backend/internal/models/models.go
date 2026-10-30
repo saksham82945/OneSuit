@@ -174,8 +174,11 @@ type Team struct {
 	AssignmentStrategy  AssignmentStrategy `gorm:"size:50;default:'round_robin'" json:"assignment_strategy"` // round_robin, load_balanced, manual
 	PerAgentTimeoutSecs int                `gorm:"default:0" json:"per_agent_timeout_secs"`                  // 0 = use org/global default
 	IsActive            bool               `gorm:"default:true" json:"is_active"`
-	CreatedByID         *uuid.UUID         `gorm:"type:uuid" json:"created_by_id,omitempty"`
-	UpdatedByID         *uuid.UUID         `gorm:"type:uuid" json:"updated_by_id,omitempty"`
+	// Parts of the app the team's members can use (chat, contacts, campaigns...),
+	// on top of their own role.
+	Access      StringArray `gorm:"type:jsonb" json:"access"`
+	CreatedByID *uuid.UUID  `gorm:"type:uuid" json:"created_by_id,omitempty"`
+	UpdatedByID *uuid.UUID  `gorm:"type:uuid" json:"updated_by_id,omitempty"`
 
 	// Relations
 	Organization *Organization `gorm:"foreignKey:OrganizationID" json:"organization,omitempty"`

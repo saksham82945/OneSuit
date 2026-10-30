@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { teamsService, type Team } from '@/services/api';
 import { readList, readTotal } from '@/services/response';
 import { useAuthStore } from '@/stores/auth';
-import { ASSIGNMENT_STRATEGIES } from '@/lib/constants';
+import { teamAccessLabel } from '@/lib/teamAccess';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { SearchInput } from '@/components/shared/SearchInput';
 import { DataTable, type Column } from '@/components/shared/DataTable';
@@ -13,7 +13,7 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Plus, Pencil, Trash2, RotateCcw, Scale, Hand, UserCog } from 'lucide-react';
+import { Users, Plus, Pencil, Trash2, UserCog } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatDate, getErrorMessage, useDebouncedValue } from './users/shared';
@@ -24,14 +24,6 @@ export type TeamItem = Team;
 
 const PAGE_SIZE = 20;
 
-const STRATEGY_ICONS: Record<string, typeof RotateCcw> = {
-  round_robin: RotateCcw,
-  load_balanced: Scale,
-  manual: Hand,
-};
-
-const strategyLabel = (value: string) =>
-  ASSIGNMENT_STRATEGIES.find((s) => s.value === value)?.label || value || '—';
 
 export const TeamsView: React.FC = () => {
   const { t } = useTranslation();
@@ -138,17 +130,24 @@ export const TeamsView: React.FC = () => {
       ),
     },
     {
-      key: 'strategy',
-      label: 'Assignment',
-      render: (team) => {
-        const Icon = STRATEGY_ICONS[team.assignment_strategy] || RotateCcw;
-        return (
-          <div className="flex items-center gap-2 text-xs text-white/70 light:text-gray-700">
-            <Icon className="h-3.5 w-3.5 text-white/40 light:text-gray-400" />
-            {strategyLabel(team.assignment_strategy)}
+      key: 'access',
+      label: 'Access',
+      render: (team) =>
+        team.access && team.access.length > 0 ? (
+          <div className="flex flex-wrap gap-1 max-w-[340px]">
+            {team.access.map((a) => (
+              <Badge
+                key={a}
+                variant="outline"
+                className="text-[10px] font-medium border-emerald-500/25 bg-emerald-500/10 text-emerald-300 light:bg-emerald-50 light:text-emerald-700 light:border-emerald-200"
+              >
+                {teamAccessLabel(a)}
+              </Badge>
+            ))}
           </div>
-        );
-      },
+        ) : (
+          <span className="text-[11px] text-white/40 light:text-gray-400">Role access only</span>
+        ),
     },
     {
       key: 'members',
@@ -238,7 +237,7 @@ export const TeamsView: React.FC = () => {
               <div>
                 <CardTitle className="text-base font-semibold">{canReadTeams ? 'All Teams' : 'Your Teams'}</CardTitle>
                 <CardDescription className="text-xs text-white/50 light:text-gray-500">
-                  Conversations transferred to a team are assigned to its members using the team's strategy
+                  Group people and choose what each team can access, on top of their role
                 </CardDescription>
               </div>
               <SearchInput

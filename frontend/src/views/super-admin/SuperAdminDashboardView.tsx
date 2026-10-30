@@ -19,7 +19,6 @@ import {
   MessageSquare,
   Receipt,
   LayoutGrid,
-  Wallet,
   Layers,
   Send,
   Inbox,
@@ -77,9 +76,9 @@ const StatusPill: React.FC<{ status: string }> = ({ status }) => (
   </span>
 );
 
-const reminderHref = (email: string, vendor: string, plan: string, date: string) =>
+const reminderHref = (email: string, client: string, plan: string, date: string) =>
   `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(`Your ${plan || 'plan'} renews soon`)}&body=${encodeURIComponent(
-    `Hi ${vendor},\n\nA quick reminder that your ${plan || ''} subscription ends on ${formatShortDate(date)}. Renew to keep your WhatsApp workspace running without interruption.\n\nThanks!`
+    `Hi ${client},\n\nA quick reminder that your ${plan || ''} subscription ends on ${formatShortDate(date)}. Renew to keep your WhatsApp workspace running without interruption.\n\nThanks!`
   )}`;
 
 export const SuperAdminDashboardView: React.FC = () => {
@@ -108,7 +107,7 @@ export const SuperAdminDashboardView: React.FC = () => {
 
   const next = data?.next_renewal;
   const maxPlanCount = Math.max(1, ...(data?.plans.map((p) => p.vendor_count) ?? [1]));
-  const currency = data?.currency || 'INR';
+  const currency = 'INR'; // the platform bills in rupees only
   const money = (n: number | undefined) => formatMoney(n ?? 0, currency);
   const expiringPlans = data?.expiring_plans ?? [];
   const recentSubs = data?.recent_subscriptions ?? [];
@@ -117,8 +116,8 @@ export const SuperAdminDashboardView: React.FC = () => {
   return (
     <div className="flex flex-col min-h-full bg-[#f8faf9] dark:bg-[#0a0a0b]">
       <PageHeader
-        title="Dashboard"
-        subtitle="Platform overview across all vendors"
+        title="Platform Dashboard"
+        subtitle="Platform overview across all clients"
         icon={LayoutDashboard}
         iconGradient="bg-gradient-to-br from-[#0f5c62] to-[#0b4a4f] shadow-teal-900/20"
       />
@@ -135,7 +134,7 @@ export const SuperAdminDashboardView: React.FC = () => {
           <section className="space-y-3">
             <SectionTitle icon={Sun} title="Today at a Glance" tone="amber" />
             <StatGrid>
-              <StatCard variant="compact" label="New Signups Today" value={formatCount(data.new_signups_today)} icon={UserPlus} tone="blue" to="/super-admin/vendors" />
+              <StatCard variant="compact" label="New Signups Today" value={formatCount(data.new_signups_today)} icon={UserPlus} tone="blue" to="/super-admin/clients" />
               <StatCard variant="compact" label="Revenue Today" value={money(data.revenue_today)} icon={IndianRupee} tone="green" hint="New paid subscriptions" />
               <StatCard variant="compact" label="Messages Today" value={formatCount(data.messages_today)} icon={MessageSquare} tone="purple" />
               <StatCard variant="compact" label="Payments Today" value={formatCount(data.payments_today)} icon={Receipt} tone="orange" />
@@ -147,41 +146,34 @@ export const SuperAdminDashboardView: React.FC = () => {
             <SectionTitle icon={LayoutGrid} title="Platform Overview" tone="teal" />
             <StatGrid>
               <StatCard
-                label="Total Vendors"
+                label="Total Clients"
                 value={formatCount(data.total_vendors)}
                 icon={Building2}
                 tone="purple"
                 hint={`${data.trial_vendors} on trial · ${data.suspended_vendors} suspended`}
-                to="/super-admin/vendors"
+                to="/super-admin/clients"
               />
               <StatCard
-                label="Active Vendors"
+                label="Active Clients"
                 value={formatCount(data.active_vendors)}
                 icon={CheckCircle2}
                 tone="green"
-                hint={`${Math.round((data.active_vendors / Math.max(1, data.total_vendors)) * 100)}% of all vendors`}
+                hint={`${Math.round((data.active_vendors / Math.max(1, data.total_vendors)) * 100)}% of all clients`}
               />
-              <StatCard label="Total Revenue" value={money(data.total_revenue)} icon={IndianRupee} tone="green" hint="Current period, paying vendors" />
+              <StatCard label="Total Revenue" value={money(data.total_revenue)} icon={IndianRupee} tone="green" hint="Current billing cycle, paying clients" />
               <StatCard
                 label="Active Plans"
                 value={formatCount(data.active_plans)}
                 icon={Layers}
                 tone="blue"
                 hint={`${data.plans.filter((p) => p.is_active).length} of ${data.plans.length} plans on sale`}
-                to="/super-admin/subscriptions"
+                to="/super-admin/plans"
               />
               <StatCard label="Workspaces" value={formatCount(data.workspaces)} icon={LayoutGrid} tone="teal" hint={`${formatCount(data.connected_numbers)} WhatsApp numbers`} />
               <StatCard label="Messages Sent (30d)" value={formatCount(data.messages_sent_30d)} icon={Send} tone="green" />
               <StatCard label="Messages Received (30d)" value={formatCount(data.messages_received_30d)} icon={Inbox} tone="purple" />
               <StatCard label="AI Calls (30d)" value={formatCount(data.ai_calls_30d)} icon={Sparkles} tone="blue" hint={`${formatCount(data.calls_30d)} voice calls`} />
               <StatCard label="Total Campaigns" value={formatCount(data.total_campaigns)} icon={Megaphone} tone="orange" />
-              <StatCard
-                label="Wallets Total"
-                value={data.wallets_available ? money(data.wallets_total) : '—'}
-                icon={Wallet}
-                tone="teal"
-                hint={data.wallets_available ? `${data.pending_topups} top-ups pending` : 'Ad wallets not set up yet'}
-              />
               <StatCard
                 label="Expiring Soon (7d)"
                 value={formatCount(data.expiring_soon)}
@@ -208,7 +200,7 @@ export const SuperAdminDashboardView: React.FC = () => {
               }
             />
             <div className="grid gap-4 lg:grid-cols-2">
-              <Panel title="Plans Expiring (7 days)" icon={Hourglass} tone="amber" linkLabel="All vendors" linkTo="/super-admin/vendors">
+              <Panel title="Plans Expiring (7 days)" icon={Hourglass} tone="amber" linkLabel="All clients" linkTo="/super-admin/clients">
                 {expiringPlans.length === 0 ? (
                   <PanelEmpty>No plans expire in the next 7 days.</PanelEmpty>
                 ) : (
@@ -230,7 +222,7 @@ export const SuperAdminDashboardView: React.FC = () => {
                               <Mail className="h-3 w-3" /> Remind
                             </a>
                           ) : (
-                            <Link to="/super-admin/vendors" className="text-[11px] font-semibold text-[#0f5c62] dark:text-teal-300">
+                            <Link to="/super-admin/clients" className="text-[11px] font-semibold text-[#0f5c62] dark:text-teal-300">
                               View
                             </Link>
                           )}
@@ -241,7 +233,7 @@ export const SuperAdminDashboardView: React.FC = () => {
                 )}
               </Panel>
 
-              <Panel title="Recent Subscriptions" icon={Receipt} tone="green" linkLabel="All invoices" linkTo="/super-admin/subscriptions">
+              <Panel title="Recent Subscriptions" icon={Receipt} tone="green" linkLabel="All subscriptions" linkTo="/super-admin/subscriptions">
                 {recentSubs.length === 0 ? (
                   <PanelEmpty>No subscriptions yet.</PanelEmpty>
                 ) : (
@@ -262,7 +254,7 @@ export const SuperAdminDashboardView: React.FC = () => {
                       right={
                         <>
                           <span className="text-xs font-semibold tabular-nums">
-                            {s.amount > 0 ? formatMoney(s.amount, s.currency || currency) : 'Free'}
+                            {s.amount > 0 ? formatMoney(s.amount, currency) : 'Free'}
                           </span>
                           <StatusPill status={s.status} />
                         </>
@@ -275,8 +267,8 @@ export const SuperAdminDashboardView: React.FC = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <QuickLinkTile label="Subscriptions" meta="Manage" to="/super-admin/subscriptions" icon={CreditCard} tone="purple" />
-              <QuickLinkTile label="Vendors" meta={formatCount(data.total_vendors)} to="/super-admin/vendors" icon={Building2} tone="blue" />
-              <QuickLinkTile label="Configuration" meta="Config" to="/super-admin/configuration" icon={Settings} tone="slate" />
+              <QuickLinkTile label="Clients" meta={formatCount(data.total_vendors)} to="/super-admin/clients" icon={Building2} tone="blue" />
+              <QuickLinkTile label="Configuration" meta="Config" to="/super-admin/settings" icon={Settings} tone="slate" />
               <QuickLinkTile
                 label="Support Tickets"
                 meta={data.tickets_new > 0 ? `${data.tickets_new} open` : 'All clear'}
@@ -286,7 +278,7 @@ export const SuperAdminDashboardView: React.FC = () => {
               />
               <QuickLinkTile label="Pages" meta="CMS" to="/super-admin/pages" icon={FileText} tone="teal" />
               <QuickLinkTile label="AI Call Setup" meta="Calls" to="/super-admin/ai-call-setup" icon={PhoneCall} tone="orange" />
-              <QuickLinkTile label="WhatsApp Numbers" meta={formatCount(data.connected_numbers)} to="/super-admin/vendors" icon={Smartphone} tone="green" />
+              <QuickLinkTile label="WhatsApp Numbers" meta={formatCount(data.connected_numbers)} to="/super-admin/clients" icon={Smartphone} tone="green" />
               <QuickLinkTile label="Tickets Solved" meta={formatCount(data.tickets_solved)} to="/super-admin/tickets" icon={CheckCircle2} tone="green" />
             </div>
           </section>
@@ -316,7 +308,7 @@ export const SuperAdminDashboardView: React.FC = () => {
                 <p className="px-2 pt-2 text-[11px] text-gray-400">{data.renewals_next_30_days} renewals due in the next 30 days</p>
               </Panel>
 
-              <Panel title="Subscription plans" icon={CreditCard} tone="purple" linkLabel="Manage" linkTo="/super-admin/subscriptions">
+              <Panel title="Subscription plans" icon={CreditCard} tone="purple" linkLabel="Manage" linkTo="/super-admin/plans">
                 <div className="space-y-3 px-2 py-1">
                   {data.plans.length === 0 && <PanelEmpty>No plans yet.</PanelEmpty>}
                   {data.plans.map((p) => (
@@ -325,10 +317,10 @@ export const SuperAdminDashboardView: React.FC = () => {
                         <span className="font-medium truncate">
                           {p.name}
                           <span className="ml-2 text-gray-400">
-                            {formatPrice(p.price, p.currency)}/{p.interval === 'yearly' ? 'yr' : 'mo'}
+                            {formatPrice(p.monthly_price ?? p.price)}/mo
                           </span>
                         </span>
-                        <span className="tabular-nums text-gray-500 dark:text-white/60 shrink-0">{p.vendor_count} vendors</span>
+                        <span className="tabular-nums text-gray-500 dark:text-white/60 shrink-0">{p.vendor_count} clients</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden dark:bg-white/[0.06]">
                         <div className="h-full rounded-full bg-[#0f5c62] dark:bg-teal-400" style={{ width: `${(p.vendor_count / maxPlanCount) * 100}%` }} />

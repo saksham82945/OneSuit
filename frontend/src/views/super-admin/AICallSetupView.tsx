@@ -163,7 +163,7 @@ export const AICallSetupView: React.FC = () => {
             AI Call Setup
           </h1>
           <p className="text-sm text-white/40 mt-0.5 light:text-gray-400">
-            Admins and users with active calling subscriptions across all agencies
+            Admins and users with active calling subscriptions across all clients
           </p>
         </div>
         <Button

@@ -152,7 +152,9 @@ export const BillingView: React.FC = () => {
             </div>
 
             <div className="pt-6 border-t border-gray-100 dark:border-white/5 mt-6 flex items-center justify-between">
-              <span className="text-xs text-gray-500 dark:text-gray-400">Payment: Visa ending in 4242</span>
+              <span className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400" title="You pay at checkout each time; card details are never saved">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /> Pay by UPI, card or net banking · cards never saved
+              </span>
               <button
                 onClick={() => setUpgradeModalOpen(true)}
                 className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-0.5"
@@ -387,6 +389,11 @@ export const BillingView: React.FC = () => {
                 className="mt-1 h-9 text-xs"
               />
             </div>
+
+            <p className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+              You pay securely on the payment page. Card details are never saved.
+            </p>
 
             <div className="p-3 bg-gray-50 dark:bg-white/[0.03] rounded-xl border border-gray-100 dark:border-white/5 text-[11px] text-gray-500 space-y-1">
               <div className="flex justify-between">

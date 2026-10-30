@@ -481,6 +481,12 @@ func (a *App) getUserPermissionsCached(userID uuid.UUID, orgIDs ...uuid.UUID) (*
 	for _, p := range role.Permissions {
 		perms.Permissions = append(perms.Permissions, p.Resource+":"+p.Action)
 	}
+	// Teams add access on top of the role.
+	teamOrg := orgID
+	if teamOrg == uuid.Nil {
+		teamOrg = user.OrganizationID
+	}
+	perms.Permissions = mergePermissions(perms.Permissions, a.teamGrantedPermissions(userID, teamOrg))
 
 	// Cache the result (if Redis is available)
 	if a.Redis != nil {

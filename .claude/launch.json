@@ -1,7 +1,33 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "mock-backend", "runtimeExecutable": "node", "runtimeArgs": ["mock-backend.cjs"], "port": 8080 },
-    { "name": "frontend-react", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "frontend-react", "run", "dev"], "port": 3000 }
+    {
+      "name": "mock-backend",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "mock-backend.cjs"
+      ],
+      "port": 8080
+    },
+    {
+      "name": "frontend-react",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "frontend-react",
+        "run",
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "frontend-local-api",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd frontend && VITE_API_URL=/api exec npx vite --port 5180 --strictPort"
+      ],
+      "port": 5180
+    }
   ]
 }

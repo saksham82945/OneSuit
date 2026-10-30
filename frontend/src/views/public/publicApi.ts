@@ -4,7 +4,7 @@ import { api } from '@/services/api';
 import { readData } from '@/services/response';
 import { useAuthStore, type User } from '@/stores/auth';
 
-/** A plan as returned by GET /public/plans. Limits of 0 mean unlimited. */
+/** A plan as returned by GET /public/plans. Limits of 0 or -1 mean unlimited. */
 export interface PublicPlan {
   id: string;
   name: string;
@@ -16,6 +16,10 @@ export interface PublicPlan {
   max_contacts: number;
   max_accounts: number;
   features: string[];
+  /** Offers (% off) for longer billing cycles. */
+  quarterly_discount?: number;
+  half_yearly_discount?: number;
+  yearly_discount?: number;
 }
 
 export interface PublicPlansInfo {
@@ -72,18 +76,13 @@ export function usePublicPlans() {
 export function formatPrice(plan: Pick<PublicPlan, 'price' | 'currency'>): string {
   if (!plan.price) return 'Free';
   const fractionDigits = Number.isInteger(plan.price) ? 0 : 2;
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency: plan.currency || 'USD',
-      currencyDisplay: 'narrowSymbol',
-      minimumFractionDigits: fractionDigits,
-      maximumFractionDigits: fractionDigits,
-    }).format(plan.price);
-  } catch {
-    // Unknown currency code: fall back to "XYZ 49".
-    return `${plan.currency} ${plan.price.toLocaleString()}`.trim();
-  }
+  // The platform bills in rupees only.
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(plan.price);
 }
 
 /** "/mo" or "/yr"; empty for free plans. */
@@ -97,7 +96,7 @@ export function formatPriceWithInterval(plan: PublicPlan): string {
   return `${formatPrice(plan)}${intervalSuffix(plan)}`;
 }
 
-/** 0 means unlimited. */
+/** 0 or -1 means unlimited. */
 export function formatLimit(value: number): string {
   if (!value || value <= 0) return 'Unlimited';
   return value.toLocaleString();

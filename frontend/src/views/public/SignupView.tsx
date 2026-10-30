@@ -200,8 +200,14 @@ export const SignupView: React.FC = () => {
 const NewBusinessSignup: React.FC = () => {
   const navigate = useNavigate();
   const { info, loading } = usePublicPlans();
+  const [searchParams] = useSearchParams();
 
-  const [form, setForm] = useState<FormState>(emptyForm);
+  // Coming back from "Continue with Google/Facebook" without an account: fill in what we know.
+  const [form, setForm] = useState<FormState>(() => ({
+    ...emptyForm,
+    email: searchParams.get('email') ?? '',
+    full_name: searchParams.get('name') ?? '',
+  }));
   const [chosenPlanId, setChosenPlanId] = useState<string | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);

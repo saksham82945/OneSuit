@@ -135,6 +135,10 @@ func runMigrations(db *gorm.DB) error {
 		&models.SupportTicket{},
 		&models.PlatformSetting{},
 		&models.OrganizationInvite{},
+		// Lead integrations
+		&models.IntegrationDefinition{},
+		&models.IntegrationConnection{},
+		&models.IntegrationLead{},
 		// Ads Manager
 		&models.AdsSetup{},
 		&models.AdCampaign{},

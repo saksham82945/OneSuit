@@ -3,6 +3,7 @@ import { ExternalLink } from 'lucide-react';
 import { accountsService } from '@/services/api';
 import { readData } from '@/services/response';
 import { useAuthStore } from '@/stores/auth';
+import { isInsideClient } from '@/services/superAdmin';
 import { cn } from '@/lib/utils';
 
 // "Connect WhatsApp with Facebook": opens Meta's hosted WhatsApp onboarding
@@ -44,7 +45,8 @@ export function useConnectWhatsApp() {
       alive = false;
     };
   }, [user?.id]);
-  const allowed = Boolean(user?.is_super_admin) || hasPermission('accounts', 'write');
+  // The super admin connects numbers only from inside a client's account.
+  const allowed = user?.is_super_admin ? isInsideClient(user) : hasPermission('accounts', 'write');
   return {
     visible: Boolean(allowed && config?.connect_button_visible && config.connect_url),
     url: config?.connect_url ?? '',

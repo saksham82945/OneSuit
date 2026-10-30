@@ -22,7 +22,7 @@ describe('Navigation configuration', () => {
     const superAdminSection = navigationSections.find((s) => s.label === 'nav.sectionSuperAdmin')!;
     const itemPaths = superAdminSection.items.map((i) => i.path);
     expect(itemPaths).toContain('/super-admin');
-    expect(itemPaths).toContain('/super-admin/vendors');
+    expect(itemPaths).toContain('/super-admin/clients');
     expect(itemPaths).toContain('/super-admin/subscriptions');
     expect(itemPaths).toContain('/super-admin/pages');
     expect(itemPaths).toContain('/super-admin/configuration');

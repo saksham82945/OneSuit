@@ -180,6 +180,9 @@ func GetMigrationModels() []MigrationModel {
 		// Super Admin panel
 		{"SubscriptionPlan", &models.SubscriptionPlan{}},
 		{"OrganizationSubscription", &models.OrganizationSubscription{}},
+		{"IntegrationDefinition", &models.IntegrationDefinition{}},
+		{"IntegrationConnection", &models.IntegrationConnection{}},
+		{"IntegrationLead", &models.IntegrationLead{}},
 		{"CMSPage", &models.CMSPage{}},
 		{"SupportTicket", &models.SupportTicket{}},
 		{"SupportTicketReply", &models.SupportTicketReply{}},

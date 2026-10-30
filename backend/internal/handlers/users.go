@@ -711,6 +711,16 @@ func (a *App) GetCurrentUser(r *fastglue.Request) error {
 			}
 			user.Role.Permissions = permissions
 		}
+		// Teams add access on top of the role.
+		have := map[string]bool{}
+		for _, p := range user.Role.Permissions {
+			have[p.Resource+":"+p.Action] = true
+		}
+		for _, p := range a.teamGrantedPermissions(userID, user.OrganizationID) {
+			if parts := splitPermission(p); len(parts) == 2 && !have[p] {
+				user.Role.Permissions = append(user.Role.Permissions, models.Permission{Resource: parts[0], Action: parts[1]})
+			}
+		}
 	}
 
 	return r.SendEnvelope(userToResponse(user))

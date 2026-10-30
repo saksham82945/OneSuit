@@ -112,10 +112,14 @@ type PublicPlan struct {
 	Price       float64   `json:"price"`
 	Currency    string    `json:"currency"`
 	Interval    string    `json:"interval"`
-	MaxUsers    int       `json:"max_users"`
-	MaxContacts int       `json:"max_contacts"`
-	MaxAccounts int       `json:"max_accounts"`
-	Features    []string  `json:"features"`
+	// Offers (% off) for longer billing cycles.
+	QuarterlyDiscount  float64  `json:"quarterly_discount"`
+	HalfYearlyDiscount float64  `json:"half_yearly_discount"`
+	YearlyDiscount     float64  `json:"yearly_discount"`
+	MaxUsers           int      `json:"max_users"`
+	MaxContacts        int      `json:"max_contacts"`
+	MaxAccounts        int      `json:"max_accounts"`
+	Features           []string `json:"features"`
 }
 
 // GetPublicPlans returns the active plans and sign-up settings. No login required.
@@ -133,18 +137,18 @@ func (a *App) GetPublicPlans(r *fastglue.Request) error {
 			features = []string{}
 		}
 		out = append(out, PublicPlan{
-			ID: p.ID, Name: p.Name, Description: p.Description, Price: p.Price, Currency: p.Currency,
-			Interval: p.Interval, MaxUsers: p.MaxUsers, MaxContacts: p.MaxContacts, MaxAccounts: p.MaxAccounts,
+			ID: p.ID, Name: p.Name, Description: p.Description, Price: p.Price, Currency: models.PlatformCurrency,
+			Interval: p.Interval, QuarterlyDiscount: p.QuarterlyDiscount, HalfYearlyDiscount: p.HalfYearlyDiscount, YearlyDiscount: p.YearlyDiscount, MaxUsers: p.MaxUsers, MaxContacts: p.MaxContacts, MaxAccounts: p.MaxAccounts,
 			Features: features,
 		})
 	}
 	return r.SendEnvelope(map[string]any{
-		"plans":          out,
-		"platform_name":  cfg.PlatformName,
-		"support_email":  cfg.SupportEmail,
-		"trial_days":     cfg.TrialDays,
-		"default_plan":   cfg.DefaultPlanID,
-		"signup_enabled": cfg.AllowVendorSignup && !cfg.MaintenanceMode,
+		"plans":           out,
+		"platform_name":   cfg.PlatformName,
+		"support_email":   cfg.SupportEmail,
+		"trial_days":      cfg.TrialDays,
+		"default_plan":    cfg.DefaultPlanID,
+		"signup_enabled":  cfg.AllowVendorSignup && !cfg.MaintenanceMode,
 		"explore_enabled": cfg.AllowVendorSignup && !cfg.MaintenanceMode && a.demoOrgID() != uuid.Nil,
 	})
 }

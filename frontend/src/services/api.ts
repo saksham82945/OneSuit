@@ -804,6 +804,8 @@ export interface Team {
   assignment_strategy: 'round_robin' | 'load_balanced' | 'manual'
   per_agent_timeout_secs: number
   is_active: boolean
+  /** Parts of the app members can use (see TEAM_ACCESS_OPTIONS). */
+  access?: string[]
   member_count: number
   members?: TeamMember[]
   created_by_id?: string
@@ -842,6 +844,7 @@ export const teamsService = {
     description?: string
     assignment_strategy?: 'round_robin' | 'load_balanced' | 'manual'
     per_agent_timeout_secs?: number
+    access?: string[]
   }) => api.post<{ team: Team }>('/teams', data),
   update: (id: string, data: {
     name?: string
@@ -849,6 +852,7 @@ export const teamsService = {
     assignment_strategy?: 'round_robin' | 'load_balanced' | 'manual'
     per_agent_timeout_secs?: number
     is_active?: boolean
+    access?: string[]
   }) => api.put<{ team: Team }>(`/teams/${id}`, data),
   delete: (id: string) => api.delete(`/teams/${id}`),
   // Members

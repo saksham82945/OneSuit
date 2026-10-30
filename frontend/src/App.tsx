@@ -75,6 +75,16 @@ import { SupportView } from '@/views/support/SupportView';
 // Public website pages (no login)
 import { LandingPageView } from '@/views/public/LandingPageView';
 import { PricingView } from '@/views/public/PricingView';
+import { SitePageView } from '@/views/public/SitePageView';
+import { WebsiteContentView } from '@/views/super-admin/WebsiteContentView';
+import { PlatformAdsView } from '@/views/super-admin/PlatformAdsView';
+import { ClientSubscriptionsView } from '@/views/super-admin/ClientSubscriptionsView';
+import { WhatsAppOnboardingView } from '@/views/super-admin/WhatsAppOnboardingView';
+import { SocialLoginView } from '@/views/super-admin/SocialLoginView';
+import { SuperAdminSettingsView } from '@/views/super-admin/SuperAdminSettingsView';
+import { IntegrationsCatalogView } from '@/views/super-admin/IntegrationsCatalogView';
+import { IntegrationsView } from '@/views/settings/IntegrationsView';
+import { SSOCallbackView } from '@/views/auth/SSOCallbackView';
 import { SignupView } from '@/views/public/SignupView';
 import { JoinView } from '@/views/public/JoinView';
 import { ExploreView } from '@/views/public/ExploreView';
@@ -83,10 +93,10 @@ import { ExploreView } from '@/views/public/ExploreView';
 import { SuperAdminRoute } from '@/components/layout/SuperAdminRoute';
 import { WhatsAppSetupView } from '@/views/settings/WhatsAppSetupView';
 import { SuperAdminDashboardView } from '@/views/super-admin/SuperAdminDashboardView';
-import { VendorsView } from '@/views/super-admin/VendorsView';
+import { ClientsView } from '@/views/super-admin/ClientsView';
+import { isInsideClient } from '@/services/superAdmin';
 import { SubscriptionsView } from '@/views/super-admin/SubscriptionsView';
 import { PagesManagementView } from '@/views/super-admin/PagesManagementView';
-import { ConfigurationView } from '@/views/super-admin/ConfigurationView';
 import { ManageTicketsView } from '@/views/super-admin/ManageTicketsView';
 import { AICallSetupView } from '@/views/super-admin/AICallSetupView';
 
@@ -118,6 +128,18 @@ const RootRoute: React.FC = () => {
   );
 };
 
+/**
+ * The super admin only has the Platform Dashboard; the business dashboard is
+ * for clients (and for the super admin while inside a client's account).
+ */
+const HomeRoute: React.FC = () => {
+  const user = useAuthStore((s) => s.user);
+  if (user?.is_super_admin && !isInsideClient(user)) {
+    return <Navigate to="/super-admin" replace />;
+  }
+  return <DashboardView />;
+};
+
 export const App: React.FC = () => {
   return (
     <>
@@ -132,14 +154,16 @@ export const App: React.FC = () => {
           <Route path="/login" element={<LoginView />} />
           <Route path="/register" element={<LoginView />} />
           <Route path="/pricing" element={<PricingView />} />
+          <Route path="/p/:slug" element={<SitePageView />} />
+          <Route path="/auth/sso/callback" element={<SSOCallbackView />} />
           <Route path="/signup" element={<SignupView />} />
           <Route path="/join/:token" element={<JoinView />} />
           <Route path="/explore" element={<ExploreView />} />
 
           {/* Main App Shell */}
           <Route path="/" element={<RootRoute />}>
-            <Route index element={<DashboardView />} />
-            <Route path="dashboard" element={<DashboardView />} />
+            <Route index element={<HomeRoute />} />
+            <Route path="dashboard" element={<HomeRoute />} />
 
             {/* Omnichannel Chat */}
             <Route path="chat" element={<ChatView />} />
@@ -220,14 +244,23 @@ export const App: React.FC = () => {
             <Route path="settings/chatbot" element={<ChatbotSettingsView />} />
             <Route path="settings/billing" element={<BillingView />} />
             <Route path="settings/opt-in" element={<OptInView />} />
+            <Route path="settings/integrations" element={<IntegrationsView />} />
 
             {/* Super Admin (platform management; super admins only) */}
             <Route path="super-admin" element={<SuperAdminRoute />}>
               <Route index element={<SuperAdminDashboardView />} />
-              <Route path="vendors" element={<VendorsView />} />
-              <Route path="subscriptions" element={<SubscriptionsView />} />
+              <Route path="clients" element={<ClientsView />} />
+              <Route path="vendors" element={<Navigate to="/super-admin/clients" replace />} />
+              <Route path="subscriptions" element={<ClientSubscriptionsView />} />
+              <Route path="plans" element={<SubscriptionsView />} />
+              <Route path="whatsapp-onboarding" element={<WhatsAppOnboardingView />} />
+              <Route path="social-login" element={<SocialLoginView />} />
+              <Route path="integrations" element={<IntegrationsCatalogView />} />
               <Route path="pages" element={<PagesManagementView />} />
-              <Route path="configuration" element={<ConfigurationView />} />
+              <Route path="website" element={<WebsiteContentView />} />
+              <Route path="ads" element={<PlatformAdsView />} />
+              <Route path="settings" element={<SuperAdminSettingsView />} />
+              <Route path="configuration" element={<Navigate to="/super-admin/settings" replace />} />
               <Route path="tickets" element={<ManageTicketsView />} />
               <Route path="ai-call-setup" element={<AICallSetupView />} />
             </Route>

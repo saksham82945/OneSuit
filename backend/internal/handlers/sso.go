@@ -112,9 +112,14 @@ func (a *App) GetPublicSSOProviders(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to fetch providers", nil, "")
 	}
 
-	// Deduplicate by provider type (in case multiple orgs have same provider)
+	// The platform's own Google / Facebook login comes first; the super admin
+	// chooses whether each is shown here.
 	seen := make(map[string]bool)
 	result := make([]SSOProviderPublic, 0)
+	for _, p := range a.platformLoginButtons() {
+		seen[p.Provider] = true
+		result = append(result, p)
+	}
 	for _, p := range providers {
 		if seen[p.Provider] {
 			continue
@@ -144,16 +149,23 @@ func (a *App) InitSSO(r *fastglue.Request) error {
 		}
 	}
 
-	// Get first enabled SSO provider config for this provider type
+	// The platform's keys (set by the super admin) win; otherwise use the
+	// first business that set this provider up.
 	var ssoConfig models.SSOProvider
-	if err := a.DB.Where("provider = ? AND is_enabled = ?", provider, true).First(&ssoConfig).Error; err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusNotFound, "SSO provider not configured or disabled", nil, "")
+	stateOrg := platformSSOOrg
+	if platformCfg, ok := a.platformSSOProvider(provider); ok {
+		ssoConfig = *platformCfg
+	} else {
+		if err := a.DB.Where("provider = ? AND is_enabled = ?", provider, true).First(&ssoConfig).Error; err != nil {
+			return r.SendErrorEnvelope(fasthttp.StatusNotFound, "SSO provider not configured or disabled", nil, "")
+		}
+		stateOrg = ssoConfig.OrganizationID.String()
 	}
 
 	// Generate state token
 	nonce := generateRandomString(32)
 	state := SSOState{
-		OrgID:     ssoConfig.OrganizationID.String(),
+		OrgID:     stateOrg,
 		Provider:  provider,
 		Nonce:     nonce,
 		ExpiresAt: time.Now().Add(5 * time.Minute),
@@ -226,18 +238,27 @@ func (a *App) CallbackSSO(r *fastglue.Request) error {
 		return nil
 	}
 
-	// Parse org ID from state
-	orgID, err := uuid.Parse(state.OrgID)
-	if err != nil {
-		a.redirectWithError(r, "Invalid organization")
-		return nil
-	}
-
-	// Get SSO provider config
+	// Platform login (super admin's keys) or a business's own SSO setup.
 	var ssoConfig models.SSOProvider
-	if err := a.DB.Where("organization_id = ? AND provider = ?", orgID, provider).First(&ssoConfig).Error; err != nil {
-		a.redirectWithError(r, "SSO provider not configured")
-		return nil
+	var orgID uuid.UUID
+	platformLogin := state.OrgID == platformSSOOrg
+	if platformLogin {
+		platformCfg, ok := a.platformSSOProvider(provider)
+		if !ok {
+			a.redirectWithError(r, "This login option is turned off")
+			return nil
+		}
+		ssoConfig = *platformCfg
+	} else {
+		orgID, err = uuid.Parse(state.OrgID)
+		if err != nil {
+			a.redirectWithError(r, "Invalid organization")
+			return nil
+		}
+		if err := a.DB.Where("organization_id = ? AND provider = ?", orgID, provider).First(&ssoConfig).Error; err != nil {
+			a.redirectWithError(r, "SSO provider not configured")
+			return nil
+		}
 	}
 
 	// Build OAuth config and exchange code for token
@@ -279,9 +300,25 @@ func (a *App) CallbackSSO(r *fastglue.Request) error {
 		}
 	}
 
+	if strings.TrimSpace(userInfo.Email) == "" {
+		a.redirectWithError(r, "Your account didn't share an email address. Sign in with your email and password instead.")
+		return nil
+	}
+
 	// Find user by email (across all orgs, like regular login)
 	var user models.User
-	if err := a.DB.Where("email = ?", userInfo.Email).First(&user).Error; err != nil {
+	if err := a.DB.Where("LOWER(email) = LOWER(?)", userInfo.Email).First(&user).Error; err != nil {
+		// Platform login doesn't create accounts: send new people to sign-up
+		// with their name and email filled in.
+		if platformLogin {
+			basePath := sanitizeRedirectPath(a.Config.Server.BasePath)
+			q := url.Values{}
+			q.Set("email", userInfo.Email)
+			q.Set("name", userInfo.Name)
+			q.Set("from", provider)
+			r.RequestCtx.Redirect(basePath+"/signup?"+q.Encode(), fasthttp.StatusTemporaryRedirect)
+			return nil
+		}
 		// User doesn't exist - check if auto-create is enabled
 		if !ssoConfig.AllowAutoCreate {
 			a.redirectWithError(r, "User not found. Contact your administrator.")

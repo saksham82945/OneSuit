@@ -17,7 +17,7 @@ import {
   isValidEmail,
   useDocumentTitle,
 } from './publicApi';
-import { BrandMark, Field, FormAlert, PasswordInput, cardClass, errorInputClass, inputClass } from './PublicLayout';
+import { BrandMark, Field, FormAlert, PasswordInput, PublicTopBar, cardClass, errorInputClass, inputClass } from './PublicLayout';
 
 interface PublicInvite {
   organization_name: string;
@@ -51,6 +51,7 @@ const Frame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
       aria-hidden
       className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(16,185,129,0.10),transparent)]"
     />
+    <PublicTopBar />
     <div className="relative w-full max-w-md">{children}</div>
   </div>
 );

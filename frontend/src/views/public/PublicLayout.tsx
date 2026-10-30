@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { AlertCircle, Eye, EyeOff, Globe, Mail, MessageSquare, Phone } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { AlertCircle, ArrowLeft, Eye, EyeOff, Globe, Mail, MessageSquare, Phone } from 'lucide-react';
+import { ThemeToggle } from './site/SiteKit';
 import { resolveAssetUrl, useBranding } from '@/services/branding';
 import { Input, type InputProps } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,6 +49,42 @@ export const BrandMark: React.FC<{ className?: string; iconClassName?: string; l
   );
 };
 
+/**
+ * "Back" link for public pages: goes to the previous page in this site, or to
+ * the home page when the visitor arrived here directly.
+ */
+export const BackButton: React.FC<{ className?: string; label?: string }> = ({ className, label = 'Back' }) => {
+  const navigate = useNavigate();
+  const goBack = () => {
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (idx > 0) navigate(-1);
+    else navigate('/');
+  };
+  return (
+    <button
+      type="button"
+      onClick={goBack}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors',
+        'border-white/10 bg-white/[0.04] text-white/70 hover:text-white hover:bg-white/[0.08]',
+        'light:border-gray-200 light:bg-white light:text-gray-600 light:hover:text-gray-900 light:hover:bg-gray-50',
+        className
+      )}
+    >
+      <ArrowLeft className="h-3.5 w-3.5" />
+      {label}
+    </button>
+  );
+};
+
+/** Back button and theme switch pinned to the top of a full-screen public page. */
+export const PublicTopBar: React.FC = () => (
+  <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between p-4">
+    <BackButton />
+    <ThemeToggle />
+  </div>
+);
+
 /** "example.com/path" for display. */
 const displayUrl = (url: string) => url.replace(/^https?:\/\//i, '').replace(/\/$/, '');
 
@@ -73,13 +110,17 @@ export const PublicShell: React.FC<PublicShellProps> = ({ headerActions, childre
       />
       <header className="relative z-10 border-b border-white/[0.06] light:border-gray-200">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-          <Link to="/pricing" className="flex items-center gap-2.5 min-w-0">
+          <BackButton className="mr-1 shrink-0" />
+          <Link to="/" className="flex items-center gap-2.5 min-w-0">
             <BrandMark />
             <span className="truncate text-base font-semibold tracking-tight text-white light:text-gray-900">
               {platform_name}
             </span>
           </Link>
-          <nav className="flex shrink-0 items-center gap-1 sm:gap-2 text-sm">{headerActions}</nav>
+          <nav className="flex shrink-0 items-center gap-1 sm:gap-2 text-sm">
+            {headerActions}
+            <ThemeToggle className="ml-1" />
+          </nav>
         </div>
       </header>
 

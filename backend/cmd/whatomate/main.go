@@ -19,6 +19,7 @@ import (
 	"github.com/shridarpatil/whatomate/internal/frontend"
 	"github.com/shridarpatil/whatomate/internal/handlers"
 	"github.com/shridarpatil/whatomate/internal/middleware"
+	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/shridarpatil/whatomate/internal/queue"
 	"github.com/shridarpatil/whatomate/internal/storage"
 	"github.com/shridarpatil/whatomate/internal/tts"
@@ -175,6 +176,18 @@ func runServer(args []string) {
 	}
 	if err := database.EnsurePresetLoginUsers(db); err != nil {
 		lo.Warn("Failed to ensure preset login users", "error", err)
+	}
+	// Built-in lead integrations (IndiaMART, JustDial...) for the catalog.
+	if err := handlers.EnsureIntegrationDefinitions(db); err != nil {
+		lo.Warn("Failed to add built-in integrations", "error", err)
+	}
+	// The usual website pages (about, privacy, terms...) for the super admin to edit.
+	if err := handlers.EnsureDefaultPages(db); err != nil {
+		lo.Warn("Failed to create default website pages", "error", err)
+	}
+	// The platform bills in rupees only; move any older plans over.
+	if err := db.Exec("UPDATE subscription_plans SET currency = ? WHERE currency <> ?", models.PlatformCurrency, models.PlatformCurrency).Error; err != nil {
+		lo.Warn("Failed to switch plans to INR", "error", err)
 	}
 
 	// Connect to Redis
@@ -534,6 +547,9 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	// Public pricing page and invite links (no login)
 	g.GET("/api/public/plans", app.GetPublicPlans)
 	g.GET("/api/public/branding", app.GetPublicBranding)
+	g.GET("/api/public/site-content", app.GetPublicSiteContent)
+	g.POST("/api/public/integrations/{token}/lead", app.ReceiveIntegrationLead)
+	g.GET("/api/public/integrations/{token}/lead", app.ReceiveIntegrationLead)
 	g.GET("/api/public/branding/logo", app.GetPlatformLogo)
 	g.GET("/api/public/invites/{token}", app.GetPublicInvite)
 
@@ -861,6 +877,19 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.PUT("/api/super-admin/plans/{id}", app.SuperAdminUpdatePlan)
 	g.DELETE("/api/super-admin/plans/{id}", app.SuperAdminDeletePlan)
 	g.GET("/api/super-admin/pages", app.SuperAdminListPages)
+	g.GET("/api/super-admin/site-content", app.SuperAdminGetSiteContent)
+	g.GET("/api/super-admin/social-login", app.SuperAdminGetSocialLogin)
+	g.PUT("/api/super-admin/social-login/{provider}", app.SuperAdminUpdateSocialLogin)
+	g.GET("/api/super-admin/integrations", app.SuperAdminListIntegrations)
+	g.POST("/api/super-admin/integrations", app.SuperAdminCreateIntegration)
+	g.PUT("/api/super-admin/integrations/{key}", app.SuperAdminUpdateIntegration)
+	g.DELETE("/api/super-admin/integrations/{key}", app.SuperAdminDeleteIntegration)
+	g.GET("/api/integrations", app.ListIntegrations)
+	g.POST("/api/integrations/connections", app.CreateIntegrationConnection)
+	g.PUT("/api/integrations/connections/{id}", app.UpdateIntegrationConnection)
+	g.DELETE("/api/integrations/connections/{id}", app.DeleteIntegrationConnection)
+	g.GET("/api/integrations/leads", app.ListIntegrationLeads)
+	g.PUT("/api/super-admin/site-content", app.SuperAdminUpdateSiteContent)
 	g.POST("/api/super-admin/pages", app.SuperAdminCreatePage)
 	g.PUT("/api/super-admin/pages/{id}", app.SuperAdminUpdatePage)
 	g.DELETE("/api/super-admin/pages/{id}", app.SuperAdminDeletePage)
@@ -912,6 +941,10 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/ads/audiences/fetched", app.ListFetchedAudiences)
 	g.POST("/api/ads/sync", app.SyncAds)
 	g.GET("/api/super-admin/ad-credits", app.SuperAdminListAdCredits)
+	g.GET("/api/super-admin/ads", app.SuperAdminListAds)
+	g.PUT("/api/super-admin/ads/{id}/status", app.SuperAdminSetAdStatus)
+	g.DELETE("/api/super-admin/ads/{id}", app.SuperAdminDeleteAd)
+	g.POST("/api/super-admin/ads/clients/{id}/disconnect", app.SuperAdminDisconnectAdsPage)
 	g.POST("/api/super-admin/ad-credits/{id}/approve", app.SuperAdminApproveAdCredit)
 
 	// Invite links for team members

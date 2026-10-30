@@ -106,7 +106,7 @@ func TestApp_SuperAdmin_PlanLifecycle(t *testing.T) {
 	f := newSuperAdminFixture(t)
 
 	plan := f.createPlan(t, "Growth "+uuid.NewString()[:6])
-	assert.Equal(t, "USD", plan.Currency, "currency is upper-cased")
+	assert.Equal(t, "INR", plan.Currency, "plans are always in rupees")
 	assert.Equal(t, models.StringArray{"Campaigns", "Analytics"}, plan.Features, "blank features are dropped")
 	assert.True(t, plan.IsActive)
 
@@ -359,9 +359,15 @@ func TestApp_SuperAdmin_ConfigAndMaintenanceMode(t *testing.T) {
 	assert.Equal(t, 14, cfg.TrialDays)
 
 	// Validation.
-	bad := f.asSuperAdmin(testutil.NewJSONRequest(t, map[string]any{"default_currency": "dollars"}))
+	bad := f.asSuperAdmin(testutil.NewJSONRequest(t, map[string]any{"trial_days": 999}))
 	require.NoError(t, f.app.SuperAdminUpdateConfig(bad))
-	testutil.AssertErrorResponse(t, bad, fasthttp.StatusBadRequest, "3-letter")
+	testutil.AssertErrorResponse(t, bad, fasthttp.StatusBadRequest, "Trial days")
+
+	// The platform currency is always INR.
+	cur := f.asSuperAdmin(testutil.NewJSONRequest(t, map[string]any{"default_currency": "USD"}))
+	require.NoError(t, f.app.SuperAdminUpdateConfig(cur))
+	testutil.ParseEnvelopeResponse(t, cur, &cfg)
+	assert.Equal(t, "INR", cfg.DefaultCurrency)
 
 	// Turn on maintenance mode (partial update keeps the other fields).
 	upd := f.asSuperAdmin(testutil.NewJSONRequest(t, map[string]any{

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { primaryModules } from './PrimaryRail';
+import { primaryModules, visibleRailModules } from './PrimaryRail';
 
 describe('PrimaryRail navigation modules', () => {
   it('should include Platform Admin module with correct configuration', () => {
@@ -9,7 +9,7 @@ describe('PrimaryRail navigation modules', () => {
     expect(superAdminMod?.path).toBe('/super-admin');
     expect(superAdminMod?.superAdminOnly).toBe(true);
     expect(superAdminMod?.matcher('/super-admin')).toBe(true);
-    expect(superAdminMod?.matcher('/super-admin/vendors')).toBe(true);
+    expect(superAdminMod?.matcher('/super-admin/clients')).toBe(true);
     expect(superAdminMod?.matcher('/dashboard')).toBe(false);
   });
 
@@ -72,5 +72,16 @@ describe('PrimaryRail navigation modules', () => {
     const settings = primaryModules.find((m) => m.id === 'settings')!;
     expect(settings.matcher('/settings')).toBe(true);
     expect(settings.matcher('/settings/accounts')).toBe(true);
+  });
+
+  it('gives the super admin only Platform Admin and Settings, unless inside a client', () => {
+    const all = () => true;
+    expect(visibleRailModules(true, false, all).map((m) => m.id)).toEqual(['super-admin', 'settings']);
+    const inside = visibleRailModules(true, true, all).map((m) => m.id);
+    expect(inside).toContain('chat');
+    expect(inside).toContain('dashboard');
+    const business = visibleRailModules(false, false, all).map((m) => m.id);
+    expect(business).not.toContain('super-admin');
+    expect(business).toContain('chat');
   });
 });

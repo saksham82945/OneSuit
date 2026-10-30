@@ -136,6 +136,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (email: string, password: string) => {
     const response = await api.post('/auth/login', { email, password });
+    // A fresh login always starts in the user's own account.
+    localStorage.removeItem('super_admin_return_org');
+    localStorage.removeItem('super_admin_vendor_name');
     const user = response.data.data.user;
     get().setAuth(user);
   },
