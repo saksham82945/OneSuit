@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Loader2 } from 'lucide-react';
 import { accountsService } from '@/services/api';
 import { readData } from '@/services/response';
 import { useAuthStore } from '@/stores/auth';
 import { isInsideClient } from '@/services/superAdmin';
 import { cn } from '@/lib/utils';
+import { useEmbeddedSignup } from '@/views/settings/useEmbeddedSignup';
+
+/** Fired after a number is connected through the popup, so open pages can reload. */
+export const WHATSAPP_CONNECTED_EVENT = 'onesuit:whatsapp-connected';
 
 // "Connect WhatsApp with Facebook": opens Meta's hosted WhatsApp onboarding
 // page. The super admin sets the link and can hide the button for everyone else
@@ -49,6 +53,7 @@ export function useConnectWhatsApp() {
   // The super admin connects numbers only from inside a client's account.
   const allowed = user?.is_super_admin ? isInsideClient(user) : hasPermission('accounts', 'write');
   return {
+    allowed: Boolean(allowed),
     visible: Boolean(allowed && config?.connect_button_visible && config.connect_url),
     url: config?.connect_url ?? '',
     /** Manual setup (own Facebook App details) is allowed for this user. */
@@ -73,7 +78,37 @@ export const ConnectWhatsAppButton: React.FC<{ size?: keyof typeof sizes; classN
   className,
   label = 'Connect WhatsApp with Facebook',
 }) => {
-  const { visible, url } = useConnectWhatsApp();
+  const { allowed, visible, url } = useConnectWhatsApp();
+  const { embeddedAvailable, connecting, launch } = useEmbeddedSignup(() => {
+    window.dispatchEvent(new Event(WHATSAPP_CONNECTED_EVENT));
+  });
+  const classes = cn(
+    'inline-flex shrink-0 items-center justify-center whitespace-nowrap bg-[#1877F2] font-medium text-white shadow-sm shadow-blue-500/20 transition-colors hover:bg-[#166fe5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-70',
+    sizes[size],
+    className
+  );
+
+  // Preferred: Meta's popup. It hands us the number, so it's added here automatically
+  // (and, in coexistence mode, keeps working in the WhatsApp Business app).
+  if (allowed && embeddedAvailable) {
+    return (
+      <button
+        type="button"
+        onClick={() => launch()}
+        disabled={connecting}
+        className={classes}
+        title="Opens a Facebook window; the number is added here automatically"
+      >
+        {connecting ? (
+          <Loader2 className={size === 'lg' ? 'h-5 w-5 animate-spin' : 'h-4 w-4 animate-spin'} />
+        ) : (
+          <FacebookIcon className={size === 'lg' ? 'h-5 w-5' : 'h-4 w-4'} />
+        )}
+        {label}
+      </button>
+    );
+  }
+
   if (!visible) return null;
   return (
     <a

@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { useEmbeddedSignup, type EmbeddedSignupResult } from './useEmbeddedSignup';
-import { ConnectWhatsAppButton, useConnectWhatsApp } from '@/components/whatsapp/ConnectWhatsAppButton';
+import { ConnectWhatsAppButton, useConnectWhatsApp, WHATSAPP_CONNECTED_EVENT } from '@/components/whatsapp/ConnectWhatsAppButton';
 import { CopyRow, ManualWhatsAppSetupButton } from '@/components/whatsapp/ManualWhatsAppSetup';
 
 // WhatsApp Cloud API Setup: connect a number with Facebook (Embedded Signup),
@@ -241,6 +241,12 @@ export const WhatsAppSetupView: React.FC = () => {
   };
 
   useEffect(() => {
+    const reload = () => void loadAccounts();
+    window.addEventListener(WHATSAPP_CONNECTED_EVENT, reload);
+    return () => window.removeEventListener(WHATSAPP_CONNECTED_EVENT, reload);
+  }, [loadAccounts]);
+
+  useEffect(() => {
     void loadAccounts();
     api
       .get('/whatsapp-setup/test-contact')
@@ -282,28 +288,6 @@ export const WhatsAppSetupView: React.FC = () => {
                 <div className="flex justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
                 </div>
-              ) : connectVisible ? (
-                <div className="flex flex-col items-center gap-3 py-4 text-center">
-                  <div className="flex w-full flex-wrap items-center justify-center gap-3">
-                    <ManualWhatsAppSetupButton size="lg" className="w-auto max-w-full px-5" onConnected={loadAccounts} />
-                    <ConnectWhatsAppButton size="lg" className="w-auto max-w-full px-5" />
-                  </div>
-                  <p className="max-w-md text-xs text-gray-500 dark:text-gray-400">
-                    Facebook opens in a new tab. Log in, pick or create your Business portfolio, WhatsApp Business
-                    Account and phone number, and finish. Then come back and click “Re-sync Phone Numbers”.
-                  </p>
-                  {embeddedAvailable && canWrite && (
-                    <button
-                      type="button"
-                      onClick={() => launch()}
-                      disabled={connecting}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1877F2] hover:underline disabled:opacity-60"
-                    >
-                      {connecting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                      Or connect in a popup and add the number here automatically
-                    </button>
-                  )}
-                </div>
               ) : embeddedAvailable ? (
                 <div className="flex flex-col items-center gap-3 py-4 text-center">
                   <div className="flex w-full flex-wrap items-center justify-center gap-3">
@@ -325,6 +309,18 @@ export const WhatsAppSetupView: React.FC = () => {
                   {!canWrite && (
                     <p className="text-xs text-amber-600">Only an admin can connect a number.</p>
                   )}
+                </div>
+              ) : connectVisible ? (
+                <div className="flex flex-col items-center gap-3 py-4 text-center">
+                  <div className="flex w-full flex-wrap items-center justify-center gap-3">
+                    <ManualWhatsAppSetupButton size="lg" className="w-auto max-w-full px-5" onConnected={loadAccounts} />
+                    <ConnectWhatsAppButton size="lg" className="w-auto max-w-full px-5" />
+                  </div>
+                  <p className="max-w-md text-xs text-gray-500 dark:text-gray-400">
+                    Facebook opens in a new tab. Log in, pick or create your Business portfolio, WhatsApp Business
+                    Account and phone number, and finish. Facebook doesn’t send the number back here, so then use “Manual
+                    setup with Facebook” with your access token and WhatsApp Business Account ID to add it.
+                  </p>
                 </div>
               ) : (
                 <div className="flex items-start gap-3 py-2 text-sm">
