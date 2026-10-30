@@ -166,3 +166,59 @@ func TestApp_ManualWhatsAppSetup_RegistrationFailureIsReported(t *testing.T) {
 	require.NoError(t, app.DB.Where("phone_id = ?", phone).First(&acc).Error)
 	assert.Equal(t, "pending_registration", acc.Status)
 }
+
+func TestApp_ManualWhatsAppSetup_ReconnectAfterDisconnect(t *testing.T) {
+	phone := uniq("ph-re")
+	name := uniq("Aits")
+	meta := newFakeMetaServer(t)
+	meta.listFn = func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"` + phone + `","display_phone_number":"+91 85059 17890","verified_name":"` + name + `","status":"CONNECTED"}]}`))
+	}
+	app := newAppWithMeta(t, meta)
+	org := testutil.CreateTestOrganization(t, app.DB)
+	user := createAdminUser(t, app, org.ID)
+
+	connect := func() map[string]any {
+		req := testutil.NewJSONRequest(t, map[string]any{"access_token": "tok", "business_id": "waba-re"})
+		testutil.SetAuthContext(req, org.ID, user.ID)
+		require.NoError(t, app.ManualWhatsAppSetup(req))
+		require.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req), string(testutil.GetResponseBody(req)))
+		return manualSetupResp(t, testutil.GetResponseBody(req))
+	}
+	first := connect()
+	firstID := first["account"].(map[string]any)["id"]
+
+	// "Disconnect Account" soft-deletes the number; it still holds its name.
+	require.NoError(t, app.DB.Where("phone_id = ?", phone).Delete(&models.WhatsAppAccount{}).Error)
+
+	again := connect()
+	assert.Equal(t, firstID, again["account"].(map[string]any)["id"], "the old record comes back")
+	var acc models.WhatsAppAccount
+	require.NoError(t, app.DB.Where("phone_id = ?", phone).First(&acc).Error) // visible again
+	assert.Equal(t, name, acc.Name)
+}
+
+func TestApp_ManualWhatsAppSetup_NameHeldByDisconnectedNumberElsewhere(t *testing.T) {
+	phone := uniq("ph-new")
+	name := uniq("Shared")
+	other := testutil.CreateTestOrganization(t, newTestApp(t).DB)
+	meta := newFakeMetaServer(t)
+	meta.listFn = func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"` + phone + `","display_phone_number":"99","verified_name":"` + name + `","status":"CONNECTED"}]}`))
+	}
+	app := newAppWithMeta(t, meta)
+	gone := &models.WhatsAppAccount{
+		BaseModel: models.BaseModel{ID: uuid.New()}, OrganizationID: other.ID, Name: name,
+		PhoneID: uniq("old"), BusinessID: "b", AccessToken: "t", WebhookVerifyToken: "v", APIVersion: "v18.0", Status: "active",
+	}
+	require.NoError(t, app.DB.Create(gone).Error)
+	require.NoError(t, app.DB.Delete(gone).Error)
+
+	org := testutil.CreateTestOrganization(t, app.DB)
+	user := createAdminUser(t, app, org.ID)
+	req := testutil.NewJSONRequest(t, map[string]any{"access_token": "tok", "business_id": "waba-n"})
+	testutil.SetAuthContext(req, org.ID, user.ID)
+	require.NoError(t, app.ManualWhatsAppSetup(req))
+	require.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req), string(testutil.GetResponseBody(req)))
+	assert.Equal(t, name+" (99)", manualSetupResp(t, testutil.GetResponseBody(req))["account"].(map[string]any)["name"])
+}

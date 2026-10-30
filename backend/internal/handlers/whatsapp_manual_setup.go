@@ -9,6 +9,7 @@ import (
 	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/valyala/fasthttp"
 	"github.com/zerodha/fastglue"
+	"gorm.io/gorm"
 )
 
 // Manual WhatsApp setup: the client pastes their own Facebook App ID / Secret,
@@ -144,8 +145,12 @@ func (a *App) ManualWhatsAppSetup(r *fastglue.Request) error {
 	}
 
 	var account models.WhatsAppAccount
-	existing := a.DB.Where("organization_id = ? AND phone_id = ?", orgID, chosen.PhoneID).First(&account).Error == nil
+	// Include numbers disconnected earlier (soft-deleted): they still hold their
+	// name, so bring the old record back instead of adding a clashing one.
+	existing := a.DB.Unscoped().Where("organization_id = ? AND phone_id = ?", orgID, chosen.PhoneID).
+		Order("deleted_at IS NOT NULL, updated_at DESC").First(&account).Error == nil
 	if existing {
+		account.DeletedAt = gorm.DeletedAt{}
 		// Decrypt first so the saved PIN isn't encrypted twice.
 		a.decryptAccountSecrets(&account)
 		account.AccessToken = req.AccessToken
@@ -213,7 +218,7 @@ func (a *App) ManualWhatsAppSetup(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Could not save the number", nil, "")
 	}
 	if existing {
-		err = a.DB.Save(&account).Error
+		err = a.DB.Unscoped().Save(&account).Error
 		a.InvalidateWhatsAppAccountCache(account.PhoneID)
 	} else {
 		err = a.DB.Create(&account).Error
@@ -247,7 +252,8 @@ func (a *App) ManualWhatsAppSetup(r *fastglue.Request) error {
 func (a *App) uniqueAccountName(name, phone string) string {
 	taken := func(n string) bool {
 		var c int64
-		a.DB.Model(&models.WhatsAppAccount{}).Where("name = ?", n).Count(&c)
+		// Unscoped: disconnected numbers keep their name in the unique index.
+		a.DB.Unscoped().Model(&models.WhatsAppAccount{}).Where("name = ?", n).Count(&c)
 		return c > 0
 	}
 	if !taken(name) {
