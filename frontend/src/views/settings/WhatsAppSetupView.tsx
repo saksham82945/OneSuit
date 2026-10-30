@@ -67,6 +67,9 @@ interface Health {
   quality_rating?: string;
   account_review_status?: string;
   phone_status?: string;
+  webhook_last_at?: string;
+  webhook_last_result?: string;
+  webhook_url?: string;
 }
 
 const errorMessage = (err: unknown, fallback: string) =>
@@ -529,6 +532,31 @@ export const WhatsAppSetupView: React.FC = () => {
                           )}
                         </dd>
                       </div>
+                      {health && (
+                        <div>
+                          <dt className="font-semibold text-gray-900 dark:text-white">Messages from Meta</dt>
+                          {health.webhook_last_at ? (
+                            <dd
+                              className={cn(
+                                'text-gray-600 dark:text-gray-300',
+                                health.webhook_last_result?.startsWith('rejected') && 'text-red-600 dark:text-red-400'
+                              )}
+                            >
+                              {new Date(health.webhook_last_at).toLocaleString()} · {health.webhook_last_result}
+                            </dd>
+                          ) : (
+                            <dd className="space-y-1.5 text-xs text-amber-700 dark:text-amber-300">
+                              <p>
+                                Nothing received from Meta yet, so messages won’t show in Live Chat. In your Facebook App →
+                                WhatsApp → Configuration, set this callback URL and subscribe to the “messages” field:
+                              </p>
+                              <code className="block break-all rounded bg-gray-100 px-2 py-1 font-mono text-[11px] text-gray-800 dark:bg-white/10 dark:text-gray-200">
+                                {health.webhook_url}
+                              </code>
+                            </dd>
+                          )}
+                        </div>
+                      )}
                       {health?.quality_rating && (
                         <div>
                           <dt className="font-semibold text-gray-900 dark:text-white">Quality rating</dt>

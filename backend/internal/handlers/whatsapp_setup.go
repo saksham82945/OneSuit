@@ -89,6 +89,11 @@ func (a *App) GetAccountHealth(r *fastglue.Request) error {
 		"name_status":          phone["name_status"],
 		"messaging_limit_tier": phone["messaging_limit_tier"],
 	}
+	if last := a.lastWebhookEvent(account.PhoneID); last != nil {
+		resp["webhook_last_at"] = last["at"]
+		resp["webhook_last_result"] = last["result"]
+	}
+	resp["webhook_url"] = a.webhookURL(r)
 	if waba != nil {
 		resp["business_name"] = waba["name"]
 		resp["account_review_status"] = waba["account_review_status"]

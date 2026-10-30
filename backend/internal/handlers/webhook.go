@@ -180,11 +180,16 @@ func (a *App) WebhookHandler(r *fastglue.Request) error {
 					continue
 				}
 				account, err := a.getWhatsAppAccountCached(phoneNumberID)
-				if err != nil || account.AppSecret == "" {
+				if err != nil {
 					continue
 				}
-				if !verifyWebhookSignature(body, signature, []byte(account.AppSecret)) {
+				secrets := a.webhookSecretsFor(account)
+				if len(secrets) == 0 {
+					continue
+				}
+				if !signatureMatchesAny(body, signature, secrets) {
 					a.Log.Warn("Invalid webhook signature", "phone_id", phoneNumberID)
+					a.recordWebhookEvent(phoneNumberID, change.Field, "rejected: signature didn't match the saved App Secret")
 					return r.SendErrorEnvelope(fasthttp.StatusForbidden, "Invalid signature", nil, "")
 				}
 				a.Log.Debug("Webhook signature verified successfully")
@@ -265,6 +270,7 @@ func (a *App) WebhookHandler(r *fastglue.Request) error {
 			// Handle message echoes (coexistence)
 			if change.Field == "smb_message_echoes" {
 				phoneNumberID := change.Value.Metadata.PhoneNumberID
+				a.recordWebhookEvent(phoneNumberID, change.Field, "message sent from the WhatsApp Business app")
 				for _, echo := range change.Value.MessageEchoes {
 					a.Log.Info("Received message echo",
 						"from", echo.From,
@@ -281,6 +287,13 @@ func (a *App) WebhookHandler(r *fastglue.Request) error {
 			}
 
 			phoneNumberID := change.Value.Metadata.PhoneNumberID
+			if len(change.Value.Messages) > 0 {
+				a.recordWebhookEvent(phoneNumberID, change.Field, "message received")
+			} else if len(change.Value.Statuses) > 0 {
+				a.recordWebhookEvent(phoneNumberID, change.Field, "status update received")
+			} else {
+				a.recordWebhookEvent(phoneNumberID, change.Field, "event received")
+			}
 
 			// Process messages
 			for _, msg := range change.Value.Messages {

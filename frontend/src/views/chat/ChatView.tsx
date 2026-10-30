@@ -253,6 +253,51 @@ export const ChatView: React.FC = () => {
     };
   }, [selectedContactId]);
 
+  // Keep the inbox live: re-check conversations and the open thread every few
+  // seconds while the page is visible, so incoming WhatsApp messages show up
+  // without a refresh.
+  useEffect(() => {
+    let busy = false;
+    const tick = async () => {
+      if (busy || document.visibilityState !== 'visible') return;
+      busy = true;
+      try {
+        const res = await contactsService.list();
+        const fresh = readList<Contact>(res, 'contacts');
+        setContacts((prev) => {
+          // Keep contacts opened by link that the list doesn't include.
+          const extra = prev.filter((c) => !fresh.some((f) => f.id === c.id) && c.id === selectedContactId);
+          return [...extra, ...fresh];
+        });
+        if (!selectedContactId && fresh.length > 0) setSelectedContact(fresh[0]);
+        if (selectedContactId) {
+          const msgRes = await messagesService.list(selectedContactId);
+          const list = readList<Message>(msgRes, 'messages');
+          setMessages((prev) => {
+            const same =
+              prev.length === list.length &&
+              prev[prev.length - 1]?.id === list[list.length - 1]?.id &&
+              prev[prev.length - 1]?.status === list[list.length - 1]?.status;
+            return same ? prev : list;
+          });
+        }
+      } catch {
+        // Try again on the next tick.
+      } finally {
+        busy = false;
+      }
+    };
+    const id = window.setInterval(tick, 5000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [selectedContactId]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
