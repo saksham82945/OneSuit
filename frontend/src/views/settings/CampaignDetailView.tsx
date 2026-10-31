@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { campaignsService, templatesService, contactsService } from '@/services/api';
+import { api, accountsService, campaignsService, templatesService, contactsService } from '@/services/api';
 import { readData, readList, readTotal } from '@/services/response';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Megaphone, Play, Pause, Plus, Users, CheckCircle2, Eye, Clock } from 'lucide-react';
+import { Megaphone, Play, Pause, Plus, Users, CheckCircle2, Eye, Clock, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Shape of GET /api/templates items (handlers.TemplateResponse) — only what this screen uses
@@ -91,6 +91,8 @@ export const CampaignDetailView: React.FC = () => {
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [targetTag, setTargetTag] = useState('');
   const [templates, setTemplates] = useState<TemplateOption[]>([]);
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [campaign, setCampaign] = useState<CampaignData | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isActing, setIsActing] = useState(false);
@@ -110,20 +112,62 @@ export const CampaignDetailView: React.FC = () => {
     }
   }, [id, isNew]);
 
-  useEffect(() => {
-    templatesService.list({ limit: 100 }).then((res) => {
-      const list = readList<TemplateOption>(res, 'templates');
+  const loadTemplates = useCallback(async () => {
+    try {
+      const list = readList<TemplateOption>(await templatesService.list({ limit: 500 }), 'templates');
       setTemplates(list);
       if (isNew && list.length > 0) {
         const preferred = list.find((tpl) => (tpl.status || '').toUpperCase() === 'APPROVED') || list[0];
         setSelectedTemplateId((current) => current || preferred.id);
       }
-    }).catch(() => {
+      return list;
+    } catch {
       setTemplates([]);
-    });
+      return [];
+    } finally {
+      setTemplatesLoaded(true);
+    }
+  }, [isNew]);
 
+  // Pull the templates approved in Meta into OneSuit, for every connected number.
+  const syncTemplates = useCallback(async (quiet = false) => {
+    setIsSyncing(true);
+    try {
+      const accountNames = readList<{ name?: string }>(await accountsService.list(), 'accounts')
+        .map((a) => a.name)
+        .filter((n): n is string => !!n);
+      if (accountNames.length === 0) {
+        if (!quiet) toast.error('Connect a WhatsApp number first, then sync templates');
+        return;
+      }
+      const failures: string[] = [];
+      for (const accountName of accountNames) {
+        try {
+          await api.post('/templates/sync', { whatsapp_account: accountName });
+        } catch (err) {
+          const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'sync failed';
+          failures.push(`${accountName}: ${msg}`);
+        }
+      }
+      const list = await loadTemplates();
+      if (!quiet || list.length > 0) {
+        if (failures.length > 0) toast.error(`Template sync failed for ${failures.join('; ')}`);
+        else toast.success(list.length > 0 ? `Loaded ${list.length} template${list.length === 1 ? '' : 's'} from Meta` : 'Meta has no templates for this number yet');
+      }
+    } catch {
+      if (!quiet) toast.error('Template sync failed');
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [loadTemplates]);
+
+  useEffect(() => {
+    void loadTemplates().then((list) => {
+      // Nothing saved yet: fetch them from Meta once so the list isn't empty.
+      if (isNew && list.length === 0) void syncTemplates(true);
+    });
     loadCampaign();
-  }, [isNew, loadCampaign]);
+  }, [isNew, loadCampaign, loadTemplates, syncTemplates]);
 
   const selectedTemplate = templates.find((tpl) => tpl.id === selectedTemplateId);
   const multipleAccounts = new Set(templates.map((tpl) => tpl.whatsapp_account)).size > 1;
@@ -329,28 +373,50 @@ export const CampaignDetailView: React.FC = () => {
 
               <div className="grid gap-1.5">
                 <Label className="text-xs">Approved Message Template *</Label>
-                <Select
-                  value={selectedTemplateId}
-                  onValueChange={setSelectedTemplateId}
-                  disabled={!isNew}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={templates.length === 0 ? 'No templates yet' : 'Select a template'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {templateOptions.map((tpl) => {
-                      const tplStatus = (tpl.status || '').toUpperCase();
-                      return (
-                        <SelectItem key={tpl.id} value={tpl.id}>
-                          {tpl.display_name || tpl.name}
-                          {tpl.language ? ` (${tpl.language})` : ''}
-                          {multipleAccounts && tpl.whatsapp_account ? ` · ${tpl.whatsapp_account}` : ''}
-                          {tplStatus && tplStatus !== 'APPROVED' ? ` · ${tplStatus}` : ''}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+                {isNew && templatesLoaded && templates.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-gray-300 p-4 text-sm dark:border-white/10">
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {isSyncing ? 'Getting your templates from Meta…' : 'No message templates yet'}
+                    </p>
+                    {!isSyncing && (
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Campaigns can only send templates Meta has approved. Load the ones you already have in Meta, or create one under Templates.
+                      </p>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button type="button" size="sm" variant="outline" onClick={() => syncTemplates()} disabled={isSyncing}>
+                        {isSyncing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+                        Sync templates from Meta
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => navigate('/templates')}>
+                        Create a template
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Select
+                    value={selectedTemplateId}
+                    onValueChange={setSelectedTemplateId}
+                    disabled={!isNew}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={templatesLoaded ? 'Select a template' : 'Loading templates…'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {templateOptions.map((tpl) => {
+                        const tplStatus = (tpl.status || '').toUpperCase();
+                        return (
+                          <SelectItem key={tpl.id} value={tpl.id}>
+                            {tpl.display_name || tpl.name}
+                            {tpl.language ? ` (${tpl.language})` : ''}
+                            {multipleAccounts && tpl.whatsapp_account ? ` · ${tpl.whatsapp_account}` : ''}
+                            {tplStatus && tplStatus !== 'APPROVED' ? ` · ${tplStatus}` : ''}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                )}
                 {isNew && selectedTemplate && (selectedTemplate.status || '').toUpperCase() !== 'APPROVED' && (
                   <p className="text-[10px] text-amber-400">
                     This template is not approved by Meta yet, so messages will fail until it is.

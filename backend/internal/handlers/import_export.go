@@ -35,6 +35,7 @@ type ImportConfig struct {
 	OptionalColumns []string
 	ColumnTransform map[string]func(string) (any, error)
 	UniqueColumn    string // Column to check for duplicates (e.g., "phone_number")
+	Aliases         map[string][]string // Other CSV header names people use for a column
 	BeforeCreate    func(db *gorm.DB, orgID uuid.UUID, record map[string]any) error
 }
 
@@ -127,13 +128,19 @@ var importConfigs = map[string]ImportConfig{
 		RequiredColumns: []string{"phone_number"},
 		OptionalColumns: []string{"profile_name", "whats_app_account", "tags", "assigned_user_id"},
 		UniqueColumn:    "phone_number",
+		Aliases: map[string][]string{
+			"phone_number": {"phone", "phone no", "phone number", "phonenumber", "mobile", "mobile no", "mobile number", "mobilenumber", "mob", "cell", "contact", "contact no", "contact number", "number", "whatsapp", "whatsapp no", "whatsapp number", "msisdn", "tel", "telephone", "phone 1 - value"},
+			"profile_name": {"name", "full name", "fullname", "contact name", "customer name", "customer", "first name", "display name"},
+			"tags":         {"tag", "label", "labels", "group", "groups", "segment"},
+		},
 		ColumnTransform: map[string]func(string) (any, error){
 			"phone_number": func(s string) (any, error) {
 				// Normalize phone number - remove + prefix
-				phone := strings.TrimSpace(s)
-				if len(phone) > 0 && phone[0] == '+' {
-					phone = phone[1:]
+				s = strings.TrimSpace(s)
+				if strings.ContainsAny(s, "eE") {
+					return nil, fmt.Errorf("%q looks like Excel shortened it; format the column as Text and export again", s)
 				}
+				phone := cleanPhone(s)
 				if phone == "" {
 					return nil, fmt.Errorf("phone number is required")
 				}
@@ -419,14 +426,19 @@ func (a *App) ImportData(r *fastglue.Request) error {
 	const maxCSVSize = 10 << 20
 	limitedReader := io.LimitReader(file, maxCSVSize+1)
 
-	// Parse CSV
-	reader := csv.NewReader(limitedReader)
+	// Parse CSV (Excel files: strip the hidden BOM, allow ; or tab separators)
+	raw, err := io.ReadAll(limitedReader)
+	if err != nil {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Failed to read file", nil, "")
+	}
+	reader := newImportCSVReader(raw)
 
 	// Read header
 	header, err := reader.Read()
 	if err != nil {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Failed to read CSV header", nil, "")
 	}
+	header, pending := resolveImportHeader(header, config.Aliases)
 
 	// Build column index mapping
 	colIndex := make(map[string]int)
@@ -451,7 +463,7 @@ func (a *App) ImportData(r *fastglue.Request) error {
 			}
 		}
 		if !found {
-			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, fmt.Sprintf("Required column '%s' not found in CSV", reqCol), nil, "")
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, fmt.Sprintf("Required column '%s' not found in CSV. Name the column \"%s\" (or Phone, Mobile, Contact, Number) and try again.", reqCol, config.getColumnLabel(reqCol)), nil, "")
 		}
 	}
 
@@ -476,7 +488,12 @@ func (a *App) ImportData(r *fastglue.Request) error {
 
 	rowNum := 1
 	for {
-		record, err := reader.Read()
+		var record []string
+		if pending != nil {
+			record, err, pending = pending, nil, nil
+		} else {
+			record, err = reader.Read()
+		}
 		if err == io.EOF {
 			break
 		}

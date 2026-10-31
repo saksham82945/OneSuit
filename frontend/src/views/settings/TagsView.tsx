@@ -358,12 +358,12 @@ export const TagsView: React.FC = () => {
                         className={cn(
                           'flex items-center gap-2 p-2 rounded-lg border text-left text-xs transition-all cursor-pointer',
                           isSelected
-                            ? 'border-emerald-500/60 bg-emerald-500/10 ring-1 ring-emerald-500/40 text-white font-medium'
-                            : 'border-white/[0.08] bg-white/[0.02] text-gray-400 hover:border-white/20 hover:text-gray-200'
+                            ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500/40 text-gray-900 font-medium dark:bg-emerald-500/10 dark:text-white'
+                            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-white/[0.08] dark:bg-white/[0.02] dark:text-gray-400 dark:hover:border-white/20 dark:hover:text-gray-200'
                         )}
                       >
                         <span
-                          className="w-3.5 h-3.5 rounded-full shrink-0 shadow-xs"
+                          className="w-3.5 h-3.5 rounded-full shrink-0 shadow-xs ring-1 ring-black/10"
                           style={{ backgroundColor: opt.hex }}
                         />
                         <span className="text-xs">{opt.label}</span>
@@ -435,12 +435,12 @@ export const TagsView: React.FC = () => {
                         className={cn(
                           'flex items-center gap-2 p-2 rounded-lg border text-left text-xs transition-all cursor-pointer',
                           isSelected
-                            ? 'border-emerald-500/60 bg-emerald-500/10 ring-1 ring-emerald-500/40 text-white font-medium'
-                            : 'border-white/[0.08] bg-white/[0.02] text-gray-400 hover:border-white/20 hover:text-gray-200'
+                            ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500/40 text-gray-900 font-medium dark:bg-emerald-500/10 dark:text-white'
+                            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-white/[0.08] dark:bg-white/[0.02] dark:text-gray-400 dark:hover:border-white/20 dark:hover:text-gray-200'
                         )}
                       >
                         <span
-                          className="w-3.5 h-3.5 rounded-full shrink-0 shadow-xs"
+                          className="w-3.5 h-3.5 rounded-full shrink-0 shadow-xs ring-1 ring-black/10"
                           style={{ backgroundColor: opt.hex }}
                         />
                         <span className="text-xs">{opt.label}</span>
