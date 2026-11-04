@@ -24,8 +24,8 @@ interface Phone {
 interface Connected {
   display_phone_number: string;
   webhook_subscribed: boolean;
-  webhook_url: string;
-  verify_token: string;
+  webhook_url?: string;
+  verify_token?: string;
   updated: boolean;
   registered: boolean;
   registration_error: string;
@@ -146,7 +146,7 @@ export const ManualWhatsAppSetupDialog: React.FC<{
               {done.display_phone_number || 'Your number'} is connected.
               {done.webhook_subscribed
                 ? ' Messages will start arriving here.'
-                : ' Meta did not confirm the webhook yet; add the details below in your Facebook App.'}
+                : ' The OneSuit team will finish the Meta webhook setup so messages arrive here.'}
             </div>
             {done.registered ? (
               done.pin && (
@@ -161,12 +161,16 @@ export const ManualWhatsAppSetupDialog: React.FC<{
                 WhatsApp Setup page{done.registration_error ? ` (Meta said: ${done.registration_error})` : ''}.
               </div>
             )}
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              In your Facebook App → WhatsApp → Configuration, set the callback URL and verify token below, then subscribe to the
-              “messages” field.
-            </p>
-            <CopyRow label="Callback URL" value={done.webhook_url} />
-            <CopyRow label="Verify token" value={done.verify_token} />
+            {done.webhook_url && (
+              <>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  In the Facebook App → WhatsApp → Configuration, set the callback URL and verify token below, then subscribe to
+                  the “messages” field.
+                </p>
+                <CopyRow label="Callback URL" value={done.webhook_url} />
+                {done.verify_token && <CopyRow label="Verify token" value={done.verify_token} />}
+              </>
+            )}
             <DialogFooter>
               <Button onClick={() => close(false)}>Done</Button>
             </DialogFooter>

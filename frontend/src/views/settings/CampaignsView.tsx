@@ -7,7 +7,6 @@ import { SearchInput } from '@/components/shared/SearchInput';
 import { DataTable, type Column } from '@/components/shared/DataTable';
 import { IconButton } from '@/components/shared/IconButton';
 import { DeleteConfirmDialog } from '@/components/shared/DeleteConfirmDialog';
-import { HeroBanner } from '@/components/shared/HeroBanner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Megaphone, Plus, Pencil, Trash2, Users, CheckCircle2, Clock, AlertCircle, Play } from 'lucide-react';
@@ -210,15 +209,6 @@ export const CampaignsView: React.FC = () => {
   return (
     <div className="flex flex-col h-full bg-[#f8faf9] text-gray-900 overflow-y-auto">
       <div className="p-6 space-y-6 max-w-7xl mx-auto w-full">
-        {/* AI Nebula Hero Banner */}
-        <HeroBanner
-          title="Meet Campaign Agent, your AI campaign manager"
-          description="Describe your audience & goal once. AI crafts high-converting copy and optimizes broadcast scheduling for maximum read rates."
-          badge="AI POWERED"
-          actionText="Create Campaign"
-          onAction={() => navigate('/campaigns/new')}
-        />
-
         {/* Campaigns Directory Card */}
         <div className="rounded-2xl border border-gray-200/90 bg-white dark:bg-[#141b1a] dark:border-[#1e2a28] shadow-sm p-6 space-y-5">
           <div className="flex items-center justify-between flex-wrap gap-4">

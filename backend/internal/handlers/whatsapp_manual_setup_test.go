@@ -46,8 +46,9 @@ func TestApp_ManualWhatsAppSetup_ConnectsSingleNumber(t *testing.T) {
 	data := manualSetupResp(t, testutil.GetResponseBody(req))
 	assert.Equal(t, "connected", data["status"])
 	assert.Equal(t, true, data["webhook_subscribed"])
-	assert.Contains(t, data["webhook_url"], "/api/webhook")
-	assert.NotEmpty(t, data["verify_token"])
+	// Meta webhook details are for the platform team only.
+	assert.Nil(t, data["webhook_url"])
+	assert.Nil(t, data["verify_token"])
 	// The number wasn't CONNECTED in Meta, so it gets registered with a new PIN.
 	assert.Equal(t, true, data["registered"])
 	assert.Len(t, data["pin"], 6)
@@ -229,7 +230,17 @@ func TestApp_AccountHealth_WebhookURLIsHTTPSBehindProxy(t *testing.T) {
 	app.Config.App.Environment = "development" // what Render runs with by default
 	org := testutil.CreateTestOrganization(t, app.DB)
 	user := createAdminUser(t, app, org.ID)
+	super := testutil.CreateTestUser(t, app.DB, org.ID, testutil.WithSuperAdmin())
 	acc := createTestAccountForValidation(t, app.DB, org.ID, uniq("ph-h"), "biz-h")
+
+	// A workspace admin doesn't get the callback URL.
+	{
+		req := testutil.NewGETRequest(t)
+		testutil.SetAuthContext(req, org.ID, user.ID)
+		testutil.SetPathParam(req, "id", acc.ID.String())
+		require.NoError(t, app.GetAccountHealth(req))
+		assert.Nil(t, manualSetupResp(t, testutil.GetResponseBody(req))["webhook_url"])
+	}
 
 	for _, tc := range []struct{ host, proto, want string }{
 		{"onesuit.onrender.com", "", "https://onesuit.onrender.com/api/webhook"},
@@ -241,7 +252,7 @@ func TestApp_AccountHealth_WebhookURLIsHTTPSBehindProxy(t *testing.T) {
 		if tc.proto != "" {
 			req.RequestCtx.Request.Header.Set("X-Forwarded-Proto", tc.proto)
 		}
-		testutil.SetAuthContext(req, org.ID, user.ID)
+		testutil.SetFullAuthContext(req, org.ID, super.ID, nil, true)
 		testutil.SetPathParam(req, "id", acc.ID.String())
 		require.NoError(t, app.GetAccountHealth(req))
 		require.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req), string(testutil.GetResponseBody(req)))

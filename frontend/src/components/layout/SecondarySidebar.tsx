@@ -95,19 +95,23 @@ export const SecondarySidebar: React.FC<SecondarySidebarProps> = ({
         <div className="space-y-1">
           {currentGroup.items.map((item) => {
             const Icon = item.icon;
+            // A prefix match yields to a more specific sibling (e.g. /campaigns
+            // stays unhighlighted on /campaigns/analytics).
+            const matches = (path: string) => location.pathname === path || location.pathname.startsWith(`${path}/`);
             const isMatch = item.exact
               ? location.pathname === item.path
-              : location.pathname.startsWith(item.path);
+              : matches(item.path) &&
+                !currentGroup.items.some((other) => other.path.length > item.path.length && other.path.startsWith(item.path) && matches(other.path));
 
             return (
               <NavLink
                 key={item.path}
                 to={item.path}
                 end={item.exact}
-                className={({ isActive }) =>
+                className={() =>
                   cn(
                     'group flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150',
-                    isActive || isMatch
+                    isMatch
                       ? 'bg-teal-50 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200 font-semibold shadow-sm'
                       : 'text-gray-700 hover:text-gray-950 hover:bg-gray-100/80 dark:text-gray-300 dark:hover:text-white dark:hover:bg-white/[0.06]'
                   )

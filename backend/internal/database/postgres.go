@@ -202,6 +202,12 @@ func GetMigrationModels() []MigrationModel {
 
 		// Billing
 		{"BillingInvoice", &models.BillingInvoice{}},
+
+		// Contact groups & broadcast lists
+		{"ContactGroup", &models.ContactGroup{}},
+		{"ContactGroupMember", &models.ContactGroupMember{}},
+		{"BroadcastList", &models.BroadcastList{}},
+		{"BroadcastListMember", &models.BroadcastListMember{}},
 	}
 }
 

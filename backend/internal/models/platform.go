@@ -74,6 +74,13 @@ type SubscriptionPlan struct {
 	// No default tag on purpose: GORM skips zero values for columns with a
 	// default, which would make it impossible to create an inactive plan.
 	IsActive bool `gorm:"not null" json:"is_active"`
+	// Modules turns whole sections on or off for the plan's clients
+	// ({"ads_manager": false, ...}); a module missing from the map is on.
+	Modules JSONB `gorm:"type:jsonb;default:'{}'" json:"modules"`
+	// CustomFeatures are the plan's own feature lines, each switchable:
+	// [{"name": "AI integration", "enabled": true}, ...]. Features holds the
+	// enabled names for older readers.
+	CustomFeatures JSONBArray `gorm:"type:jsonb;default:'[]'" json:"custom_features"`
 }
 
 func (SubscriptionPlan) TableName() string {

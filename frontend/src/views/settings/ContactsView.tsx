@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { useAuthStore } from '@/stores/auth';
@@ -22,6 +22,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CollectionsPanel } from '@/components/contacts/CollectionsPanel';
+import { AddToCollectionDialog } from '@/components/contacts/AddToCollectionDialog';
+import type { CollectionKind } from '@/components/contacts/collections';
+import { colorFor, groupsService, type CollectionMember, type ContactGroup } from '@/services/groupsApi';
 import {
   Users,
   Plus,
@@ -32,11 +37,15 @@ import {
   Upload,
   FileSpreadsheet,
   CheckCircle2,
-  AlertCircle,
   Megaphone,
   Sparkles,
   UserPlus,
   Share2,
+  Layers,
+  ListChecks,
+  FolderPlus,
+  ListPlus,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -127,6 +136,36 @@ export const ContactsView: React.FC = () => {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
+  // Tabs: All contacts | Groups | Lists (kept in the URL so links and refresh work)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab');
+  const tab: 'contacts' | 'groups' | 'lists' = rawTab === 'groups' || rawTab === 'lists' ? rawTab : 'contacts';
+  const selectedCollectionId = searchParams.get('id');
+  const setTab = (next: 'contacts' | 'groups' | 'lists', id?: string | null) => {
+    const params = new URLSearchParams();
+    if (next !== 'contacts') params.set('tab', next);
+    if (id) params.set('id', id);
+    setSearchParams(params);
+  };
+
+  // Group filter + bulk selection on the All contacts tab
+  const [groups, setGroups] = useState<ContactGroup[]>([]);
+  const [groupFilter, setGroupFilter] = useState<string>('all');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkTarget, setBulkTarget] = useState<CollectionKind | null>(null);
+
+  const fetchGroups = useCallback(async () => {
+    try {
+      setGroups(readList<ContactGroup>(await groupsService.list(), 'groups'));
+    } catch {
+      // The filter is optional; the directory still works without it.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'contacts') fetchGroups();
+  }, [tab, fetchGroups]);
+
   const canWrite = hasPermission('contacts', 'write');
   const canDelete = hasPermission('contacts', 'delete');
 
@@ -135,11 +174,18 @@ export const ContactsView: React.FC = () => {
     setIsLoading(true);
     try {
       const search = normalizeSearch(searchQuery);
-      const res = await contactsService.list({
-        search: search || undefined,
-        page: currentPage,
-        limit: pageSize,
-      });
+      const params = { search: search || undefined, page: currentPage, limit: pageSize };
+      if (groupFilter !== 'all') {
+        // Filtering by group reads the group's members endpoint.
+        const res = await groupsService.members(groupFilter, params);
+        if (seq !== requestSeq.current) return;
+        setContacts(
+          readList<CollectionMember>(res, 'contacts').map((m) => ({ ...m, created_at: m.added_at }))
+        );
+        setTotalItems(readTotal(res, 'contacts'));
+        return;
+      }
+      const res = await contactsService.list(params);
       if (seq !== requestSeq.current) return;
       setContacts(readList<Contact>(res, 'contacts'));
       setTotalItems(readTotal(res, 'contacts'));
@@ -148,11 +194,35 @@ export const ContactsView: React.FC = () => {
     } finally {
       if (seq === requestSeq.current) setIsLoading(false);
     }
-  }, [searchQuery, currentPage, pageSize]);
+  }, [searchQuery, currentPage, pageSize, groupFilter]);
 
   useEffect(() => {
-    fetchContacts();
-  }, [fetchContacts]);
+    if (tab === 'contacts') fetchContacts();
+  }, [fetchContacts, tab]);
+
+  // A deleted group can't stay selected as the filter.
+  useEffect(() => {
+    if (groupFilter !== 'all' && groups.length > 0 && !groups.some((g) => g.id === groupFilter)) {
+      setGroupFilter('all');
+    }
+  }, [groups, groupFilter]);
+
+  const pageIds = contacts.map((c) => c.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const togglePage = () =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      pageIds.forEach((id) => (allPageSelected ? next.delete(id) : next.add(id)));
+      return next;
+    });
+  const activeGroup = groups.find((g) => g.id === groupFilter);
 
   const sortedContacts = useMemo(() => {
     const value = (c: Contact) =>
@@ -225,7 +295,7 @@ export const ContactsView: React.FC = () => {
     setImportResult(null);
     try {
       const res = await dataService.importData('contacts', importFile, updateOnDuplicate);
-      const result = readData<ImportResult>(res) || (res.data as any)?.data || (res.data as any);
+      const result = readData<ImportResult>(res);
       setImportResult(result);
       toast.success(`Import complete: ${result.created || 0} created, ${result.updated || 0} updated`);
       fetchContacts();
@@ -282,6 +352,24 @@ export const ContactsView: React.FC = () => {
   ];
 
   const columns: Column<Contact>[] = [
+    ...(canWrite
+      ? [
+          {
+            key: 'select',
+            label: '',
+            width: 'w-10',
+            render: (contact: Contact) => (
+              <input
+                type="checkbox"
+                aria-label={`Select ${getDisplayName(contact)}`}
+                checked={selectedIds.has(contact.id)}
+                onChange={() => toggleSelected(contact.id)}
+                className="h-4 w-4 rounded border-gray-300 accent-emerald-600 cursor-pointer"
+              />
+            ),
+          } as Column<Contact>,
+        ]
+      : []),
     {
       key: 'name',
       label: t('contacts.name') || 'Contact Name',
@@ -387,7 +475,7 @@ export const ContactsView: React.FC = () => {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-[#f8faf9] text-gray-900 overflow-y-auto">
+    <div className="flex flex-col h-full bg-[#f8faf9] text-gray-900 dark:bg-[#0a0f0e] dark:text-gray-100 overflow-y-auto">
       {/* Top Header & Action Grid Section */}
       <div className="p-6 space-y-6 max-w-7xl mx-auto w-full">
         {/* Modern Action Grid */}
@@ -400,6 +488,45 @@ export const ContactsView: React.FC = () => {
 
         {/* Directory Card */}
         <div className="rounded-2xl border border-gray-200/90 bg-white dark:bg-[#141b1a] dark:border-[#1e2a28] shadow-sm p-6 space-y-5">
+          <div
+            role="tablist"
+            aria-label="Contacts sections"
+            className="flex items-center gap-1 p-1 rounded-xl bg-gray-100/80 dark:bg-white/[0.04] w-fit max-w-full overflow-x-auto"
+          >
+            {([
+              { id: 'contacts', label: 'All contacts', icon: Users },
+              { id: 'groups', label: 'Groups', icon: Layers },
+              { id: 'lists', label: 'Broadcast lists', icon: ListChecks },
+            ] as const).map(({ id, label, icon: TabIcon }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                onClick={() => setTab(id)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                  tab === id
+                    ? 'bg-white text-teal-800 shadow-sm dark:bg-[#1f2b29] dark:text-emerald-300'
+                    : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+                }`}
+              >
+                <TabIcon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {tab !== 'contacts' ? (
+            <CollectionsPanel
+              key={tab}
+              kind={tab === 'groups' ? 'group' : 'list'}
+              selectedId={selectedCollectionId}
+              onSelect={(id) => setTab(tab, id)}
+              canWrite={canWrite}
+              contactsBase={contactsBase}
+            />
+          ) : (
+          <>
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
               <div className="flex items-center gap-2.5">
@@ -425,6 +552,35 @@ export const ContactsView: React.FC = () => {
                 placeholder="Search by name, phone..."
                 className="w-64"
               />
+
+              {groups.length > 0 && (
+                <Select
+                  value={groupFilter}
+                  onValueChange={(v) => {
+                    setGroupFilter(v);
+                    setCurrentPage(1);
+                  }}
+                >
+                  <SelectTrigger
+                    aria-label="Filter by group"
+                    className="h-9 w-44 rounded-xl text-xs font-semibold"
+                  >
+                    <SelectValue placeholder="All groups" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All groups</SelectItem>
+                    {groups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        <span className="flex items-center gap-2">
+                          <span className={`h-2 w-2 rounded-full ${colorFor(g.color).dot}`} />
+                          {g.name}
+                          <span className="opacity-50">({g.member_count})</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
 
               <input
                 type="file"
@@ -480,6 +636,93 @@ export const ContactsView: React.FC = () => {
             </div>
           </div>
 
+          {activeGroup && (
+            <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+              <span>Showing contacts in</span>
+              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border font-semibold ${colorFor(activeGroup.color).chip}`}>
+                {activeGroup.name}
+                <button
+                  type="button"
+                  aria-label="Clear group filter"
+                  onClick={() => {
+                    setGroupFilter('all');
+                    setCurrentPage(1);
+                  }}
+                  className="hover:opacity-70"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+              <button
+                type="button"
+                onClick={() => setTab('groups', activeGroup.id)}
+                className="text-teal-700 dark:text-teal-400 font-semibold hover:underline"
+              >
+                Manage group
+              </button>
+            </div>
+          )}
+
+          {canWrite && contacts.length > 0 && (
+            <div
+              className={`flex items-center justify-between flex-wrap gap-3 rounded-xl px-3.5 py-2.5 border transition-colors ${
+                selectedIds.size > 0
+                  ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-900/60'
+                  : 'bg-gray-50/80 border-gray-200/70 dark:bg-white/[0.02] dark:border-white/[0.06]'
+              }`}
+            >
+              <div className="flex items-center gap-3 text-xs">
+                <label className="flex items-center gap-2 font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allPageSelected}
+                    onChange={togglePage}
+                    className="h-4 w-4 rounded border-gray-300 accent-emerald-600 cursor-pointer"
+                  />
+                  Select page
+                </label>
+                {selectedIds.size > 0 ? (
+                  <>
+                    <span className="font-semibold text-emerald-800 dark:text-emerald-300">
+                      {selectedIds.size} selected
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedIds(new Set())}
+                      className="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:underline"
+                    >
+                      Clear
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-gray-400 dark:text-gray-500">Select contacts to add them to a group or list</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={selectedIds.size === 0}
+                  onClick={() => setBulkTarget('group')}
+                  className="h-8 rounded-xl text-xs font-semibold border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-transparent dark:text-gray-200 dark:hover:bg-white/[0.04]"
+                >
+                  <FolderPlus className="h-3.5 w-3.5 mr-1.5 text-teal-600 dark:text-teal-400" />
+                  Add to group
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={selectedIds.size === 0}
+                  onClick={() => setBulkTarget('list')}
+                  className="h-8 rounded-xl text-xs font-semibold border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-transparent dark:text-gray-200 dark:hover:bg-white/[0.04]"
+                >
+                  <ListPlus className="h-3.5 w-3.5 mr-1.5 text-emerald-600 dark:text-emerald-400" />
+                  Add to list
+                </Button>
+              </div>
+            </div>
+          )}
+
           <DataTable
             items={sortedContacts}
             columns={columns}
@@ -510,8 +753,22 @@ export const ContactsView: React.FC = () => {
             pageSize={pageSize}
             onPageChange={setCurrentPage}
           />
+          </>
+          )}
         </div>
       </div>
+
+      <AddToCollectionDialog
+        kind={bulkTarget || 'group'}
+        open={bulkTarget !== null}
+        onOpenChange={(open) => !open && setBulkTarget(null)}
+        contactIds={[...selectedIds]}
+        onDone={() => {
+          setSelectedIds(new Set());
+          fetchGroups();
+          if (groupFilter !== 'all') fetchContacts();
+        }}
+      />
 
       <CreateContactDialog
         open={isCreateOpen}

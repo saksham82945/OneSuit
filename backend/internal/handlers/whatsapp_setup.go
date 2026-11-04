@@ -93,7 +93,9 @@ func (a *App) GetAccountHealth(r *fastglue.Request) error {
 		resp["webhook_last_at"] = last["at"]
 		resp["webhook_last_result"] = last["result"]
 	}
-	resp["webhook_url"] = a.webhookURL(r)
+	if a.callerIsSuperAdmin(r) {
+		resp["webhook_url"] = a.webhookURL(r)
+	}
 	if waba != nil {
 		resp["business_name"] = waba["name"]
 		resp["account_review_status"] = waba["account_review_status"]

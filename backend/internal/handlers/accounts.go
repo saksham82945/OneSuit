@@ -76,7 +76,7 @@ func (a *App) ListAccounts(r *fastglue.Request) error {
 	// Convert to response format (hide sensitive data)
 	response := make([]AccountResponse, len(accounts))
 	for i, acc := range accounts {
-		response[i] = accountToResponse(acc)
+		response[i] = a.accountResponseFor(r, acc)
 	}
 
 	return r.SendEnvelope(map[string]any{
@@ -161,7 +161,7 @@ func (a *App) CreateAccount(r *fastglue.Request) error {
 	a.logAudit(orgID, userID,
 		"account", account.ID, models.AuditActionCreated, nil, &account)
 
-	return r.SendEnvelope(accountToResponse(account))
+	return r.SendEnvelope(a.accountResponseFor(r, account))
 }
 
 // GetAccount returns a single WhatsApp account
@@ -182,7 +182,7 @@ func (a *App) GetAccount(r *fastglue.Request) error {
 		return nil
 	}
 
-	return r.SendEnvelope(accountToResponse(*account))
+	return r.SendEnvelope(a.accountResponseFor(r, *account))
 }
 
 // UpdateAccount updates a WhatsApp account
@@ -290,7 +290,7 @@ func (a *App) UpdateAccount(r *fastglue.Request) error {
 	a.logAudit(orgID, userID,
 		"account", account.ID, models.AuditActionUpdated, &oldAccount, account, sensitiveChanges...)
 
-	return r.SendEnvelope(accountToResponse(*account))
+	return r.SendEnvelope(a.accountResponseFor(r, *account))
 }
 
 // DeleteAccount deletes a WhatsApp account
@@ -673,7 +673,7 @@ func (a *App) ExchangeToken(r *fastglue.Request) error {
 
 	// Construction of response map (reusing accountToResponse)
 	out := map[string]any{
-		"account": accountToResponse(*account),
+		"account": a.accountResponseFor(r, *account),
 	}
 	if account.Status == "active" && plaintextPin != "" {
 		out["pin"] = plaintextPin

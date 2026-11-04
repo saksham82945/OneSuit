@@ -5,7 +5,6 @@ import { useAuthStore } from '@/stores/auth';
 import { widgetsService, type DashboardWidget, type WidgetData } from '@/services/api';
 import { readList } from '@/services/response';
 import { Button } from '@/components/ui/button';
-import { HeroBanner } from '@/components/shared/HeroBanner';
 import { SectionTitle } from '@/components/dashboard';
 import { WorkspaceOverviewSections } from './WorkspaceOverviewSections';
 import {
@@ -52,6 +51,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { ConnectWhatsAppCard } from '@/components/whatsapp/ConnectWhatsAppCard';
 
 const LARGE_DISPLAY_TYPES = ['chart', 'table', 'shortcuts'];
 
@@ -300,19 +300,12 @@ export const DashboardView: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto w-full">
+        <ConnectWhatsAppCard />
+
         {/* Role-aware overview: Today at a Glance / Workspace Overview / Action Needed */}
         <WorkspaceOverviewSections />
 
         <SectionTitle icon={Sparkles} title="Insights & Widgets" tone="purple" />
-
-        {/* Nebula AI Hero Banner */}
-        <HeroBanner
-          title="Meet Campaign Agent, your AI campaign manager"
-          description="Describe your audience & goal once. AI writes high-converting copy and optimizes broadcast scheduling for maximum response rate."
-          badge="AI AGENT"
-          actionText="Explore Agent"
-          onAction={() => {}}
-        />
 
         {/* Meta WhatsApp Platform Telemetry & Health Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

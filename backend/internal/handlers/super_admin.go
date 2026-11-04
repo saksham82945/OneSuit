@@ -735,6 +735,7 @@ func (a *App) SuperAdminUpdateVendor(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to update vendor", nil, "")
 	}
 
+	clearOrgModulesCache()
 	a.logAudit(id, userID, "organization", id, models.AuditActionUpdated,
 		map[string]any{"name": beforeName, "status": before.Status, "plan_id": before.PlanID, "renewal_date": before.RenewalDate},
 		map[string]any{"name": org.Name, "status": sub.Status, "plan_id": sub.PlanID, "renewal_date": sub.RenewalDate})
@@ -762,6 +763,12 @@ func (a *App) findPlan(id string) (*models.SubscriptionPlan, error) {
 	return &plan, nil
 }
 
+// PlanCustomFeature is one switchable feature line on a plan.
+type PlanCustomFeature struct {
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+}
+
 // PlanRequest is the body for creating or updating a plan. Pointer fields are
 // optional on update.
 type PlanRequest struct {
@@ -775,6 +782,9 @@ type PlanRequest struct {
 	MaxAccounts *int      `json:"max_accounts"`
 	Features    *[]string `json:"features"`
 	IsActive    *bool     `json:"is_active"`
+
+	Modules        *map[string]bool     `json:"modules"`
+	CustomFeatures *[]PlanCustomFeature `json:"custom_features"`
 
 	QuarterlyDiscount  *float64 `json:"quarterly_discount"`
 	HalfYearlyDiscount *float64 `json:"half_yearly_discount"`
@@ -828,8 +838,45 @@ func (req *PlanRequest) apply(plan *models.SubscriptionPlan) string {
 	if req.YearlyDiscount != nil {
 		plan.YearlyDiscount = *req.YearlyDiscount
 	}
+	if req.Modules != nil {
+		mods := models.JSONB{}
+		for k, on := range *req.Modules {
+			if !validModuleKey(k) {
+				return "Unknown module: " + k
+			}
+			mods[k] = on
+		}
+		plan.Modules = mods
+	}
+	if req.CustomFeatures != nil {
+		list := models.JSONBArray{}
+		enabled := models.StringArray{}
+		seen := map[string]bool{}
+		for _, f := range *req.CustomFeatures {
+			name := strings.TrimSpace(f.Name)
+			if name == "" || seen[strings.ToLower(name)] {
+				continue
+			}
+			if len(name) > 120 {
+				return "Feature names can be at most 120 characters"
+			}
+			seen[strings.ToLower(name)] = true
+			list = append(list, map[string]any{"name": name, "enabled": f.Enabled})
+			if f.Enabled {
+				enabled = append(enabled, name)
+			}
+		}
+		plan.CustomFeatures = list
+		plan.Features = enabled
+	}
 	if plan.Features == nil {
 		plan.Features = models.StringArray{}
+	}
+	if plan.Modules == nil {
+		plan.Modules = models.JSONB{}
+	}
+	if plan.CustomFeatures == nil {
+		plan.CustomFeatures = models.JSONBArray{}
 	}
 
 	switch {
@@ -908,6 +955,7 @@ func (a *App) SuperAdminUpdatePlan(r *fastglue.Request) error {
 		a.Log.Error("Failed to update plan", "error", err, "plan_id", id)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to update plan", nil, "")
 	}
+	clearOrgModulesCache()
 	return r.SendEnvelope(plan)
 }
 

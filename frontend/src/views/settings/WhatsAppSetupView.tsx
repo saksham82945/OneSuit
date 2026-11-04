@@ -35,7 +35,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useEmbeddedSignup, type EmbeddedSignupResult } from './useEmbeddedSignup';
 import { ConnectWhatsAppButton, useConnectWhatsApp, WHATSAPP_CONNECTED_EVENT } from '@/components/whatsapp/ConnectWhatsAppButton';
-import { CopyRow, ManualWhatsAppSetupButton } from '@/components/whatsapp/ManualWhatsAppSetup';
+import { ManualWhatsAppSetupButton } from '@/components/whatsapp/ManualWhatsAppSetup';
 
 // WhatsApp Cloud API Setup: connect a number with Facebook (Embedded Signup),
 // set a test contact, and see the number's phone numbers and health.
@@ -360,20 +360,6 @@ export const WhatsAppSetupView: React.FC = () => {
               )}
             </Section>
 
-            {selected && canWrite && (
-              <Section title="Meta webhook settings">
-                <div className="space-y-3">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Messages show in Live Chat only after Meta knows where to send them. In developers.facebook.com → your
-                    app → Webhooks, pick <b>Whatsapp Business Account</b>, paste these two values, click “Verify and save”, then
-                    subscribe to the <b>messages</b> field. Keep the app in <b>Live</b> mode.
-                  </p>
-                  <CopyRow label="Callback URL" value={health?.webhook_url || `${window.location.origin}/api/webhook`} />
-                  {selected.webhook_verify_token && <CopyRow label="Verify token" value={selected.webhook_verify_token} />}
-                </div>
-              </Section>
-            )}
-
             <Section
               title={
                 <button type="button" onClick={() => setTestOpen((o) => !o)} className="flex items-center gap-2">
@@ -502,21 +488,6 @@ export const WhatsAppSetupView: React.FC = () => {
                     </div>
                   </Section>
 
-                  {health?.phone_status && health.phone_status !== 'CONNECTED' && (
-                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/50 dark:bg-amber-900/30 dark:text-amber-100">
-                      <p className="font-medium">Number is {health.phone_status.toLowerCase()} in Meta</p>
-                      <p className="mt-1 text-xs">
-                        It isn’t registered for the Cloud API yet, so messages can’t be sent or received.
-                      </p>
-                      {canWrite && (
-                        <Button size="sm" className="mt-2 bg-amber-600 text-white hover:bg-amber-500" onClick={registerNumber} disabled={registering}>
-                          {registering && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-                          Register number
-                        </Button>
-                      )}
-                    </div>
-                  )}
-
                   <Section title="Overall Health">
                     <dl className="space-y-3 text-sm">
                       <div>
@@ -556,16 +527,20 @@ export const WhatsAppSetupView: React.FC = () => {
                               {new Date(health.webhook_last_at).toLocaleString()} · {health.webhook_last_result}
                             </dd>
                           ) : (
-                            <dd className="space-y-1.5 text-xs text-amber-700 dark:text-amber-300">
-                              <p>
-                                Nothing received from Meta yet, so messages won’t show in Live Chat. In your Facebook App →
-                                WhatsApp → Configuration, set this callback URL and subscribe to the “messages” field:
-                              </p>
-                              <code className="block break-all rounded bg-gray-100 px-2 py-1 font-mono text-[11px] text-gray-800 dark:bg-white/10 dark:text-gray-200">
-                                {health.webhook_url}
-                              </code>
+                            <dd className="text-xs text-amber-700 dark:text-amber-300">
+                              Nothing received from Meta yet, so messages won’t show in Live Chat. The OneSuit team finishes
+                              this part of the setup; contact Support if it stays like this.
                             </dd>
                           )}
+                        </div>
+                      )}
+                      {health?.phone_status && health.phone_status.toUpperCase() !== 'CONNECTED' && canWrite && (
+                        <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                          <p>Meta shows this number as {health.phone_status.toLowerCase()}, so it can’t send or receive messages yet.</p>
+                          <Button size="sm" className="mt-2" onClick={registerNumber} disabled={registering}>
+                            {registering && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                            Register number
+                          </Button>
                         </div>
                       )}
                       {health?.quality_rating && (

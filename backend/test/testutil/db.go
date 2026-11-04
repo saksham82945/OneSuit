@@ -149,6 +149,10 @@ func runMigrations(db *gorm.DB) error {
 		&models.AdWallet{},
 		&models.AdCreditTransaction{},
 		&models.BillingInvoice{},
+		&models.ContactGroup{},
+		&models.ContactGroupMember{},
+		&models.BroadcastList{},
+		&models.BroadcastListMember{},
 		&models.AdEventDefinition{},
 	)
 }
@@ -187,6 +191,10 @@ func cleanupTables(db *gorm.DB) {
 		// WhatsApp tables
 		"messages",
 		"tags",
+		"contact_group_members",
+		"contact_groups",
+		"broadcast_list_members",
+		"broadcast_lists",
 		"contacts",
 		"templates",
 		"whatsapp_flows",

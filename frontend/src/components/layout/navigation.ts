@@ -71,6 +71,7 @@ export const navigationSections: NavSection[] = [
       { name: 'nav.pagesManagement', path: '/super-admin/pages', icon: FileText, superAdminOnly: true },
       { name: 'nav.configuration', path: '/super-admin/configuration', icon: SlidersHorizontal, superAdminOnly: true },
       { name: 'WhatsApp Onboarding', path: '/super-admin/whatsapp-onboarding', icon: Phone, superAdminOnly: true },
+      { name: 'WEBHOOKS', path: '/super-admin/webhooks', icon: Webhook, superAdminOnly: true },
       { name: 'nav.manageTickets', path: '/super-admin/tickets', icon: Ticket, superAdminOnly: true },
       { name: 'nav.aiCallSetup', path: '/super-admin/ai-call-setup', icon: Phone, superAdminOnly: true },
       { name: 'nav.aiAgents', path: '/chatbot/ai', icon: Sparkles, superAdminOnly: true },

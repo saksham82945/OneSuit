@@ -375,7 +375,7 @@ export const flowsService = {
 }
 
 export const campaignsService = {
-  list: (params?: { status?: string; from?: string; to?: string; search?: string; page?: number; limit?: number }) =>
+  list: (params?: { status?: string; whatsapp_account?: string; from?: string; to?: string; search?: string; page?: number; limit?: number }) =>
     api.get('/campaigns', { params }),
   get: (id: string) => api.get(`/campaigns/${id}`),
   create: (data: any) => api.post('/campaigns', data),
@@ -386,7 +386,9 @@ export const campaignsService = {
   cancel: (id: string) => api.post(`/campaigns/${id}/cancel`),
   retryFailed: (id: string) => api.post(`/campaigns/${id}/retry-failed`),
   // Recipients
-  getRecipients: (id: string) => api.get(`/campaigns/${id}/recipients`),
+  // Without page/limit the backend returns every recipient; with them it pages (status/search filter either way).
+  getRecipients: (id: string, params?: { status?: string; search?: string; page?: number; limit?: number }) =>
+    api.get(`/campaigns/${id}/recipients`, { params }),
   addRecipients: (id: string, recipients: Array<{ phone_number: string; recipient_name?: string; template_params?: Record<string, any> }>) =>
     api.post(`/campaigns/${id}/recipients/import`, { recipients }),
   deleteRecipient: (campaignId: string, recipientId: string) =>

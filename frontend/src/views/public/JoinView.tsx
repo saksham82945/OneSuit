@@ -18,6 +18,7 @@ import {
   useDocumentTitle,
 } from './publicApi';
 import { BrandMark, Field, FormAlert, PasswordInput, PublicTopBar, cardClass, errorInputClass, inputClass } from './PublicLayout';
+import { AuthBackdrop } from '@/views/auth/AuthBackdrop';
 
 interface PublicInvite {
   organization_name: string;
@@ -46,13 +47,10 @@ function formatExpiry(iso: string): string | null {
 }
 
 const Frame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="relative min-h-screen flex items-center justify-center bg-[#0a0a0b] light:bg-gradient-to-br light:from-gray-50 light:to-gray-100 p-4 overflow-hidden">
-    <div
-      aria-hidden
-      className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(16,185,129,0.10),transparent)]"
-    />
+  <div className="auth-motion relative min-h-screen flex items-center justify-center bg-[#0a0a0b] light:bg-gradient-to-br light:from-gray-50 light:to-gray-100 p-4 pt-16 overflow-hidden">
+    <AuthBackdrop />
     <PublicTopBar />
-    <div className="relative w-full max-w-md">{children}</div>
+    <div className="auth-enter relative z-10 w-full max-w-md">{children}</div>
   </div>
 );
 
@@ -256,10 +254,12 @@ export const JoinView: React.FC = () => {
 
   return (
     <Frame>
-      <div className={cardClass}>
-        <div className="px-8 pt-8 pb-6 text-center">
+      <div className={cn(cardClass, 'shadow-2xl shadow-black/30 light:shadow-emerald-900/5')}>
+        <div className="auth-stagger px-6 sm:px-8 pt-8 pb-6 text-center" style={{ '--auth-base-delay': '80ms' } as React.CSSProperties}>
           <div className="mb-5 flex items-center justify-center gap-3">
-            <BrandMark className="h-11 w-11" iconClassName="h-6 w-6" />
+            <div className="auth-halo rounded-xl">
+              <BrandMark className="h-11 w-11" iconClassName="h-6 w-6" />
+            </div>
             <span className="h-px w-6 bg-white/[0.12] light:bg-gray-300" aria-hidden />
             <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] light:border-gray-200 light:bg-gray-50">
               <Building2 className="h-5 w-5 text-white/70 light:text-gray-600" />
@@ -280,7 +280,7 @@ export const JoinView: React.FC = () => {
           {expiry && <p className="mt-2 text-xs text-white/40 light:text-gray-500">{expiry}</p>}
         </div>
 
-        <div className="px-8">
+        <div className="px-6 sm:px-8">
           <div
             role="group"
             aria-label="Do you have an account?"
@@ -299,7 +299,7 @@ export const JoinView: React.FC = () => {
                 onClick={() => mode !== value && switchMode(value)}
                 disabled={submitting}
                 className={cn(
-                  'rounded-md px-2 py-2 text-xs font-medium leading-tight transition-colors sm:text-sm',
+                  'rounded-md px-2 py-2 text-xs font-medium leading-tight transition-all duration-200 sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60',
                   mode === value
                     ? 'bg-white/[0.08] text-white shadow-sm light:bg-white light:text-gray-900'
                     : 'text-white/50 hover:text-white/80 light:text-gray-500 light:hover:text-gray-800'
@@ -311,7 +311,12 @@ export const JoinView: React.FC = () => {
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} noValidate className="space-y-4 px-8 pt-6 pb-8">
+        <form
+          onSubmit={handleSubmit}
+          noValidate
+          className="auth-stagger space-y-4 px-6 sm:px-8 pt-6 pb-8"
+          style={{ '--auth-base-delay': '200ms' } as React.CSSProperties}
+        >
           {mode === 'new' && (
             <Field id="full_name" label="Your name" error={errors.full_name}>
               <Input
@@ -442,9 +447,10 @@ export const JoinView: React.FC = () => {
           <Button
             type="submit"
             disabled={submitting}
-            className="h-10 w-full bg-emerald-600 font-medium text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500"
+            className="auth-cta h-10 w-full bg-emerald-600 font-medium text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500"
+            aria-busy={submitting || undefined}
           >
-            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
             {mode === 'new' ? `Create account & join` : `Sign in & join`}
           </Button>
 

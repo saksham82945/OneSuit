@@ -133,6 +133,25 @@ func (a *App) ListContacts(r *fastglue.Request) error {
 		}
 	}
 
+	// Live Chat inbox filters: has_messages, unread, window (open|expired).
+	query = applyInboxFilters(query, r)
+
+	// Assignment filter: assigned=me|unassigned|others|<user uuid>. The tab
+	// counts (include_counts=true) are taken before it so every tab shows its
+	// own total under the same search, tag and inbox filters.
+	var counts map[string]int64
+	if string(r.RequestCtx.QueryArgs().Peek("include_counts")) == "true" {
+		counts = a.inboxCounts(query.Session(&gorm.Session{}), userID)
+	}
+	assignedParam := strings.TrimSpace(string(r.RequestCtx.QueryArgs().Peek("assigned")))
+	if assignedParam != "" {
+		filtered, ok := applyAssignedFilter(query, assignedParam, userID)
+		if !ok {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Invalid assigned filter", nil, "")
+		}
+		query = filtered
+	}
+
 	// Order by last message time (most recent first)
 	query = query.Order("last_message_at DESC NULLS LAST, created_at DESC")
 
@@ -191,7 +210,75 @@ func (a *App) ListContacts(r *fastglue.Request) error {
 		}
 	}
 
-	return r.SendEnvelope(listEnvelope("contacts", response, total, pg))
+	env := listEnvelope("contacts", response, total, pg)
+	if counts != nil {
+		env["counts"] = counts
+	}
+	return r.SendEnvelope(env)
+}
+
+// unreadContactSQL matches contacts with at least one unread incoming message.
+const unreadContactSQL = "EXISTS (SELECT 1 FROM messages WHERE messages.contact_id = contacts.id AND messages.direction = 'incoming' AND messages.status <> 'read' AND messages.deleted_at IS NULL)"
+
+// applyInboxFilters narrows a contact list to the Live Chat inbox views:
+// has_messages=true (conversations only), unread=true, window=open|expired
+// (the 24-hour customer service window).
+func applyInboxFilters(query *gorm.DB, r *fastglue.Request) *gorm.DB {
+	args := r.RequestCtx.QueryArgs()
+	if string(args.Peek("has_messages")) == "true" {
+		query = query.Where("last_message_at IS NOT NULL")
+	}
+	if string(args.Peek("unread")) == "true" {
+		query = query.Where(unreadContactSQL)
+	}
+	windowStart := time.Now().Add(-24 * time.Hour)
+	switch string(args.Peek("window")) {
+	case "open":
+		query = query.Where("last_inbound_at > ?", windowStart)
+	case "expired":
+		query = query.Where("last_inbound_at IS NULL OR last_inbound_at <= ?", windowStart)
+	}
+	return query
+}
+
+// applyAssignedFilter filters by assignee: "me", "unassigned", "others"
+// (assigned to someone else) or a user ID. ok is false for anything else.
+func applyAssignedFilter(query *gorm.DB, assigned string, userID uuid.UUID) (*gorm.DB, bool) {
+	switch assigned {
+	case "me":
+		return query.Where("assigned_user_id = ?", userID), true
+	case "unassigned", "none":
+		return query.Where("assigned_user_id IS NULL"), true
+	case "others":
+		return query.Where("assigned_user_id IS NOT NULL AND assigned_user_id <> ?", userID), true
+	}
+	id, err := uuid.Parse(assigned)
+	if err != nil {
+		return query, false
+	}
+	return query.Where("assigned_user_id = ?", id), true
+}
+
+// inboxCounts returns the Live Chat tab totals (all, mine, unassigned,
+// others, unread) for an already-scoped and filtered contact query.
+func (a *App) inboxCounts(base *gorm.DB, userID uuid.UUID) map[string]int64 {
+	counts := map[string]int64{}
+	count := func(key string, apply func(*gorm.DB) *gorm.DB) {
+		var n int64
+		q := apply(base.Session(&gorm.Session{}).Model(&models.Contact{}))
+		if err := q.Count(&n).Error; err != nil {
+			a.Log.Error("Failed to count inbox contacts", "view", key, "error", err)
+		}
+		counts[key] = n
+	}
+	count("all", func(q *gorm.DB) *gorm.DB { return q })
+	count("mine", func(q *gorm.DB) *gorm.DB { return q.Where("assigned_user_id = ?", userID) })
+	count("unassigned", func(q *gorm.DB) *gorm.DB { return q.Where("assigned_user_id IS NULL") })
+	count("others", func(q *gorm.DB) *gorm.DB {
+		return q.Where("assigned_user_id IS NOT NULL AND assigned_user_id <> ?", userID)
+	})
+	count("unread", func(q *gorm.DB) *gorm.DB { return q.Where(unreadContactSQL) })
+	return counts
 }
 
 // unreadCountsByContact returns unread incoming message counts for a page of

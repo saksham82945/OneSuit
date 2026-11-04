@@ -229,18 +229,22 @@ func (a *App) ManualWhatsAppSetup(r *fastglue.Request) error {
 	}
 	a.logAudit(orgID, userID, "account", account.ID, action, nil, &account)
 
-	return r.SendEnvelope(map[string]any{
+	out := map[string]any{
 		"status":               "connected",
 		"updated":              existing,
-		"account":              accountToResponse(account),
+		"account":              a.accountResponseFor(r, account),
 		"display_phone_number": chosen.DisplayPhoneNumber,
 		"webhook_subscribed":   subscribed,
 		"registered":           registered,
 		"registration_error":   registrationError,
 		"pin":                  newPin,
-		"webhook_url":          a.webhookURL(r),
-		"verify_token":         account.WebhookVerifyToken,
-	})
+	}
+	// Only the platform team configures Meta's webhook.
+	if a.callerIsSuperAdmin(r) {
+		out["webhook_url"] = a.webhookURL(r)
+		out["verify_token"] = account.WebhookVerifyToken
+	}
+	return r.SendEnvelope(out)
 }
 
 // uniqueAccountName keeps account names unique across the whole platform

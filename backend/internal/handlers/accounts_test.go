@@ -168,7 +168,10 @@ func TestApp_CreateAccount_Success(t *testing.T) {
 	assert.Equal(t, "active", resp.Data.Status)
 	assert.Equal(t, "v21.0", resp.Data.APIVersion) // default version
 	assert.True(t, resp.Data.HasAccessToken)
-	assert.NotEmpty(t, resp.Data.WebhookVerifyToken) // auto-generated
+	assert.Empty(t, resp.Data.WebhookVerifyToken, "only super admins see the verify token")
+	var saved models.WhatsAppAccount
+	require.NoError(t, app.DB.First(&saved, "id = ?", resp.Data.ID).Error)
+	assert.NotEmpty(t, saved.WebhookVerifyToken) // auto-generated
 	assert.NotEqual(t, uuid.Nil, resp.Data.ID)
 }
 
@@ -205,7 +208,9 @@ func TestApp_CreateAccount_WithOptionalFields(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Full Account", resp.Data.Name)
 	assert.Equal(t, "my-app-id", resp.Data.AppID)
-	assert.Equal(t, "custom-verify-token", resp.Data.WebhookVerifyToken)
+	var saved models.WhatsAppAccount
+	require.NoError(t, app.DB.First(&saved, "id = ?", resp.Data.ID).Error)
+	assert.Equal(t, "custom-verify-token", saved.WebhookVerifyToken)
 	assert.Equal(t, "v19.0", resp.Data.APIVersion)
 	assert.True(t, resp.Data.IsDefaultIncoming)
 	assert.True(t, resp.Data.IsDefaultOutgoing)

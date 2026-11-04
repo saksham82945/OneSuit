@@ -35,6 +35,7 @@ import {
   errorInputClass,
   inputClass,
 } from './PublicLayout';
+import { AuthBackdrop } from '@/views/auth/AuthBackdrop';
 
 type FieldName = 'business_name' | 'full_name' | 'email' | 'phone' | 'password' | 'plan_id';
 type FieldErrors = Partial<Record<FieldName, string>>;
@@ -307,8 +308,8 @@ const NewBusinessSignup: React.FC = () => {
     const supportEmail = branding.support_email;
     return (
       <PublicShell headerActions={headerActions}>
-        <div className="mx-auto flex min-h-[60vh] max-w-md items-center px-4 py-16">
-          <div className={cn(cardClass, 'w-full p-8 text-center')}>
+        <div className="auth-motion mx-auto flex min-h-[60vh] max-w-md items-center px-4 py-16">
+          <div className={cn(cardClass, 'auth-enter w-full p-8 text-center')}>
             <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10 light:bg-amber-50">
               <Lock className="h-5 w-5 text-amber-400 light:text-amber-600" />
             </div>
@@ -339,8 +340,10 @@ const NewBusinessSignup: React.FC = () => {
 
   return (
     <PublicShell headerActions={headerActions}>
+      <div className="auth-motion relative isolate overflow-hidden">
+      <AuthBackdrop className="-z-10" />
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
-        <div className="mb-8 max-w-xl">
+        <div className="auth-stagger mb-8 max-w-xl" style={{ '--auth-base-delay': '0ms' } as React.CSSProperties}>
           <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl light:text-gray-900">
             {trialDays > 0 ? `Start your ${trialDays}-day free trial` : `Create your ${platformName} account`}
           </h1>
@@ -350,8 +353,12 @@ const NewBusinessSignup: React.FC = () => {
         </div>
 
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8">
-          <form onSubmit={handleSubmit} noValidate className={cn(cardClass, 'p-6 sm:p-8')}>
-            <div className="space-y-5">
+          <form
+            onSubmit={handleSubmit}
+            noValidate
+            className={cn(cardClass, 'auth-enter p-6 sm:p-8 shadow-2xl shadow-black/30 light:shadow-emerald-900/5')}
+          >
+            <div className="auth-stagger space-y-5" style={{ '--auth-base-delay': '160ms' } as React.CSSProperties}>
               <div className="grid gap-5 sm:grid-cols-2">
                 <Field id="business_name" label="Business name" error={errors.business_name}>
                   <Input
@@ -483,9 +490,10 @@ const NewBusinessSignup: React.FC = () => {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="h-11 w-full bg-emerald-600 text-base font-medium text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500"
+                className="auth-cta h-11 w-full bg-emerald-600 text-base font-medium text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500"
+                aria-busy={submitting || undefined}
               >
-                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
                 {submitting
                   ? 'Creating your workspace…'
                   : trialDays > 0
@@ -505,10 +513,11 @@ const NewBusinessSignup: React.FC = () => {
             </div>
           </form>
 
-          <div className="lg:sticky lg:top-6">
+          <div className="auth-enter lg:sticky lg:top-6" style={{ animationDelay: '120ms' }}>
             <PlanSummary plan={selectedPlan} trialDays={trialDays} businessName={form.business_name} />
           </div>
         </div>
+      </div>
       </div>
     </PublicShell>
   );
@@ -621,8 +630,10 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
 
   return (
     <PublicShell headerActions={headerActions}>
+      <div className="auth-motion relative isolate overflow-hidden">
+      <AuthBackdrop className="-z-10" />
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
-        <div className="mb-8 max-w-xl">
+        <div className="auth-stagger mb-8 max-w-xl" style={{ '--auth-base-delay': '0ms' } as React.CSSProperties}>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/[0.08] px-3 py-1 text-xs font-medium text-emerald-300 light:border-emerald-200 light:bg-emerald-50 light:text-emerald-700">
             <Rocket className="h-3.5 w-3.5" />
             Upgrade
@@ -643,8 +654,12 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
         </div>
 
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8">
-          <form onSubmit={handleSubmit} noValidate className={cn(cardClass, 'p-6 sm:p-8')}>
-            <div className="space-y-5">
+          <form
+            onSubmit={handleSubmit}
+            noValidate
+            className={cn(cardClass, 'auth-enter p-6 sm:p-8 shadow-2xl shadow-black/30 light:shadow-emerald-900/5')}
+          >
+            <div className="auth-stagger space-y-5" style={{ '--auth-base-delay': '160ms' } as React.CSSProperties}>
               {upgradeClosed && (
                 <FormAlert tone="info">
                   <p className="font-medium">New workspaces are currently closed.</p>
@@ -729,9 +744,10 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
               <Button
                 type="submit"
                 disabled={submitting || upgradeClosed}
-                className="h-11 w-full bg-emerald-600 text-base font-medium text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500"
+                className="auth-cta h-11 w-full bg-emerald-600 text-base font-medium text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500"
+                aria-busy={submitting || undefined}
               >
-                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
                 {submitting
                   ? 'Creating your workspace…'
                   : trialDays > 0
@@ -751,10 +767,11 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
             </div>
           </form>
 
-          <div className="lg:sticky lg:top-6">
+          <div className="auth-enter lg:sticky lg:top-6" style={{ animationDelay: '120ms' }}>
             <PlanSummary plan={selectedPlan} trialDays={trialDays} businessName={businessName} />
           </div>
         </div>
+      </div>
       </div>
     </PublicShell>
   );

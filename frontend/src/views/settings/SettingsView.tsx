@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { Settings, Bell, Phone, Globe, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ConnectWhatsAppCard } from '@/components/whatsapp/ConnectWhatsAppCard';
 
 /** GET /org/settings -> data: { name, settings: {...} } */
 interface OrgSettingsResponse {
@@ -164,6 +165,7 @@ export const SettingsView: React.FC<{ embedded?: boolean }> = ({ embedded }) => 
       />}
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-4xl mx-auto w-full">
+        <ConnectWhatsAppCard />
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-3 mb-6 bg-white/[0.04] border border-white/[0.08] light:bg-gray-50 light:border-gray-200">
             <TabsTrigger value="general">

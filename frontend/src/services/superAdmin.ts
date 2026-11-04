@@ -60,6 +60,21 @@ export interface Plan {
   quarterly_discount?: number;
   half_yearly_discount?: number;
   yearly_discount?: number;
+  /** Sections switched on/off for the plan's clients; a missing key is on. */
+  modules?: Record<string, boolean>;
+  /** The plan's own feature lines, each switchable. */
+  custom_features?: PlanCustomFeature[];
+}
+
+export interface PlanCustomFeature {
+  name: string;
+  enabled: boolean;
+}
+
+export interface PlanModuleInfo {
+  key: string;
+  label: string;
+  hint: string;
 }
 
 export interface SupportTicketReply {
@@ -219,6 +234,7 @@ export const superAdminService = {
   updateVendor: (id: string, data: VendorInput) => unwrap<Vendor>(api.put(`/super-admin/vendors/${id}`, data)),
 
   listPlans: () => unwrap<Plan[]>(api.get('/super-admin/plans')),
+  listPlanModules: () => unwrap<{ modules: PlanModuleInfo[] }>(api.get('/super-admin/plan-modules')).then((d) => d.modules),
   createPlan: (data: Partial<Plan>) => unwrap<Plan>(api.post('/super-admin/plans', data)),
   updatePlan: (id: string, data: Partial<Plan>) => unwrap<Plan>(api.put(`/super-admin/plans/${id}`, data)),
   deletePlan: (id: string) => api.delete(`/super-admin/plans/${id}`),

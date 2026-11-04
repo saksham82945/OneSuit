@@ -1,0 +1,157 @@
+package handlers
+
+import (
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/shridarpatil/whatomate/internal/models"
+	"github.com/valyala/fasthttp"
+	"github.com/zerodha/fastglue"
+)
+
+// Plan modules: whole sections a subscription plan can switch off for its
+// clients (Ads Manager, Webhooks, API keys, ...). A switched-off module is
+// hidden in the client's menu and its API answers 403.
+
+// PlanModule describes one switchable section.
+type PlanModule struct {
+	Key   string   `json:"key"`
+	Label string   `json:"label"`
+	Hint  string   `json:"hint"`
+	Paths []string `json:"-"` // API path prefixes it owns
+}
+
+// PlanModules is every module a plan can switch, in display order.
+var PlanModules = []PlanModule{
+	{Key: "campaigns", Label: "Campaigns", Hint: "Broadcast campaigns and campaign analytics", Paths: []string{"/api/campaigns"}},
+	{Key: "chatbot", Label: "Chatbot & flows", Hint: "Keyword replies, chatbot flows and WhatsApp Flows",
+		Paths: []string{"/api/chatbot/flows", "/api/chatbot/keywords", "/api/flows"}},
+	{Key: "ai_agents", Label: "AI integration", Hint: "AI agents and AI replies", Paths: []string{"/api/chatbot/ai-contexts"}},
+	{Key: "ads_manager", Label: "Ads Manager", Hint: "Click-to-WhatsApp ads, leads and ad credit", Paths: []string{"/api/ads"}},
+	{Key: "webhooks", Label: "Webhooks", Hint: "Send events to the client's own systems", Paths: []string{"/api/webhooks"}},
+	{Key: "api_integration", Label: "API integration", Hint: "API keys for the REST API", Paths: []string{"/api/api-keys"}},
+	{Key: "calling", Label: "Calling", Hint: "WhatsApp calls, call logs and IVR",
+		Paths: []string{"/api/calls", "/api/call-logs", "/api/call-transfers", "/api/ivr-flows"}},
+	{Key: "catalogue", Label: "Catalogue", Hint: "Product catalogues", Paths: []string{"/api/catalogs"}},
+	{Key: "integrations", Label: "Integrations", Hint: "Third-party integrations", Paths: []string{"/api/integrations"}},
+}
+
+func validModuleKey(k string) bool {
+	for _, m := range PlanModules {
+		if m.Key == k {
+			return true
+		}
+	}
+	return false
+}
+
+// moduleOn reads a module switch from a plan's Modules map (missing = on).
+func moduleOn(modules models.JSONB, key string) bool {
+	v, ok := modules[key]
+	if !ok {
+		return true
+	}
+	b, isBool := v.(bool)
+	return !isBool || b
+}
+
+type orgModulesEntry struct {
+	modules map[string]bool
+	at      time.Time
+}
+
+var (
+	orgModulesMu    sync.Mutex
+	orgModulesCache = map[uuid.UUID]orgModulesEntry{}
+)
+
+const orgModulesTTL = 30 * time.Second
+
+// orgModules returns which modules a workspace's plan includes. Workspaces
+// without a plan get everything.
+func (a *App) orgModules(orgID uuid.UUID) map[string]bool {
+	orgModulesMu.Lock()
+	if e, ok := orgModulesCache[orgID]; ok && time.Since(e.at) < orgModulesTTL {
+		orgModulesMu.Unlock()
+		return e.modules
+	}
+	orgModulesMu.Unlock()
+
+	var plan models.SubscriptionPlan
+	err := a.DB.Model(&models.SubscriptionPlan{}).
+		Joins("JOIN organization_subscriptions s ON s.plan_id = subscription_plans.id AND s.deleted_at IS NULL").
+		Where("s.organization_id = ?", orgID).First(&plan).Error
+	out := make(map[string]bool, len(PlanModules))
+	for _, m := range PlanModules {
+		out[m.Key] = err != nil || moduleOn(plan.Modules, m.Key)
+	}
+	orgModulesMu.Lock()
+	orgModulesCache[orgID] = orgModulesEntry{modules: out, at: time.Now()}
+	orgModulesMu.Unlock()
+	return out
+}
+
+// clearOrgModulesCache drops cached module switches (after a plan or a
+// client's plan changes).
+func clearOrgModulesCache() {
+	orgModulesMu.Lock()
+	orgModulesCache = map[uuid.UUID]orgModulesEntry{}
+	orgModulesMu.Unlock()
+}
+
+// PlanModuleGuard blocks the API of modules the caller's plan switches off.
+// Super admins are never blocked.
+func (a *App) PlanModuleGuard(r *fastglue.Request) *fastglue.Request {
+	path := string(r.RequestCtx.Path())
+	if !strings.HasPrefix(path, "/api/") || string(r.RequestCtx.Method()) == "OPTIONS" {
+		return r
+	}
+	var module *PlanModule
+	for i := range PlanModules {
+		for _, p := range PlanModules[i].Paths {
+			if path == p || strings.HasPrefix(path, p+"/") {
+				module = &PlanModules[i]
+			}
+		}
+	}
+	if module == nil {
+		return r
+	}
+	userID, ok := r.RequestCtx.UserValue("user_id").(uuid.UUID)
+	if !ok || a.IsSuperAdmin(userID) {
+		return r
+	}
+	orgID, err := a.getOrgID(r)
+	if err != nil || a.orgModules(orgID)[module.Key] {
+		return r
+	}
+	_ = r.SendErrorEnvelope(fasthttp.StatusForbidden,
+		module.Label+" isn't included in your plan. Contact support to upgrade.", nil, "")
+	return nil
+}
+
+// GetPlanModules tells the app which sections the workspace's plan includes
+// (GET /api/plan/modules), so the menu can hide the rest.
+func (a *App) GetPlanModules(r *fastglue.Request) error {
+	orgID, err := a.getOrgID(r)
+	if err != nil {
+		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
+	}
+	mods := make(map[string]bool, len(PlanModules))
+	superAdmin := a.callerIsSuperAdmin(r)
+	for k, on := range a.orgModules(orgID) {
+		mods[k] = on || superAdmin
+	}
+	return r.SendEnvelope(map[string]any{"modules": mods})
+}
+
+// SuperAdminListPlanModules lists the switchable modules for the plan editor
+// (GET /api/super-admin/plan-modules).
+func (a *App) SuperAdminListPlanModules(r *fastglue.Request) error {
+	if _, err := a.requireSuperAdmin(r); err != nil {
+		return nil
+	}
+	return r.SendEnvelope(map[string]any{"modules": PlanModules})
+}

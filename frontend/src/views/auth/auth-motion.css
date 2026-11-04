@@ -1,0 +1,264 @@
+/*
+ * Motion + polish for the sign-in, sign-up and invite pages.
+ * Everything is scoped under .auth-motion so nothing leaks into the app,
+ * and every animation is switched off under prefers-reduced-motion.
+ */
+
+/* ---------- Animated backdrop ---------- */
+
+.auth-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.auth-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(72px);
+  opacity: 0.55;
+  will-change: transform;
+}
+
+.auth-blob-1 {
+  width: 520px;
+  height: 520px;
+  top: -180px;
+  left: 50%;
+  margin-left: -420px;
+  background: radial-gradient(circle at 30% 30%, rgb(16 185 129 / 0.45), transparent 70%);
+  animation: auth-drift-1 22s ease-in-out infinite alternate;
+}
+
+.auth-blob-2 {
+  width: 440px;
+  height: 440px;
+  top: 30%;
+  right: -160px;
+  background: radial-gradient(circle at 50% 50%, rgb(20 184 166 / 0.35), transparent 70%);
+  animation: auth-drift-2 26s ease-in-out infinite alternate;
+}
+
+.auth-blob-3 {
+  width: 380px;
+  height: 380px;
+  bottom: -160px;
+  left: -120px;
+  background: radial-gradient(circle at 50% 50%, rgb(5 150 105 / 0.3), transparent 70%);
+  animation: auth-drift-3 30s ease-in-out infinite alternate;
+}
+
+/* Faint dot grid that fades out towards the edges. */
+.auth-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 40%, #000 30%, transparent 75%);
+  mask-image: radial-gradient(ellipse 60% 55% at 50% 40%, #000 30%, transparent 75%);
+}
+
+.light .auth-blob {
+  opacity: 0.7;
+}
+.light .auth-blob-1 {
+  background: radial-gradient(circle at 30% 30%, rgb(16 185 129 / 0.4), transparent 70%);
+}
+.light .auth-blob-2 {
+  background: radial-gradient(circle at 50% 50%, rgb(45 212 191 / 0.38), transparent 70%);
+}
+.light .auth-blob-3 {
+  background: radial-gradient(circle at 50% 50%, rgb(52 211 153 / 0.32), transparent 70%);
+}
+.light .auth-grid {
+  background-image: radial-gradient(rgb(15 23 42 / 0.08) 1px, transparent 1px);
+}
+
+@keyframes auth-drift-1 {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(140px, 60px, 0) scale(1.12); }
+}
+@keyframes auth-drift-2 {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(-120px, -80px, 0) scale(0.92); }
+}
+@keyframes auth-drift-3 {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(110px, -70px, 0) scale(1.08); }
+}
+
+/* ---------- Entrance ---------- */
+
+.auth-motion .auth-enter {
+  animation: auth-card-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Children of .auth-stagger rise in one after another. */
+.auth-motion .auth-stagger > * {
+  animation: auth-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--auth-base-delay, 120ms) + var(--auth-i, 0) * 55ms);
+}
+.auth-motion .auth-stagger > *:nth-child(1) { --auth-i: 0; }
+.auth-motion .auth-stagger > *:nth-child(2) { --auth-i: 1; }
+.auth-motion .auth-stagger > *:nth-child(3) { --auth-i: 2; }
+.auth-motion .auth-stagger > *:nth-child(4) { --auth-i: 3; }
+.auth-motion .auth-stagger > *:nth-child(5) { --auth-i: 4; }
+.auth-motion .auth-stagger > *:nth-child(6) { --auth-i: 5; }
+.auth-motion .auth-stagger > *:nth-child(7) { --auth-i: 6; }
+.auth-motion .auth-stagger > *:nth-child(8) { --auth-i: 7; }
+.auth-motion .auth-stagger > *:nth-child(n + 9) { --auth-i: 8; }
+
+@keyframes auth-card-in {
+  from { opacity: 0; transform: translate3d(0, 16px, 0) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes auth-rise {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Soft breathing halo behind the brand mark. */
+.auth-motion .auth-halo {
+  position: relative;
+  isolation: isolate;
+}
+.auth-motion .auth-halo::before {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  z-index: -1;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgb(16 185 129 / 0.35), transparent 70%);
+  animation: auth-breathe 4.5s ease-in-out infinite;
+}
+@keyframes auth-breathe {
+  0%, 100% { opacity: 0.45; transform: scale(0.92); }
+  50% { opacity: 0.9; transform: scale(1.08); }
+}
+
+/* ---------- Failed sign-in ---------- */
+
+.auth-motion .auth-shake {
+  animation: auth-shake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+@keyframes auth-shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(3px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-5px, 0, 0); }
+  40%, 60% { transform: translate3d(5px, 0, 0); }
+}
+
+/* ---------- Inputs ---------- */
+
+.auth-motion input {
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+.auth-motion input:hover:not(:disabled):not(:focus-visible) {
+  border-color: rgb(16 185 129 / 0.35);
+}
+.auth-motion input:focus-visible {
+  border-color: rgb(16 185 129 / 0.7);
+  box-shadow: 0 0 0 3px rgb(16 185 129 / 0.2);
+}
+.auth-motion input[aria-invalid='true']:focus-visible {
+  border-color: rgb(239 68 68 / 0.7);
+  box-shadow: 0 0 0 3px rgb(239 68 68 / 0.2);
+}
+.light .auth-motion input:focus-visible {
+  border-color: rgb(5 150 105);
+  box-shadow: 0 0 0 3px rgb(16 185 129 / 0.18);
+}
+.light .auth-motion input[aria-invalid='true']:focus-visible {
+  border-color: rgb(220 38 38);
+  box-shadow: 0 0 0 3px rgb(239 68 68 / 0.18);
+}
+
+/* ---------- Primary button ---------- */
+
+.auth-motion .auth-cta {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+.auth-motion .auth-cta:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px -8px rgb(16 185 129 / 0.55);
+}
+.auth-motion .auth-cta:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 4px 10px -4px rgb(16 185 129 / 0.5);
+}
+.auth-motion .auth-cta:focus-visible {
+  outline: 2px solid rgb(52 211 153);
+  outline-offset: 2px;
+}
+/* Light sheen sweeping across on hover. */
+.auth-motion .auth-cta::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgb(255 255 255 / 0.22) 50%, transparent 70%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+.auth-motion .auth-cta:hover:not(:disabled)::after {
+  transform: translateX(120%);
+  transition: transform 0.75s ease;
+}
+.auth-motion .auth-cta[aria-busy='true'] {
+  cursor: progress;
+}
+
+/* Small tiles / secondary buttons get a gentle lift. */
+.auth-motion .auth-lift {
+  transition:
+    transform 0.18s ease,
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.auth-motion .auth-lift:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.auth-motion .auth-lift:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.auth-motion .auth-lift:focus-visible {
+  outline: 2px solid rgb(52 211 153);
+  outline-offset: 2px;
+}
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-blob,
+  .auth-motion .auth-enter,
+  .auth-motion .auth-stagger > *,
+  .auth-motion .auth-halo::before,
+  .auth-motion .auth-shake {
+    animation: none !important;
+  }
+  .auth-motion .auth-cta,
+  .auth-motion .auth-cta::after,
+  .auth-motion .auth-lift {
+    transition: none !important;
+  }
+  .auth-motion .auth-cta:hover:not(:disabled),
+  .auth-motion .auth-cta:active:not(:disabled),
+  .auth-motion .auth-lift:hover:not(:disabled),
+  .auth-motion .auth-lift:active:not(:disabled) {
+    transform: none !important;
+  }
+  .auth-motion .auth-cta::after {
+    display: none;
+  }
+}

@@ -18,6 +18,8 @@ import { TemplatesView } from '@/views/settings/TemplatesView';
 import { TemplateDetailView } from '@/views/settings/TemplateDetailView';
 import { CampaignsView } from '@/views/settings/CampaignsView';
 import { CampaignDetailView } from '@/views/settings/CampaignDetailView';
+import { CampaignWizardView } from '@/views/campaigns/CampaignWizardView';
+import { CampaignAnalyticsView } from '@/views/campaigns/CampaignAnalyticsView';
 import { FlowsView } from '@/views/settings/FlowsView';
 
 // Chatbot Suite
@@ -80,6 +82,7 @@ import { WebsiteContentView } from '@/views/super-admin/WebsiteContentView';
 import { PlatformAdsView } from '@/views/super-admin/PlatformAdsView';
 import { ClientSubscriptionsView } from '@/views/super-admin/ClientSubscriptionsView';
 import { WhatsAppOnboardingView } from '@/views/super-admin/WhatsAppOnboardingView';
+import { SuperAdminWebhooksView } from '@/views/super-admin/WebhooksView';
 import { SocialLoginView } from '@/views/super-admin/SocialLoginView';
 import { SuperAdminSettingsView } from '@/views/super-admin/SuperAdminSettingsView';
 import { IntegrationsCatalogView } from '@/views/super-admin/IntegrationsCatalogView';
@@ -180,8 +183,9 @@ export const App: React.FC = () => {
             <Route path="templates/:id" element={<TemplateDetailView />} />
             <Route path="templates/new" element={<TemplateDetailView />} />
             <Route path="campaigns" element={<CampaignsView />} />
+            <Route path="campaigns/analytics" element={<CampaignAnalyticsView />} />
             <Route path="campaigns/:id" element={<CampaignDetailView />} />
-            <Route path="campaigns/new" element={<CampaignDetailView />} />
+            <Route path="campaigns/new" element={<CampaignWizardView />} />
             <Route path="ads" element={<AdsManagerView />} />
             <Route path="ads/agent" element={<AdsAgentView />} />
             <Route path="ads/leads" element={<AdsLeadsView />} />
@@ -254,6 +258,7 @@ export const App: React.FC = () => {
               <Route path="subscriptions" element={<ClientSubscriptionsView />} />
               <Route path="plans" element={<SubscriptionsView />} />
               <Route path="whatsapp-onboarding" element={<WhatsAppOnboardingView />} />
+              <Route path="webhooks" element={<SuperAdminWebhooksView />} />
               <Route path="social-login" element={<SocialLoginView />} />
               <Route path="integrations" element={<IntegrationsCatalogView />} />
               <Route path="pages" element={<PagesManagementView />} />

@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +29,10 @@ type CampaignRequest struct {
 	TemplateID      string     `json:"template_id" validate:"required"`
 	HeaderMediaID   string     `json:"header_media_id"`
 	ScheduledAt     *time.Time `json:"scheduled_at"`
+	// ListID optionally seeds a new campaign's recipients from a broadcast list (create only).
+	ListID string `json:"list_id"`
+	// Audience picks the recipients from tags, contacts, groups and lists (create only).
+	Audience *CampaignAudience `json:"audience"`
 }
 
 // CampaignResponse represents campaign in API responses
@@ -65,6 +71,41 @@ type RecipientRequest struct {
 	HeaderParams map[string]any `json:"header_params"`
 }
 
+// CampaignListSummary aggregates delivery stats across all campaigns that
+// match a ListCampaigns filter (independent of pagination).
+type CampaignListSummary struct {
+	Campaigns       int64 `json:"campaigns"`
+	TotalRecipients int64 `json:"total_recipients"`
+	SentCount       int64 `json:"sent_count"`
+	DeliveredCount  int64 `json:"delivered_count"`
+	ReadCount       int64 `json:"read_count"`
+	FailedCount     int64 `json:"failed_count"`
+	Draft           int64 `json:"draft"`
+	Scheduled       int64 `json:"scheduled"`
+	Queued          int64 `json:"queued"`
+	Processing      int64 `json:"processing"`
+	Paused          int64 `json:"paused"`
+	Completed       int64 `json:"completed"`
+	Cancelled       int64 `json:"cancelled"`
+	Failed          int64 `json:"failed"`
+}
+
+const campaignSummarySelect = `
+	COUNT(*) AS campaigns,
+	COALESCE(SUM(total_recipients), 0) AS total_recipients,
+	COALESCE(SUM(sent_count), 0) AS sent_count,
+	COALESCE(SUM(delivered_count), 0) AS delivered_count,
+	COALESCE(SUM(read_count), 0) AS read_count,
+	COALESCE(SUM(failed_count), 0) AS failed_count,
+	COUNT(*) FILTER (WHERE status = 'draft') AS draft,
+	COUNT(*) FILTER (WHERE status = 'scheduled') AS scheduled,
+	COUNT(*) FILTER (WHERE status = 'queued') AS queued,
+	COUNT(*) FILTER (WHERE status = 'processing') AS processing,
+	COUNT(*) FILTER (WHERE status = 'paused') AS paused,
+	COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+	COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled,
+	COUNT(*) FILTER (WHERE status = 'failed') AS failed`
+
 // ListCampaigns implements campaign listing
 func (a *App) ListCampaigns(r *fastglue.Request) error {
 	orgID, err := a.getOrgID(r)
@@ -96,6 +137,16 @@ func (a *App) ListCampaigns(r *fastglue.Request) error {
 	}
 	if to, ok := parseDateParam(r, "to"); ok {
 		baseQuery = baseQuery.Where("created_at <= ?", endOfDay(to))
+	}
+
+	// Aggregate totals across every campaign matching the filters (not just
+	// this page) so analytics views can show org-wide numbers in one call.
+	var summary CampaignListSummary
+	if err := baseQuery.Session(&gorm.Session{}).
+		Model(&models.BulkMessageCampaign{}).
+		Select(campaignSummarySelect).
+		Scan(&summary).Error; err != nil {
+		a.Log.Error("Failed to summarise campaigns", "error", err)
 	}
 
 	// Get total count
@@ -139,7 +190,9 @@ func (a *App) ListCampaigns(r *fastglue.Request) error {
 		}
 	}
 
-	return r.SendEnvelope(listEnvelope("campaigns", response, total, pg))
+	env := listEnvelope("campaigns", response, total, pg)
+	env["summary"] = summary
+	return r.SendEnvelope(env)
 }
 
 // CreateCampaign implements campaign creation
@@ -170,6 +223,28 @@ func (a *App) CreateCampaign(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "WhatsApp account not found", nil, "")
 	}
 
+	// Optional broadcast list audience
+	var audienceList *models.BroadcastList
+	if strings.TrimSpace(req.ListID) != "" {
+		if audienceList, err = a.findOrgBroadcastList(orgID, req.ListID); err != nil {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Broadcast list not found", nil, "")
+		}
+	}
+
+	// Optional audience (tags, contacts, groups, lists + filters)
+	var audience []audienceRecipient
+	if !req.Audience.empty() {
+		var msg string
+		if audience, msg, err = resolveAudience(a.DB, orgID, req.Audience); err != nil {
+			a.Log.Error("Failed to resolve campaign audience", "error", err)
+			return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to load the audience", nil, "")
+		} else if msg != "" {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, msg, nil, "")
+		} else if len(audience) == 0 {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "No contacts match this audience", nil, "")
+		}
+	}
+
 	campaign := models.BulkMessageCampaign{
 		OrganizationID:  orgID,
 		WhatsAppAccount: req.WhatsAppAccount,
@@ -182,7 +257,27 @@ func (a *App) CreateCampaign(r *fastglue.Request) error {
 		UpdatedByID:     &userID,
 	}
 
-	if err := a.DB.Create(&campaign).Error; err != nil {
+	// A future start time makes it a scheduled campaign; the scheduler starts it.
+	if req.ScheduledAt != nil && req.ScheduledAt.After(time.Now()) {
+		campaign.Status = models.CampaignStatusScheduled
+	}
+
+	if err := a.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&campaign).Error; err != nil {
+			return err
+		}
+		if audience != nil {
+			added, err := addAudienceToCampaign(tx, campaign.ID, audience)
+			campaign.TotalRecipients = added
+			return err
+		}
+		if audienceList == nil {
+			return nil
+		}
+		added, err := a.addListRecipientsToCampaign(tx, campaign.ID, audienceList.ID, orgID)
+		campaign.TotalRecipients = added
+		return err
+	}); err != nil {
 		a.Log.Error("Failed to create campaign", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to create campaign", nil, "")
 	}
@@ -418,66 +513,18 @@ func (a *App) StartCampaign(r *fastglue.Request) error {
 		return nil
 	}
 
-	// Check if campaign can be started
-	if campaign.Status != models.CampaignStatusDraft && campaign.Status != models.CampaignStatusScheduled && campaign.Status != models.CampaignStatusPaused {
+	switch n, err := a.launchCampaign(r.RequestCtx, campaign); {
+	case errors.Is(err, errCampaignNotStartable):
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Campaign cannot be started in current state", nil, "")
-	}
-
-	// Get all pending recipients
-	var recipients []models.BulkMessageRecipient
-	if err := a.DB.Where("campaign_id = ? AND status = ?", id, models.MessageStatusPending).Find(&recipients).Error; err != nil {
-		a.Log.Error("Failed to load recipients", "error", err)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to load recipients", nil, "")
-	}
-
-	if len(recipients) == 0 {
+	case errors.Is(err, errCampaignNoRecipients):
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Campaign has no pending recipients", nil, "")
+	case errors.Is(err, errCampaignNoTemplate):
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Campaign template no longer exists", nil, "")
+	case err != nil:
+		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, err.Error(), nil, "")
+	default:
+		a.Log.Info("Recipients enqueued for processing", "campaign_id", id, "count", n)
 	}
-
-	// Validate template still exists
-	if campaign.TemplateID != uuid.Nil {
-		var template models.Template
-		if err := a.DB.Where("id = ? AND organization_id = ?", campaign.TemplateID, orgID).First(&template).Error; err != nil {
-			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Campaign template no longer exists", nil, "")
-		}
-	}
-
-	// Update status to processing
-	now := time.Now()
-	updates := map[string]any{
-		"status":     models.CampaignStatusProcessing,
-		"started_at": now,
-	}
-
-	if err := a.DB.Model(campaign).Updates(updates).Error; err != nil {
-		a.Log.Error("Failed to start campaign", "error", err)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to start campaign", nil, "")
-	}
-
-	a.Log.Info("Campaign started", "campaign_id", id, "recipients", len(recipients))
-
-	// Enqueue all recipients as individual jobs for parallel processing
-	jobs := make([]*queue.RecipientJob, len(recipients))
-	for i, recipient := range recipients {
-		jobs[i] = &queue.RecipientJob{
-			CampaignID:     id,
-			RecipientID:    recipient.ID,
-			OrganizationID: orgID,
-			PhoneNumber:    recipient.PhoneNumber,
-			RecipientName:  recipient.RecipientName,
-			TemplateParams: recipient.TemplateParams,
-			HeaderParams:   recipient.HeaderParams,
-		}
-	}
-
-	if err := a.Queue.EnqueueRecipients(r.RequestCtx, jobs); err != nil {
-		a.Log.Error("Failed to enqueue recipients", "error", err)
-		// Revert status on failure
-		a.DB.Model(campaign).Update("status", models.CampaignStatusDraft)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to queue recipients", nil, "")
-	}
-
-	a.Log.Info("Recipients enqueued for processing", "campaign_id", id, "count", len(jobs))
 
 	return r.SendEnvelope(map[string]any{
 		"message": "Campaign started",
@@ -737,8 +784,49 @@ func (a *App) GetCampaignRecipients(r *fastglue.Request) error {
 		return nil
 	}
 
+	// Optional filters. Without page/limit every recipient is returned (the
+	// original behaviour); with them the list is paged and "total" is the
+	// filtered count.
+	args := r.RequestCtx.QueryArgs()
+	statusFilter := string(args.Peek("status"))
+	search := strings.TrimSpace(string(args.Peek("search")))
+	paged := args.Has("page") || args.Has("limit")
+
+	query := a.DB.Model(&models.BulkMessageRecipient{}).Where("campaign_id = ?", id)
+	if statusFilter != "" {
+		query = query.Where("status = ?", statusFilter)
+	}
+	if search != "" {
+		like := "%" + search + "%"
+		query = query.Where("phone_number ILIKE ? OR recipient_name ILIKE ?", like, like)
+	}
+
+	var filteredTotal int64
+	query.Session(&gorm.Session{}).Count(&filteredTotal)
+
+	var statusCounts []struct {
+		Status string
+		Count  int64
+	}
+	a.DB.Model(&models.BulkMessageRecipient{}).
+		Where("campaign_id = ?", id).
+		Select("status, COUNT(*) AS count").
+		Group("status").
+		Scan(&statusCounts)
+	counts := map[string]int64{}
+	for _, sc := range statusCounts {
+		counts[sc.Status] = sc.Count
+	}
+
+	listQuery := query.Order("created_at ASC")
+	var pg Pagination
+	if paged {
+		pg = parsePaginationWithDefaults(r, 50, 500)
+		listQuery = pg.Apply(listQuery)
+	}
+
 	var recipients []models.BulkMessageRecipient
-	if err := a.DB.Where("campaign_id = ?", id).Order("created_at ASC").Find(&recipients).Error; err != nil {
+	if err := listQuery.Find(&recipients).Error; err != nil {
 		a.Log.Error("Failed to list recipients", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to list recipients", nil, "")
 	}
@@ -750,10 +838,16 @@ func (a *App) GetCampaignRecipients(r *fastglue.Request) error {
 		}
 	}
 
-	return r.SendEnvelope(map[string]any{
-		"recipients": recipients,
-		"total":      len(recipients),
-	})
+	resp := map[string]any{
+		"recipients":    recipients,
+		"total":         filteredTotal,
+		"status_counts": counts,
+	}
+	if paged {
+		resp["page"] = pg.Page
+		resp["limit"] = pg.Limit
+	}
+	return r.SendEnvelope(resp)
 }
 
 // DeleteCampaignRecipient deletes a single recipient from a campaign
@@ -1157,4 +1251,105 @@ func sanitizeFilename(name string) string {
 		name = "unnamed"
 	}
 	return name
+}
+
+var (
+	errCampaignNotStartable = errors.New("campaign cannot be started in its current state")
+	errCampaignNoRecipients = errors.New("campaign has no pending recipients")
+	errCampaignNoTemplate   = errors.New("campaign template no longer exists")
+)
+
+// launchCampaign marks a campaign as processing and queues its pending
+// recipients. Used by Start and by the scheduler for scheduled campaigns.
+func (a *App) launchCampaign(ctx context.Context, campaign *models.BulkMessageCampaign) (int, error) {
+	id, orgID := campaign.ID, campaign.OrganizationID
+	if campaign.Status != models.CampaignStatusDraft && campaign.Status != models.CampaignStatusScheduled && campaign.Status != models.CampaignStatusPaused {
+		return 0, errCampaignNotStartable
+	}
+
+	// Get all pending recipients
+	var recipients []models.BulkMessageRecipient
+	if err := a.DB.Where("campaign_id = ? AND status = ?", id, models.MessageStatusPending).Find(&recipients).Error; err != nil {
+		a.Log.Error("Failed to load recipients", "error", err)
+		return 0, errors.New("Failed to load recipients")
+	}
+
+	if len(recipients) == 0 {
+		return 0, errCampaignNoRecipients
+	}
+
+	// Validate template still exists
+	if campaign.TemplateID != uuid.Nil {
+		var template models.Template
+		if err := a.DB.Where("id = ? AND organization_id = ?", campaign.TemplateID, orgID).First(&template).Error; err != nil {
+			return 0, errCampaignNoTemplate
+		}
+	}
+
+	// Update status to processing
+	now := time.Now()
+	updates := map[string]any{
+		"status":     models.CampaignStatusProcessing,
+		"started_at": now,
+	}
+
+	// Only the first caller moves it on, so a campaign never starts twice.
+	res := a.DB.Model(&models.BulkMessageCampaign{}).Where("id = ? AND status = ?", id, campaign.Status).Updates(updates)
+	if res.Error != nil {
+		a.Log.Error("Failed to start campaign", "error", res.Error)
+		return 0, errors.New("Failed to start campaign")
+	}
+	if res.RowsAffected == 0 {
+		return 0, errCampaignNotStartable
+	}
+	prevStatus := campaign.Status
+
+	a.Log.Info("Campaign started", "campaign_id", id, "recipients", len(recipients))
+
+	// Enqueue all recipients as individual jobs for parallel processing
+	jobs := make([]*queue.RecipientJob, len(recipients))
+	for i, recipient := range recipients {
+		jobs[i] = &queue.RecipientJob{
+			CampaignID:     id,
+			RecipientID:    recipient.ID,
+			OrganizationID: orgID,
+			PhoneNumber:    recipient.PhoneNumber,
+			RecipientName:  recipient.RecipientName,
+			TemplateParams: recipient.TemplateParams,
+			HeaderParams:   recipient.HeaderParams,
+		}
+	}
+
+	if err := a.Queue.EnqueueRecipients(ctx, jobs); err != nil {
+		a.Log.Error("Failed to enqueue recipients", "error", err)
+		// Revert status on failure
+		a.DB.Model(&models.BulkMessageCampaign{}).Where("id = ?", id).Update("status", prevStatus)
+		return 0, errors.New("Failed to queue recipients")
+	}
+
+
+	return len(jobs), nil
+}
+
+// StartDueCampaigns starts scheduled campaigns whose time has come. It runs
+// every minute from the background processor.
+func (a *App) StartDueCampaigns(ctx context.Context) {
+	var due []models.BulkMessageCampaign
+	if err := a.DB.Where("status = ? AND scheduled_at IS NOT NULL AND scheduled_at <= ?", models.CampaignStatusScheduled, time.Now()).
+		Limit(50).Find(&due).Error; err != nil {
+		a.Log.Error("Failed to load scheduled campaigns", "error", err)
+		return
+	}
+	for i := range due {
+		n, err := a.launchCampaign(ctx, &due[i])
+		switch {
+		case errors.Is(err, errCampaignNoRecipients), errors.Is(err, errCampaignNoTemplate):
+			a.Log.Warn("Scheduled campaign could not start", "campaign_id", due[i].ID, "reason", err)
+			a.DB.Model(&models.BulkMessageCampaign{}).Where("id = ?", due[i].ID).Update("status", models.CampaignStatusFailed)
+		case err != nil:
+			a.Log.Error("Scheduled campaign failed to start", "campaign_id", due[i].ID, "error", err)
+		default:
+			a.Log.Info("Scheduled campaign started", "campaign_id", due[i].ID, "recipients", n)
+		}
+	}
 }

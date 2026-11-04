@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
 import { useTheme } from '@/hooks/useTheme';
 import { isInsideClient } from '@/services/superAdmin';
+import { usePlanModules } from '@/lib/planModules';
 
 export interface PrimaryModule {
   id: string;
@@ -163,7 +164,8 @@ export const PrimaryRail: React.FC<PrimaryRailProps> = ({
   const { isDark, toggleTheme } = useTheme();
   const isSuperAdmin = Boolean(user?.is_super_admin);
 
-  const visibleModules = visibleRailModules(isSuperAdmin, isInsideClient(user), hasPermission);
+  const { railAllowed } = usePlanModules();
+  const visibleModules = visibleRailModules(isSuperAdmin, isInsideClient(user), hasPermission).filter((m) => railAllowed(m.id));
 
   return (
     <aside

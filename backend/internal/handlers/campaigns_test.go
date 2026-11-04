@@ -940,3 +940,109 @@ func TestApp_Campaign_CrossOrgIsolation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, fasthttp.StatusNotFound, testutil.GetResponseStatusCode(req))
 }
+
+// --- Campaign analytics (summary + recipient filters) ---
+
+func TestApp_ListCampaigns_Summary(t *testing.T) {
+	mockQueue := testutil.NewMockQueue()
+	app := newTestApp(t, withQueue(mockQueue))
+	org := testutil.CreateTestOrganization(t, app.DB)
+	user := testutil.CreateTestUser(t, app.DB, org.ID, testutil.WithEmail(testutil.UniqueEmail("list-summary")), testutil.WithPassword("password"))
+	account := testutil.CreateTestWhatsAppAccountWith(t, app.DB, org.ID, testutil.WithAccountName("summary-account"))
+	template := testutil.CreateTestTemplate(t, app.DB, org.ID, account.Name)
+
+	c1 := createTestCampaign(t, app, org.ID, template.ID, user.ID, account.Name, models.CampaignStatusCompleted)
+	c2 := createTestCampaign(t, app, org.ID, template.ID, user.ID, account.Name, models.CampaignStatusCompleted)
+	createTestCampaign(t, app, org.ID, template.ID, user.ID, account.Name, models.CampaignStatusDraft)
+	require.NoError(t, app.DB.Model(c1).Updates(map[string]any{"total_recipients": 10, "sent_count": 8, "delivered_count": 6, "read_count": 3, "failed_count": 2}).Error)
+	require.NoError(t, app.DB.Model(c2).Updates(map[string]any{"total_recipients": 5, "sent_count": 5, "delivered_count": 4, "read_count": 1, "failed_count": 0}).Error)
+
+	type summaryResp struct {
+		Data struct {
+			Campaigns []handlers.CampaignResponse  `json:"campaigns"`
+			Total     int                          `json:"total"`
+			Summary   handlers.CampaignListSummary `json:"summary"`
+		} `json:"data"`
+	}
+
+	// Summary covers every match even when the page holds just one campaign.
+	req := testutil.NewGETRequest(t)
+	testutil.SetAuthContext(req, org.ID, user.ID)
+	testutil.SetQueryParam(req, "limit", 1)
+	require.NoError(t, app.ListCampaigns(req))
+	assert.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req))
+	var resp summaryResp
+	require.NoError(t, json.Unmarshal(testutil.GetResponseBody(req), &resp))
+	assert.Len(t, resp.Data.Campaigns, 1)
+	assert.Equal(t, 3, resp.Data.Total)
+	sum := resp.Data.Summary
+	assert.Equal(t, int64(3), sum.Campaigns)
+	assert.Equal(t, int64(15), sum.TotalRecipients)
+	assert.Equal(t, int64(13), sum.SentCount)
+	assert.Equal(t, int64(10), sum.DeliveredCount)
+	assert.Equal(t, int64(4), sum.ReadCount)
+	assert.Equal(t, int64(2), sum.FailedCount)
+	assert.Equal(t, int64(2), sum.Completed)
+	assert.Equal(t, int64(1), sum.Draft)
+
+	// Summary respects the status filter.
+	req = testutil.NewGETRequest(t)
+	testutil.SetAuthContext(req, org.ID, user.ID)
+	testutil.SetQueryParam(req, "status", models.CampaignStatusDraft)
+	require.NoError(t, app.ListCampaigns(req))
+	resp = summaryResp{}
+	require.NoError(t, json.Unmarshal(testutil.GetResponseBody(req), &resp))
+	assert.Equal(t, int64(1), resp.Data.Summary.Campaigns)
+	assert.Equal(t, int64(0), resp.Data.Summary.SentCount)
+}
+
+func TestApp_GetCampaignRecipients_FilterAndPage(t *testing.T) {
+	mockQueue := testutil.NewMockQueue()
+	app := newTestApp(t, withQueue(mockQueue))
+	org := testutil.CreateTestOrganization(t, app.DB)
+	user := testutil.CreateTestUser(t, app.DB, org.ID, testutil.WithEmail(testutil.UniqueEmail("recipients-filter")), testutil.WithPassword("password"))
+	account := testutil.CreateTestWhatsAppAccountWith(t, app.DB, org.ID, testutil.WithAccountName("recipients-filter-account"))
+	template := testutil.CreateTestTemplate(t, app.DB, org.ID, account.Name)
+	campaign := createTestCampaign(t, app, org.ID, template.ID, user.ID, account.Name, models.CampaignStatusCompleted)
+	createTestRecipient(t, app, campaign.ID, "+911111111111", models.MessageStatusFailed)
+	createTestRecipient(t, app, campaign.ID, "+912222222222", models.MessageStatusFailed)
+	createTestRecipient(t, app, campaign.ID, "+913333333333", models.MessageStatusRead)
+
+	type recResp struct {
+		Data struct {
+			Recipients   []models.BulkMessageRecipient `json:"recipients"`
+			Total        int                           `json:"total"`
+			Page         int                           `json:"page"`
+			StatusCounts map[string]int                `json:"status_counts"`
+		} `json:"data"`
+	}
+
+	// Status filter + paging.
+	req := testutil.NewGETRequest(t)
+	testutil.SetAuthContext(req, org.ID, user.ID)
+	testutil.SetPathParam(req, "id", campaign.ID.String())
+	testutil.SetQueryParam(req, "status", "failed")
+	testutil.SetQueryParam(req, "page", 1)
+	testutil.SetQueryParam(req, "limit", 1)
+	require.NoError(t, app.GetCampaignRecipients(req))
+	assert.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req))
+	var resp recResp
+	require.NoError(t, json.Unmarshal(testutil.GetResponseBody(req), &resp))
+	assert.Len(t, resp.Data.Recipients, 1)
+	assert.Equal(t, 2, resp.Data.Total)
+	assert.Equal(t, 1, resp.Data.Page)
+	assert.Equal(t, 2, resp.Data.StatusCounts["failed"])
+	assert.Equal(t, 1, resp.Data.StatusCounts["read"])
+
+	// Search by phone.
+	req = testutil.NewGETRequest(t)
+	testutil.SetAuthContext(req, org.ID, user.ID)
+	testutil.SetPathParam(req, "id", campaign.ID.String())
+	testutil.SetQueryParam(req, "search", "3333")
+	require.NoError(t, app.GetCampaignRecipients(req))
+	resp = recResp{}
+	require.NoError(t, json.Unmarshal(testutil.GetResponseBody(req), &resp))
+	require.Len(t, resp.Data.Recipients, 1)
+	assert.Equal(t, models.MessageStatusRead, resp.Data.Recipients[0].Status)
+	assert.Equal(t, 1, resp.Data.Total)
+}

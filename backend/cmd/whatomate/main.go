@@ -629,6 +629,9 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	// The demo workspace is read-only for explorers
 	g.Before(app.DemoReadOnlyGuard)
 
+	// Sections switched off in the workspace's plan are blocked
+	g.Before(app.PlanModuleGuard)
+
 	// Role-based access control middleware
 	g.Before(func(r *fastglue.Request) *fastglue.Request {
 		method := string(r.RequestCtx.Method())
@@ -649,6 +652,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.PUT("/api/me/password", app.ChangePassword)
 	g.PUT("/api/me/availability", app.UpdateAvailability)
 	g.GET("/api/me/organizations", app.ListMyOrganizations)
+	g.GET("/api/plan/modules", app.GetPlanModules)
 	g.GET("/api/billing", app.GetBilling)
 
 	// User Management (admin only - enforced by middleware)
@@ -687,10 +691,30 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.PUT("/api/accounts/{id}/business_profile", app.UpdateBusinessProfile)
 	g.POST("/api/accounts/{id}/business_profile/photo", app.UpdateProfilePicture)
 	g.GET("/api/accounts/{id}/health", app.GetAccountHealth)
+	g.GET("/api/accounts/{id}/diagnose", app.DiagnoseAccount)
+	g.POST("/api/accounts/{id}/diagnose/fix", app.FixAccountConnection)
 	g.POST("/api/accounts/{id}/sync-phone-numbers", app.SyncAccountPhoneNumbers)
 	g.GET("/api/whatsapp-setup/test-contact", app.GetTestContact)
 	g.PUT("/api/whatsapp-setup/test-contact", app.UpdateTestContact)
 	g.POST("/api/whatsapp-setup/manual", app.ManualWhatsAppSetup)
+
+	// Contact groups (organise contacts) and broadcast lists (campaign audiences)
+	g.GET("/api/contact-groups", app.ListContactGroups)
+	g.POST("/api/contact-groups", app.CreateContactGroup)
+	g.GET("/api/contact-groups/{id}", app.GetContactGroup)
+	g.PUT("/api/contact-groups/{id}", app.UpdateContactGroup)
+	g.DELETE("/api/contact-groups/{id}", app.DeleteContactGroup)
+	g.GET("/api/contact-groups/{id}/members", app.ListContactGroupMembers)
+	g.POST("/api/contact-groups/{id}/members", app.AddContactGroupMembers)
+	g.POST("/api/contact-groups/{id}/members/remove", app.RemoveContactGroupMembers)
+	g.GET("/api/broadcast-lists", app.ListBroadcastLists)
+	g.POST("/api/broadcast-lists", app.CreateBroadcastList)
+	g.GET("/api/broadcast-lists/{id}", app.GetBroadcastList)
+	g.PUT("/api/broadcast-lists/{id}", app.UpdateBroadcastList)
+	g.DELETE("/api/broadcast-lists/{id}", app.DeleteBroadcastList)
+	g.GET("/api/broadcast-lists/{id}/members", app.ListBroadcastListMembers)
+	g.POST("/api/broadcast-lists/{id}/members", app.AddBroadcastListMembers)
+	g.POST("/api/broadcast-lists/{id}/members/remove", app.RemoveBroadcastListMembers)
 
 	// Contacts
 	g.GET("/api/contacts", app.ListContacts)
@@ -758,6 +782,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	// Bulk Campaigns
 	g.GET("/api/campaigns", app.ListCampaigns)
 	g.POST("/api/campaigns", app.CreateCampaign)
+	g.POST("/api/campaigns/audience/preview", app.PreviewCampaignAudience)
 	g.GET("/api/campaigns/{id}", app.GetCampaign)
 	g.PUT("/api/campaigns/{id}", app.UpdateCampaign)
 	g.DELETE("/api/campaigns/{id}", app.DeleteCampaign)
@@ -767,6 +792,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.POST("/api/campaigns/{id}/retry-failed", app.RetryFailed)
 	g.GET("/api/campaigns/{id}/progress", app.GetCampaign)
 	g.POST("/api/campaigns/{id}/recipients/import", app.ImportRecipients)
+	g.POST("/api/campaigns/{id}/recipients/from-list", app.AddCampaignRecipientsFromList)
 	g.GET("/api/campaigns/{id}/recipients", app.GetCampaignRecipients)
 	g.DELETE("/api/campaigns/{id}/recipients/{recipientId}", app.DeleteCampaignRecipient)
 	g.POST("/api/campaigns/{id}/media", app.UploadCampaignMedia)
@@ -873,9 +899,11 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/super-admin/dashboard", app.SuperAdminDashboard)
 	g.GET("/api/super-admin/vendors", app.SuperAdminListVendors)
 	g.GET("/api/super-admin/vendors/{id}/invoices", app.SuperAdminListInvoices)
+	g.GET("/api/super-admin/webhooks", app.SuperAdminListWebhooks)
 	g.POST("/api/super-admin/vendors", app.SuperAdminCreateVendor)
 	g.PUT("/api/super-admin/vendors/{id}", app.SuperAdminUpdateVendor)
 	g.GET("/api/super-admin/plans", app.SuperAdminListPlans)
+	g.GET("/api/super-admin/plan-modules", app.SuperAdminListPlanModules)
 	g.POST("/api/super-admin/plans", app.SuperAdminCreatePlan)
 	g.PUT("/api/super-admin/plans/{id}", app.SuperAdminUpdatePlan)
 	g.DELETE("/api/super-admin/plans/{id}", app.SuperAdminDeletePlan)

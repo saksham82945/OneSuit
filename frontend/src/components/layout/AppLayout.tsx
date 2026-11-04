@@ -48,12 +48,15 @@ import {
   LogIn,
   Cable,
 } from 'lucide-react';
-import { PrimaryRail } from './PrimaryRail';
+import { PrimaryRail, visibleRailModules } from './PrimaryRail';
+import { UserMenu } from './UserMenu';
 import { SecondarySidebar, type SecondaryNavGroup } from './SecondarySidebar';
 import { TopStatusBar } from './TopStatusBar';
 import { SuperAdminNavbar, type SuperAdminNavSection } from './SuperAdminNavbar';
 import { useBrandedTitle, useBranding } from '@/services/branding';
 import { BrandMark } from '@/views/public/PublicLayout';
+import { usePlanModules } from '@/lib/planModules';
+import { PlanLockedNotice } from './PlanLockedNotice';
 
 /** Platform Admin pages (super admin only). */
 const PLATFORM_ITEMS: SecondaryNavGroup['items'] = [
@@ -65,6 +68,7 @@ const PLATFORM_ITEMS: SecondaryNavGroup['items'] = [
   { name: 'Website', path: '/super-admin/website', icon: Globe },
   { name: 'nav.pagesManagement', path: '/super-admin/pages', icon: FileText },
   { name: 'WhatsApp Onboarding', path: '/super-admin/whatsapp-onboarding', icon: MessageCircle },
+  { name: 'WEBHOOKS', path: '/super-admin/webhooks', icon: Webhook },
   { name: 'Social Login', path: '/super-admin/social-login', icon: LogIn },
   { name: 'Setup & Integrations', path: '/super-admin/integrations', icon: Cable },
   { name: 'nav.manageTickets', path: '/super-admin/tickets', icon: Ticket },
@@ -201,15 +205,13 @@ export const AppLayout: React.FC = () => {
     }
 
     if (activeModuleId === 'chat') {
-      const items = [
-        { name: 'nav.chat', path: '/chat', icon: MessageSquare },
-      ].filter(Boolean) as SecondaryNavGroup['items'];
-
+      // Live Chat's own inbox column (views, labels, search) is its sub-navigation,
+      // so it gets no sub-navbar; see `hideSubnav` below.
       return {
         moduleId: 'chat',
         title: 'nav.chat',
         subtitle: 'Live Inbox',
-        items,
+        items: [{ name: 'nav.chat', path: '/chat', icon: MessageSquare }],
       };
     }
 
@@ -230,6 +232,7 @@ export const AppLayout: React.FC = () => {
     if (activeModuleId === 'campaigns') {
       const items = [
         { name: 'nav.campaigns', path: '/campaigns', icon: Megaphone },
+        hasPermission('campaigns', 'read') && { name: 'Campaign Analytics', path: '/campaigns/analytics', icon: BarChart3 },
       ].filter(Boolean) as SecondaryNavGroup['items'];
 
       return {
@@ -358,6 +361,18 @@ export const AppLayout: React.FC = () => {
     navigate(defaultPath);
   };
 
+  // Live Chat needs the width for its three columns and already has its own
+  // inbox navigation, so its one-link sub-navbar is replaced by the slim strip.
+  const hideSubnav = activeModuleId === 'chat';
+  const subnavCollapsed = isCollapsed || hideSubnav;
+  const { pathAllowed, railAllowed } = usePlanModules();
+  const railModules = visibleRailModules(isSuperAdmin, insideClient, hasPermission).filter((m) => railAllowed(m.id));
+  // Hide pages the workspace's plan switches off.
+  const navGroup: SecondaryNavGroup | null = currentNavGroup
+    ? { ...currentNavGroup, items: currentNavGroup.items.filter((i) => pathAllowed(i.path)) }
+    : null;
+  const pageLocked = !singleNav && !pathAllowed(location.pathname);
+
   return (
     <div className="flex h-screen bg-[#f8faf9] dark:bg-[#0a0f0e] text-gray-900 dark:text-gray-100 overflow-hidden font-sans">
       {/* Mobile Header (<md) */}
@@ -402,26 +417,34 @@ export const AppLayout: React.FC = () => {
         />
 
         {/* Rail 2: Contextual Subnavbar (Secondary Sidebar) */}
-        <SecondarySidebar
-          currentGroup={currentNavGroup}
-          collapsed={isCollapsed}
-          onToggleCollapse={toggleSecondaryCollapsed}
-        />
+        {!hideSubnav && (
+          <SecondarySidebar
+            currentGroup={navGroup}
+            collapsed={isCollapsed}
+            onToggleCollapse={toggleSecondaryCollapsed}
+          />
+        )}
 
-        {/* Floating Expand Button when Subnavbar is Collapsed */}
-        {isCollapsed && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={toggleSecondaryCollapsed}
-            style={{ left: isRailExpanded ? '232px' : '92px' }}
-            className="absolute top-3.5 z-30 h-8 px-2.5 rounded-xl bg-white dark:bg-[#111817] shadow-lg border border-gray-200/90 dark:border-gray-800 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:text-spruce-dark dark:hover:text-emerald-400 hover:bg-gray-50 dark:hover:bg-white/[0.06] transition-all flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2 duration-150"
-            title="Expand subnavbar"
-            aria-label="Expand subnavbar"
-          >
-            <PanelLeftOpen className="h-4 w-4 text-spruce-dark dark:text-emerald-400" />
-            <span className="text-[11px] hidden sm:inline">Subnavbar</span>
-          </Button>
+        {/* Collapsed subnavbar: a slim strip in the layout flow (it used to float
+            over the page and cover the top bar), keeping the account menu reachable. */}
+        {subnavCollapsed && navGroup && (
+          <div className="flex w-14 shrink-0 flex-col items-center justify-between border-r border-gray-200/80 bg-white py-3 dark:border-[#1c2725] dark:bg-[#111817]">
+            {hideSubnav ? (
+              <span className="h-8" aria-hidden />
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleSecondaryCollapsed}
+                className="h-8 w-8 rounded-lg text-spruce-dark hover:bg-gray-100 dark:text-emerald-400 dark:hover:bg-white/[0.06]"
+                title="Expand subnavbar"
+                aria-label="Expand subnavbar"
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </Button>
+            )}
+            <UserMenu collapsed />
+          </div>
         )}
       </div>
 
@@ -472,13 +495,43 @@ export const AppLayout: React.FC = () => {
                 </div>
               </div>
             ))}
-          {!singleNav && currentNavGroup && (
+          {!singleNav && (
+            <div className="mb-4">
+              <h3 className="px-3 text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">Menu</h3>
+              <div className="mt-2 grid grid-cols-2 gap-1">
+                {railModules.map((m) => {
+                  const Icon = m.icon;
+                  const active = m.id === activeModuleId;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setIsMobileMenuOpen(false);
+                        navigate(m.path);
+                      }}
+                      className={cn(
+                        'flex items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium',
+                        active
+                          ? 'bg-teal-50 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200'
+                          : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-white/[0.06]'
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{m.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {!singleNav && navGroup && !hideSubnav && (
             <div className="mb-4">
               <h3 className="px-3 text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
-                {t(currentNavGroup.title) || currentNavGroup.title}
+                {t(navGroup.title) || navGroup.title}
               </h3>
               <div className="mt-2 space-y-1">
-                {currentNavGroup.items.map((item) => {
+                {navGroup.items.map((item) => {
                   const Icon = item.icon;
                   return (
                     <button
@@ -499,6 +552,9 @@ export const AppLayout: React.FC = () => {
             </div>
           )}
         </div>
+        <div className="shrink-0 border-t border-gray-100 p-2 dark:border-gray-800">
+          <UserMenu collapsed={false} />
+        </div>
       </aside>
 
       {/* Main Content Area */}
@@ -512,7 +568,7 @@ export const AppLayout: React.FC = () => {
 
         {/* Page Content Scroll Container */}
         <main className="flex-1 min-w-0 overflow-y-auto bg-[#f8faf9] dark:bg-[#0a0f0e] relative">
-          <Outlet />
+          {pageLocked ? <PlanLockedNotice /> : <Outlet />}
         </main>
       </div>
     </div>
