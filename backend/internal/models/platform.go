@@ -207,3 +207,33 @@ type OrganizationInvite struct {
 func (OrganizationInvite) TableName() string {
 	return "organization_invites"
 }
+
+// Invoice kinds and statuses.
+const (
+	InvoiceKindSubscription = "subscription"
+	InvoiceKindAdCredit     = "ad_credit"
+
+	InvoiceStatusPaid = "paid"
+	InvoiceStatusDue  = "due"
+)
+
+// BillingInvoice is one charge to a workspace: a subscription period the
+// platform team activated, or ad credit added after payment.
+type BillingInvoice struct {
+	BaseModel
+	OrganizationID uuid.UUID  `gorm:"type:uuid;index;not null" json:"organization_id"`
+	Number         string     `gorm:"size:40;not null;uniqueIndex" json:"number"`
+	Kind           string     `gorm:"size:20;not null" json:"kind"`
+	Description    string     `gorm:"size:255;not null" json:"description"`
+	Amount         float64    `gorm:"type:numeric(12,2);not null" json:"amount"`
+	Currency       string     `gorm:"size:3;not null" json:"currency"`
+	Status         string     `gorm:"size:20;not null" json:"status"`
+	PeriodStart    *time.Time `json:"period_start,omitempty"`
+	PeriodEnd      *time.Time `json:"period_end,omitempty"`
+	IssuedAt       time.Time  `gorm:"not null" json:"issued_at"`
+	PaidAt         *time.Time `json:"paid_at,omitempty"`
+	// SourceID links the invoice to what it bills (e.g. an ad credit top-up), so it's created once.
+	SourceID *uuid.UUID `gorm:"type:uuid;uniqueIndex" json:"source_id,omitempty"`
+}
+
+func (BillingInvoice) TableName() string { return "billing_invoices" }

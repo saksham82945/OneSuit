@@ -51,8 +51,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 
 const LARGE_DISPLAY_TYPES = ['chart', 'table', 'shortcuts'];
@@ -96,13 +94,7 @@ export const DashboardView: React.FC = () => {
   const [isDragMode, setIsDragMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // OneSuit Meta Platform & Wallet state
-  const [walletRechargeOpen, setWalletRechargeOpen] = useState(false);
   const [tutorialsOpen, setTutorialsOpen] = useState(false);
-  const [walletBalance, setWalletBalance] = useState(4850.0);
-  const [selectedRecharge, setSelectedRecharge] = useState<number>(2000);
-  const [customRecharge, setCustomRecharge] = useState('');
-  const [isRecharging, setIsRecharging] = useState(false);
 
   const canCreateWidget = hasPermission('analytics', 'write');
   const canEditWidget = hasPermission('analytics', 'write');
@@ -221,7 +213,7 @@ export const DashboardView: React.FC = () => {
     settings_custom_actions: { label: t('nav.customActions'), to: '/settings/custom-actions', icon: Zap, gradient: 'from-yellow-500 to-amber-600' },
     settings_sso: { label: t('nav.sso'), to: '/settings/sso', icon: ShieldCheck, gradient: 'from-emerald-600 to-green-700' },
     support: { label: t('nav.support') || 'Raise Support Ticket', to: '/support', icon: LifeBuoy, gradient: 'from-rose-500 to-pink-600' },
-    billing: { label: 'Billing & Wallet', to: '/settings/billing', icon: CreditCard, gradient: 'from-teal-600 to-emerald-700' },
+    billing: { label: 'Billing & Invoices', to: '/settings/billing', icon: CreditCard, gradient: 'from-teal-600 to-emerald-700' },
     opt_in: { label: 'Website Chat Widget', to: '/settings/opt-in', icon: Globe, gradient: 'from-blue-600 to-cyan-700' },
   };
 
@@ -387,38 +379,25 @@ export const DashboardView: React.FC = () => {
             </div>
           </div>
 
-          {/* 4. Prepaid Wallet & Tutorials */}
+          {/* 4. Tutorials */}
           <div className="rounded-2xl border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#141b1a] p-4 shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                Prepaid Wallet
+                Help & Tutorials
               </span>
-              <CreditCard className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+              <Video className="h-4 w-4 text-teal-600 dark:text-teal-400" />
             </div>
-            <div className="mt-1">
-              <div className="text-base font-black text-emerald-600 dark:text-emerald-400">
-                ₹{walletBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </div>
-              <div className="flex items-center gap-1.5 mt-2">
-                <Button
-                  size="sm"
-                  disabled={isExplorer}
-                  title={isExplorer ? 'Not available in the demo workspace' : undefined}
-                  onClick={() => setWalletRechargeOpen(true)}
-                  className="h-7 px-2 text-[10px] font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white"
-                >
-                  + Recharge
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setTutorialsOpen(true)}
-                  className="h-7 px-2 text-[10px] font-semibold rounded-lg border-teal-500/30 text-teal-700 dark:text-teal-300 hover:bg-teal-50"
-                >
-                  <Video className="h-3 w-3 mr-1" />
-                  Tutorials
-                </Button>
-              </div>
+            <div className="mt-2">
+              <p className="text-[11px] text-gray-400">Short videos on setting up and using OneSuit.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setTutorialsOpen(true)}
+                className="mt-2 h-7 px-2 text-[10px] font-semibold rounded-lg border-teal-500/30 text-teal-700 dark:text-teal-300 hover:bg-teal-50"
+              >
+                <Video className="h-3 w-3 mr-1" />
+                Watch tutorials
+              </Button>
             </div>
           </div>
         </div>
@@ -555,112 +534,6 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* Recharge Wallet Modal */}
-      <Dialog open={walletRechargeOpen} onOpenChange={setWalletRechargeOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <CreditCard className="h-5 w-5 text-emerald-500" />
-              Recharge Prepaid Wallet
-            </DialogTitle>
-            <DialogDescription>
-              Add funds to pay for WhatsApp conversation messages, marketing broadcasts and AI automation.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div>
-              <Label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                Select Amount (INR)
-              </Label>
-              <div className="grid grid-cols-4 gap-2 mt-2">
-                {[500, 1000, 2000, 5000].map((amt) => (
-                  <button
-                    key={amt}
-                    type="button"
-                    onClick={() => {
-                      setSelectedRecharge(amt);
-                      setCustomRecharge('');
-                    }}
-                    className={`py-2 text-xs font-bold rounded-xl border transition-all ${
-                      selectedRecharge === amt && !customRecharge
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-500'
-                        : 'border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/[0.05]'
-                    }`}
-                  >
-                    ₹{amt.toLocaleString()}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="dash-custom-amount" className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                Or Custom Amount (₹)
-              </Label>
-              <Input
-                id="dash-custom-amount"
-                type="number"
-                placeholder="e.g. 10000"
-                value={customRecharge}
-                onChange={(e) => {
-                  setCustomRecharge(e.target.value);
-                  setSelectedRecharge(0);
-                }}
-                className="mt-1 h-9 text-xs"
-              />
-            </div>
-
-            <div className="p-3 bg-gray-50 dark:bg-white/[0.03] rounded-xl border border-gray-100 dark:border-white/5 text-[11px] text-gray-500 space-y-1">
-              <div className="flex justify-between">
-                <span>Current Balance:</span>
-                <span className="font-semibold text-gray-900 dark:text-white">₹{walletBalance.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Recharge Amount:</span>
-                <span className="font-bold text-gray-900 dark:text-white">
-                  ₹{(customRecharge ? parseFloat(customRecharge) || 0 : selectedRecharge).toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between pt-1 border-t border-gray-200/50 dark:border-white/5 font-bold text-gray-900 dark:text-white">
-                <span>New Balance:</span>
-                <span className="text-emerald-600 dark:text-emerald-400">
-                  ₹{(walletBalance + (customRecharge ? parseFloat(customRecharge) || 0 : selectedRecharge)).toFixed(2)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setWalletRechargeOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => {
-                const amt = customRecharge ? parseFloat(customRecharge) : selectedRecharge;
-                if (!amt || amt <= 0) {
-                  toast.error('Please enter a valid amount');
-                  return;
-                }
-                setIsRecharging(true);
-                setTimeout(() => {
-                  setWalletBalance((prev) => prev + amt);
-                  setIsRecharging(false);
-                  setWalletRechargeOpen(false);
-                  setCustomRecharge('');
-                  toast.success(`Successfully added ₹${amt.toLocaleString()} to your wallet!`);
-                }, 800);
-              }}
-              disabled={isRecharging}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-            >
-              {isRecharging ? 'Processing...' : 'Proceed to Pay with Razorpay / UPI'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Video Tutorials Modal */}
       <Dialog open={tutorialsOpen} onOpenChange={setTutorialsOpen}>

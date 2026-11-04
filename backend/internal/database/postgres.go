@@ -199,6 +199,9 @@ func GetMigrationModels() []MigrationModel {
 		{"AdWallet", &models.AdWallet{}},
 		{"AdCreditTransaction", &models.AdCreditTransaction{}},
 		{"AdEventDefinition", &models.AdEventDefinition{}},
+
+		// Billing
+		{"BillingInvoice", &models.BillingInvoice{}},
 	}
 }
 

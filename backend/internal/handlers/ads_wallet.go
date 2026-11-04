@@ -211,6 +211,9 @@ func (a *App) SuperAdminApproveAdCredit(r *fastglue.Request) error {
 		if err := db.Save(&tx).Error; err != nil {
 			return err
 		}
+		if err := issueAdCreditInvoice(db, tx); err != nil {
+			return err
+		}
 		wallet = w
 		wallet.Balance += tx.Amount
 		return nil

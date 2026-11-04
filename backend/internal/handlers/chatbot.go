@@ -1008,7 +1008,8 @@ func (a *App) UpdateChatbotFlow(r *fastglue.Request) error {
 	if req.Description != nil {
 		flow.Description = *req.Description
 	}
-	if len(req.TriggerKeywords) > 0 {
+	// nil = field not sent; an empty list clears the keywords.
+	if req.TriggerKeywords != nil {
 		flow.TriggerKeywords = req.TriggerKeywords
 	}
 	if req.InitialMessage != nil {

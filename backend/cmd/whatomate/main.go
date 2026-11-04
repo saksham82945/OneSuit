@@ -649,6 +649,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.PUT("/api/me/password", app.ChangePassword)
 	g.PUT("/api/me/availability", app.UpdateAvailability)
 	g.GET("/api/me/organizations", app.ListMyOrganizations)
+	g.GET("/api/billing", app.GetBilling)
 
 	// User Management (admin only - enforced by middleware)
 	g.GET("/api/users", app.ListUsers)
@@ -871,6 +872,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	// Super Admin panel (every handler checks for super admin)
 	g.GET("/api/super-admin/dashboard", app.SuperAdminDashboard)
 	g.GET("/api/super-admin/vendors", app.SuperAdminListVendors)
+	g.GET("/api/super-admin/vendors/{id}/invoices", app.SuperAdminListInvoices)
 	g.POST("/api/super-admin/vendors", app.SuperAdminCreateVendor)
 	g.PUT("/api/super-admin/vendors/{id}", app.SuperAdminUpdateVendor)
 	g.GET("/api/super-admin/plans", app.SuperAdminListPlans)

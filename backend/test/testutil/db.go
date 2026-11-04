@@ -148,6 +148,7 @@ func runMigrations(db *gorm.DB) error {
 		&models.AdEvent{},
 		&models.AdWallet{},
 		&models.AdCreditTransaction{},
+		&models.BillingInvoice{},
 		&models.AdEventDefinition{},
 	)
 }

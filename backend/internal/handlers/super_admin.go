@@ -592,6 +592,9 @@ func (a *App) SuperAdminCreateVendor(r *fastglue.Request) error {
 		if err := tx.Create(&sub).Error; err != nil {
 			return err
 		}
+		if err := issueSubscriptionInvoice(tx, models.OrganizationSubscription{}, sub); err != nil {
+			return err
+		}
 		if createOwner {
 			_, err := createVendorOwner(tx, org.ID, sub.OwnerName, sub.OwnerEmail, req.OwnerPassword)
 			return err
@@ -722,7 +725,10 @@ func (a *App) SuperAdminUpdateVendor(r *fastglue.Request) error {
 				return err
 			}
 		}
-		return tx.Save(&sub).Error
+		if err := tx.Save(&sub).Error; err != nil {
+			return err
+		}
+		return issueSubscriptionInvoice(tx, before, sub)
 	})
 	if txErr != nil {
 		a.Log.Error("Failed to update vendor", "error", txErr, "org_id", id)

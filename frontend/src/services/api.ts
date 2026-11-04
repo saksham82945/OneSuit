@@ -771,6 +771,51 @@ export interface Organization {
   created_at: string
 }
 
+export interface BillingInvoice {
+  id: string
+  number: string
+  kind: 'subscription' | 'ad_credit' | string
+  description: string
+  amount: number
+  currency: string
+  status: 'paid' | 'due' | string
+  period_start?: string
+  period_end?: string
+  issued_at: string
+  paid_at?: string
+}
+
+export interface BillingQuota {
+  key: string
+  label: string
+  used: number
+  limit: number
+}
+
+export interface BillingInfo {
+  plan: {
+    name: string
+    status: string
+    price: number
+    currency: string
+    interval: string
+    renewal_date: string | null
+    days_left: number | null
+    quotas: BillingQuota[]
+  } | null
+  billing_cycle: string
+  cycle_price: number
+  features: string[]
+  messages_this_month: number
+  invoices: BillingInvoice[]
+  company: Record<string, string>
+}
+
+export const billingService = {
+  get: () => api.get<{ data: BillingInfo }>('/billing'),
+  publicPlans: () => api.get('/public/plans'),
+}
+
 export const organizationsService = {
   list: () => api.get<{ organizations: Organization[] }>('/organizations'),
   create: (data: { name: string }) => api.post('/organizations', data),

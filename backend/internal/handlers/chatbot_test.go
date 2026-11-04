@@ -1887,6 +1887,42 @@ func TestApp_UpdateChatbotFlow_Additional(t *testing.T) {
 		require.NoError(t, app.DB.First(&updated, "id = ?", flow.ID).Error)
 		assert.Equal(t, models.StringArray{"newkw1", "newkw2", "newkw3"}, updated.TriggerKeywords)
 	})
+
+	t.Run("empty trigger keywords clear them, omitted ones are kept", func(t *testing.T) {
+		app := newTestApp(t)
+		org := testutil.CreateTestOrganization(t, app.DB)
+		perms := getChatbotFlowPermissions(t, app)
+		role := testutil.CreateTestRole(t, app.DB, org.ID, "flow-admin", perms)
+		user := testutil.CreateTestUser(t, app.DB, org.ID,
+			testutil.WithEmail(testutil.UniqueEmail("update-flow-kw-clear")),
+			testutil.WithRoleID(&role.ID),
+		)
+		flow := createTestChatbotFlow(t, app, org.ID, "Clear Keyword Flow")
+		require.NoError(t, app.DB.Model(&models.ChatbotFlow{}).Where("id = ?", flow.ID).
+			Update("trigger_keywords", models.StringArray{"hello"}).Error)
+
+		// A toggle sends only "enabled": the keywords stay.
+		req := testutil.NewJSONRequest(t, map[string]any{"enabled": false})
+		testutil.SetAuthContext(req, org.ID, user.ID)
+		testutil.SetPathParam(req, "id", flow.ID.String())
+		require.NoError(t, app.UpdateChatbotFlow(req))
+		assert.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req))
+
+		var updated models.ChatbotFlow
+		require.NoError(t, app.DB.First(&updated, "id = ?", flow.ID).Error)
+		assert.Equal(t, models.StringArray{"hello"}, updated.TriggerKeywords)
+
+		// The builder sends [] once every keyword is removed.
+		req = testutil.NewJSONRequest(t, map[string]any{"trigger_keywords": []string{}})
+		testutil.SetAuthContext(req, org.ID, user.ID)
+		testutil.SetPathParam(req, "id", flow.ID.String())
+		require.NoError(t, app.UpdateChatbotFlow(req))
+		assert.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req))
+
+		updated = models.ChatbotFlow{}
+		require.NoError(t, app.DB.First(&updated, "id = ?", flow.ID).Error)
+		assert.Empty(t, updated.TriggerKeywords)
+	})
 }
 
 // =============================================================================

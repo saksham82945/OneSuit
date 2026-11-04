@@ -9,13 +9,23 @@ import {
   addEdge,
   Connection,
   Edge,
-  Node,
   Handle,
   Position,
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { chatbotService, type ChatEdge, type ChatFlowGraph, type ChatNode, type ChatNodeType } from '@/services/api';
+import { chatbotService, type ChatFlowGraph } from '@/services/api';
+import {
+  START_NODE_ID,
+  canvasToGraph,
+  edgesAfterButtonRemoved,
+  graphToCanvas,
+  startNode,
+  type BuilderNode,
+  type BuilderNodeData,
+  type FlowButton,
+  type FlowButtonType,
+} from './chatbotFlowGraph';
 import { readData } from '@/services/response';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,7 +48,6 @@ import {
   Copy,
   Share2,
   Zap,
-  Plus,
   Upload,
   Download,
   ChevronDown,
@@ -47,31 +56,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-
-// ─── Button Types ─────────────────────────────────────────────────────────────
-export type FlowButtonType =
-  | 'quick_reply'
-  | 'link'
-  | 'callback_request'
-  | 'call_number'
-  | 'call_whatsapp'
-  | 'complete_flow'
-  | 'copy_code'
-  | 'share_info';
-
-export interface FlowButton {
-  id: string;
-  type: FlowButtonType;
-  title: string;
-  /** URL for link buttons */
-  url?: string;
-  /** Phone number for call_number / call_whatsapp */
-  phone?: string;
-  /** Code text for copy_code */
-  code?: string;
-  /** Info text / message for share_info */
-  info?: string;
-}
 
 const BUTTON_TYPE_META: Record<FlowButtonType, { label: string; icon: LucideIcon; color: string; description: string; maxCount: number }> = {
   quick_reply:      { label: 'Quick Reply',       icon: Zap,          color: 'text-purple-400',  description: 'Simple text reply button',               maxCount: 3 },
@@ -86,39 +70,20 @@ const BUTTON_TYPE_META: Record<FlowButtonType, { label: string; icon: LucideIcon
 
 const MAX_BUTTONS = 10;
 
-// ─── Node Data ─────────────────────────────────────────────────────────────────
-type NodeConfig = Record<string, unknown>;
-
-interface BuilderNodeData extends Record<string, unknown> {
-  label?: string;
-  message?: string;
-  question?: string;
-  /** Rich button definitions for buttonsNode */
-  flowButtons?: FlowButton[];
-  /** Legacy string array (used for backend compat) */
-  buttons?: string[];
-  url?: string;
-  queue?: string;
-  config?: NodeConfig;
-  buttonDefs?: NodeConfig[];
-  backendType?: string;
-}
-type BuilderNode = Node<BuilderNodeData>;
-
 // ─── Canvas Node Components ───────────────────────────────────────────────────
 const StartNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => (
-  <div className="rounded-xl border border-emerald-500/40 bg-[#16231a] px-4 py-2.5 shadow-xl min-w-[160px] text-white">
+  <div className="rounded-xl border border-emerald-500/40 bg-[#16231a] px-4 py-2.5 shadow-xl min-w-[160px] text-white light:bg-emerald-50 light:text-gray-900">
     <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
       <Play className="h-3.5 w-3.5 fill-current" />
       <span>{data.label || 'Trigger / Start'}</span>
     </div>
-    <div className="text-[10px] text-white/50 mt-1 light:text-gray-500">Inbound Message</div>
+    <div className="text-[10px] text-white/50 mt-1 light:text-gray-500">Starts on a trigger keyword</div>
     <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-emerald-500 border-2 border-white" />
   </div>
 );
 
 const TextNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => (
-  <div className="rounded-xl border border-white/[0.1] bg-[#1a1a1c] p-3 shadow-xl min-w-[200px] max-w-[260px] text-white light:border-gray-200">
+  <div className="rounded-xl border border-white/[0.1] bg-[#1a1a1c] p-3 shadow-xl min-w-[200px] max-w-[260px] text-white light:border-gray-200 light:bg-white light:text-gray-900">
     <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500 border-2 border-white" />
     <div className="flex items-center gap-2 text-xs font-semibold text-blue-400 pb-1 border-b border-white/[0.08] light:border-gray-200">
       <MessageSquare className="h-3.5 w-3.5" />
@@ -132,11 +97,9 @@ const TextNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => (
 );
 
 const ButtonsNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => {
-  const buttons: FlowButton[] = data.flowButtons || [];
-  const legacyButtons: string[] = data.buttons || [];
-  const displayButtons = buttons.length > 0 ? buttons : legacyButtons.map((t, i) => ({ id: `b${i}`, type: 'quick_reply' as FlowButtonType, title: t }));
+  const displayButtons: FlowButton[] = data.flowButtons || [];
   return (
-    <div className="rounded-xl border border-purple-500/40 bg-[#21162b] p-3 shadow-xl min-w-[220px] text-white light:text-gray-900">
+    <div className="rounded-xl border border-purple-500/40 bg-[#21162b] p-3 shadow-xl min-w-[220px] text-white light:bg-purple-50 light:text-gray-900">
       <Handle type="target" position={Position.Top} className="w-3 h-3 bg-purple-500 border-2 border-white" />
       <div className="flex items-center gap-2 text-xs font-semibold text-purple-400 pb-1 border-b border-white/[0.08] light:border-gray-200">
         <HelpCircle className="h-3.5 w-3.5" />
@@ -168,7 +131,7 @@ const ButtonsNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => {
 };
 
 const ApiNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => (
-  <div className="rounded-xl border border-amber-500/40 bg-[#261d12] p-3 shadow-xl min-w-[200px] text-white light:text-gray-900">
+  <div className="rounded-xl border border-amber-500/40 bg-[#261d12] p-3 shadow-xl min-w-[200px] text-white light:bg-amber-50 light:text-gray-900">
     <Handle type="target" position={Position.Top} className="w-3 h-3 bg-amber-500 border-2 border-white" />
     <div className="flex items-center gap-2 text-xs font-semibold text-amber-400 pb-1 border-b border-white/[0.08] light:border-gray-200">
       <Globe className="h-3.5 w-3.5" />
@@ -182,7 +145,7 @@ const ApiNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => (
 );
 
 const TransferNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => (
-  <div className="rounded-xl border border-rose-500/40 bg-[#261217] p-3 shadow-xl min-w-[180px] text-white light:text-gray-900">
+  <div className="rounded-xl border border-rose-500/40 bg-[#261217] p-3 shadow-xl min-w-[180px] text-white light:bg-rose-50 light:text-gray-900">
     <Handle type="target" position={Position.Top} className="w-3 h-3 bg-rose-500 border-2 border-white" />
     <div className="flex items-center gap-2 text-xs font-semibold text-rose-400">
       <UserX className="h-3.5 w-3.5" />
@@ -289,18 +252,9 @@ const nodeTypes = {
 };
 
 
-// The start node is the graph's entry point.
-const START_NODE_ID = '__start__';
-
 // Starter canvas for a new flow. Everything here is saved as-is, so it holds no sample URLs or queues.
 const initialNodes: BuilderNode[] = [
-  {
-    id: START_NODE_ID,
-    type: 'startNode',
-    position: { x: 250, y: 50 },
-    data: { label: 'Inbound Message' },
-    deletable: false,
-  },
+  startNode(),
   {
     id: 'welcome',
     type: 'textNode',
@@ -312,151 +266,6 @@ const initialNodes: BuilderNode[] = [
 const initialEdges: Edge[] = [
   { id: 'e-start-welcome', source: START_NODE_ID, target: 'welcome', animated: true, style: { stroke: '#10b981', strokeWidth: 2 } },
 ];
-
-// ---- Canvas <-> backend graph (v2: { version, nodes, edges, entry_node }) ----
-
-const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-
-const asButtonDefs = (v: unknown): NodeConfig[] =>
-  Array.isArray(v) ? v.filter((b): b is NodeConfig => !!b && typeof b === 'object') : [];
-
-/** Reply-button id of button `index` on a buttons node; its edge's condition is `button:<id>`. */
-const buttonIdAt = (node: BuilderNode, index: number): string =>
-  str(node.data.buttonDefs?.[index]?.id) || `btn_${node.id}_${index + 1}`;
-
-function toCanvasNode(n: ChatNode): BuilderNode {
-  const config: NodeConfig = n.config || {};
-  const base = { id: n.id, position: { x: n.position?.x ?? 0, y: n.position?.y ?? 0 } };
-  const data: BuilderNodeData = { label: n.label || '', config };
-  switch (n.type) {
-    case 'start':
-      return { ...base, type: 'startNode', deletable: false, data };
-    case 'message':
-      return { ...base, type: 'textNode', data: { ...data, message: str(config.message) || str(config.text) } };
-    case 'buttons': {
-      const defs = asButtonDefs(config.buttons);
-      return {
-        ...base,
-        type: 'buttonsNode',
-        data: {
-          ...data,
-          question: str(config.body) || str(config.message) || str(config.text),
-          buttons: defs.map((b) => str(b.title)),
-          buttonDefs: defs,
-        },
-      };
-    }
-    case 'api_call':
-    case 'webhook':
-      return { ...base, type: 'apiNode', data: { ...data, url: str(config.url), backendType: n.type } };
-    case 'transfer':
-      return { ...base, type: 'transferNode', data: { ...data, queue: str(config.queue) } };
-    default:
-      // No editor for this step type (prompt, condition, end, ...): show it as a plain node and save it back unchanged.
-      return { ...base, type: 'default', data: { ...data, label: n.label || n.type, backendType: n.type } };
-  }
-}
-
-function graphToCanvas(graph: ChatFlowGraph | null | undefined): { nodes: BuilderNode[]; edges: Edge[]; entry: string } {
-  if (!graph || graph.version !== 2 || !Array.isArray(graph.nodes)) {
-    return { nodes: [initialNodes[0]], edges: [], entry: START_NODE_ID };
-  }
-  const backendNodes = new Map(graph.nodes.map((n) => [n.id, n]));
-  const edges: Edge[] = (graph.edges || []).map((e, i) => {
-    let condition = e.condition || 'default';
-    let sourceHandle: string | undefined;
-    const source = backendNodes.get(e.from);
-    if (source?.type === 'buttons' && condition !== 'default') {
-      // Older graphs stored the bare button id; the runner matches `button:<id>`.
-      const buttonId = condition.startsWith('button:') ? condition.slice('button:'.length) : condition;
-      condition = `button:${buttonId}`;
-      const index = asButtonDefs(source.config?.buttons).findIndex((b) => str(b.id) === buttonId);
-      if (index >= 0) sourceHandle = `btn-${index}`;
-    }
-    return {
-      id: `e-${i}-${e.from}-${e.to}`,
-      source: e.from,
-      target: e.to,
-      sourceHandle,
-      animated: true,
-      // Keeps branch conditions (http:2xx, true/false, ...) that have no handle on this canvas.
-      data: { condition },
-      label: !sourceHandle && condition !== 'default' ? condition : undefined,
-    };
-  });
-  return { nodes: graph.nodes.map(toCanvasNode), edges, entry: graph.entry_node || '' };
-}
-
-function toBackendNode(node: BuilderNode): ChatNode {
-  const d = node.data || {};
-  const config: NodeConfig = { ...(d.config || {}) };
-  let type: string;
-  switch (node.type) {
-    case 'startNode':
-      type = 'start';
-      break;
-    case 'textNode':
-      type = 'message';
-      config.message = d.message ?? '';
-      break;
-    case 'buttonsNode': {
-      type = 'buttons';
-      const defs = d.buttonDefs || [];
-      config.body = d.question ?? '';
-      config.buttons = (d.buttons || []).map((title, i) => ({
-        type: 'reply',
-        ...(defs[i] || {}),
-        id: buttonIdAt(node, i),
-        title,
-      }));
-      break;
-    }
-    case 'apiNode':
-      type = d.backendType === 'api_call' ? 'api_call' : 'webhook';
-      config.url = d.url ?? '';
-      // New webhook steps POST; a loaded step keeps whatever method it had.
-      if (!d.config) config.method = 'POST';
-      break;
-    case 'transferNode':
-      type = 'transfer';
-      config.queue = d.queue ?? '';
-      break;
-    default:
-      type = d.backendType || node.type || 'message';
-  }
-  return {
-    id: node.id,
-    type: type as ChatNodeType,
-    label: d.label ?? '',
-    position: { x: node.position.x, y: node.position.y },
-    config,
-  };
-}
-
-function canvasToGraph(nodes: BuilderNode[], edges: Edge[], loadedEntry: string): ChatFlowGraph {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const graphEdges: ChatEdge[] = edges
-    .filter((e) => byId.has(e.source) && byId.has(e.target))
-    .map((e) => {
-      const source = byId.get(e.source) as BuilderNode;
-      const handle = /^btn-(\d+)$/.exec(e.sourceHandle || '');
-      const condition =
-        handle && source.type === 'buttonsNode'
-          ? `button:${buttonIdAt(source, Number(handle[1]))}`
-          : str((e.data as { condition?: unknown } | undefined)?.condition) || 'default';
-      return { from: e.source, to: e.target, condition };
-    });
-  const graphNodes = nodes.map(toBackendNode);
-  const start = graphNodes.find((n) => n.type === 'start');
-  const withIncoming = new Set(graphEdges.map((e) => e.to));
-  const entry =
-    start?.id ||
-    (byId.has(loadedEntry) ? loadedEntry : '') ||
-    graphNodes.find((n) => !withIncoming.has(n.id))?.id ||
-    graphNodes[0]?.id ||
-    '';
-  return { version: 2, nodes: graphNodes, edges: graphEdges, entry_node: entry };
-}
 
 /** The backend's `{ status: 'error', message }` text, if the request got that far. */
 const apiErrorMessage = (err: unknown, fallback: string): string =>
@@ -735,7 +544,7 @@ export const ChatbotFlowBuilderView: React.FC = () => {
       {/* Main Studio Work Area */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Left Node Toolbar */}
-        <aside className="w-56 border-r border-white/[0.08] bg-[#101012] p-3 flex flex-col gap-2 z-10 shrink-0 light:border-gray-200">
+        <aside className="w-56 border-r border-white/[0.08] bg-[#101012] p-3 flex flex-col gap-2 z-10 shrink-0 light:border-gray-200 light:bg-white">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-white/40 mb-1 light:text-gray-400">
             Canvas Steps
           </span>
@@ -778,7 +587,7 @@ export const ChatbotFlowBuilderView: React.FC = () => {
         </aside>
 
         {/* Center React Flow Canvas */}
-        <div className="flex-1 h-full bg-[#0d0d0f] relative">
+        <div className="flex-1 h-full bg-[#0d0d0f] relative light:bg-gray-100">
           {isLoading || loadFailed ? (
             <div className="absolute inset-0 flex items-center justify-center text-xs text-white/40 light:text-gray-400">
               {loadFailed ? 'Could not load this flow.' : 'Loading flow...'}
@@ -804,7 +613,7 @@ export const ChatbotFlowBuilderView: React.FC = () => {
         {selectedNode && (() => {
           const nodeData: BuilderNodeData = selectedNode.data || {};
           return (
-          <aside className="w-80 border-l border-white/[0.08] bg-[#141416] p-4 flex flex-col gap-4 z-10 shrink-0 overflow-y-auto light:border-gray-200">
+          <aside className="w-80 border-l border-white/[0.08] bg-[#141416] p-4 flex flex-col gap-4 z-10 shrink-0 overflow-y-auto light:border-gray-200 light:bg-white">
             <div className="flex items-center justify-between pb-2 border-b border-white/[0.08] light:border-gray-200">
               <div>
                 <span className="text-xs font-semibold text-white light:text-gray-900">Step Inspector</span>
@@ -855,6 +664,8 @@ export const ChatbotFlowBuilderView: React.FC = () => {
 
               const removeButton = (index: number) => {
                 updateSelectedNodeData('flowButtons', flowBtns.filter((_, i) => i !== index));
+                // Edges hang off per-button handles (btn-<index>), so they follow their button.
+                setEdges((eds) => edgesAfterButtonRemoved(eds, selectedNode.id, index));
               };
 
               const canAdd = flowBtns.length < MAX_BUTTONS;
