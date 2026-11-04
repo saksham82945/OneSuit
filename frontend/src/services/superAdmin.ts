@@ -343,7 +343,8 @@ export const BILLING_CYCLES: { id: BillingInterval; label: string; short: string
 
 export const cycleInfo = (cycle: string | undefined) => BILLING_CYCLES.find((c) => c.id === cycle) ?? BILLING_CYCLES[0];
 
-type PricedPlan = Pick<Plan, 'price' | 'interval'> & Partial<Pick<Plan, 'quarterly_discount' | 'half_yearly_discount' | 'yearly_discount'>>;
+// Any plan-like object; interval may be a plain string (public plans).
+type PricedPlan = { price: number; interval: BillingInterval | string } & Partial<Pick<Plan, 'quarterly_discount' | 'half_yearly_discount' | 'yearly_discount'>>;
 
 /** The plan's price for one month (older plans priced per year are spread over 12 months). */
 export const planMonthlyPrice = (p: PricedPlan) => (p.interval === 'yearly' ? p.price / 12 : p.price);
