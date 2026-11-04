@@ -36,6 +36,9 @@ import {
   inputClass,
 } from './PublicLayout';
 import { AuthBackdrop } from '@/views/auth/AuthBackdrop';
+import { checkoutPath, isBillingCycle, useOnlinePaymentAvailable } from '@/services/payments';
+import type { BillingInterval } from '@/services/superAdmin';
+import { SignupPaymentChoice } from './SignupPaymentChoice';
 
 type FieldName = 'business_name' | 'full_name' | 'email' | 'phone' | 'password' | 'plan_id';
 type FieldErrors = Partial<Record<FieldName, string>>;
@@ -192,6 +195,22 @@ function useInitialPlanId(info: PublicPlansInfo | null, plans: PublicPlan[]): st
   }, [searchParams, plans, info?.default_plan]);
 }
 
+/** "Free trial" or "Pay now" (with a billing cycle) for a paid plan; pay now opens checkout after sign-up. */
+function usePaymentChoice(plan: PublicPlan | null, trialDays: number) {
+  const [searchParams] = useSearchParams();
+  const paymentAvailable = useOnlinePaymentAvailable();
+  const [chosenPayNow, setPayNow] = useState<boolean | null>(null);
+  const [cycle, setCycle] = useState<BillingInterval>(() => {
+    const c = searchParams.get('cycle');
+    return isBillingCycle(c) ? c : 'monthly';
+  });
+  const offered = paymentAvailable && !!plan && plan.price > 0;
+  // Without a free trial, paying is the natural first step.
+  const payNow = offered && (chosenPayNow ?? trialDays <= 0);
+  const afterSignup = payNow && plan ? checkoutPath(plan.id, cycle) : '/';
+  return { offered, payNow, setPayNow, cycle, setCycle, afterSignup };
+}
+
 export const SignupView: React.FC = () => {
   const user = useSignedInUser();
   // An explorer already has a login: only the business details are missing.
@@ -226,6 +245,7 @@ const NewBusinessSignup: React.FC = () => {
   const initialPlanId = useInitialPlanId(info, plans);
   const planId = chosenPlanId ?? initialPlanId;
   const selectedPlan = plans.find((p) => p.id === planId) ?? null;
+  const payment = usePaymentChoice(selectedPlan, trialDays);
 
   const signupClosed = (info && !info.signup_enabled) || closedMessage !== null;
 
@@ -265,7 +285,7 @@ const NewBusinessSignup: React.FC = () => {
       });
       const { user } = readData<{ user: User }>(res);
       toast.success(`Welcome to ${platformName}! Your workspace is ready.`);
-      completeSignIn(user, navigate);
+      completeSignIn(user, navigate, payment.afterSignup);
     } catch (err) {
       const status = apiErrorStatus(err);
       const message = apiErrorMessage(err, "We couldn't create your account. Please try again.");
@@ -485,6 +505,18 @@ const NewBusinessSignup: React.FC = () => {
                 }}
               />
 
+              {payment.offered && selectedPlan && (
+                <SignupPaymentChoice
+                  plan={selectedPlan}
+                  trialDays={trialDays}
+                  payNow={payment.payNow}
+                  onPayNow={payment.setPayNow}
+                  cycle={payment.cycle}
+                  onCycle={payment.setCycle}
+                  disabled={submitting}
+                />
+              )}
+
               {formError && <FormAlert>{formError}</FormAlert>}
 
               <Button
@@ -496,9 +528,11 @@ const NewBusinessSignup: React.FC = () => {
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
                 {submitting
                   ? 'Creating your workspace…'
-                  : trialDays > 0
-                    ? 'Start free trial'
-                    : 'Create account'}
+                  : payment.payNow
+                    ? 'Create account & continue to payment'
+                    : trialDays > 0
+                      ? 'Start free trial'
+                      : 'Create account'}
               </Button>
 
               <p className="text-center text-sm text-white/40 light:text-gray-500">
@@ -548,6 +582,7 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
   const initialPlanId = useInitialPlanId(info, plans);
   const planId = chosenPlanId ?? initialPlanId;
   const selectedPlan = plans.find((p) => p.id === planId) ?? null;
+  const payment = usePaymentChoice(selectedPlan, trialDays);
   const upgradeClosed = info ? !info.signup_enabled : false;
 
   const focusFirstError = (errs: Partial<Record<UpgradeField, string>>) => {
@@ -578,8 +613,8 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
       });
       const { user } = readData<{ user: User }>(res);
       toast.success('Welcome to your new workspace');
-      // Sets the new admin session, drops the demo org selection and opens the dashboard.
-      completeSignIn(user, navigate);
+      // Sets the new admin session, drops the demo org selection and opens the dashboard (or checkout).
+      completeSignIn(user, navigate, payment.afterSignup);
     } catch (err) {
       const status = apiErrorStatus(err);
       const message = apiErrorMessage(err, "We couldn't create your workspace. Please try again.");
@@ -739,6 +774,18 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
                 }}
               />
 
+              {payment.offered && selectedPlan && !upgradeClosed && (
+                <SignupPaymentChoice
+                  plan={selectedPlan}
+                  trialDays={trialDays}
+                  payNow={payment.payNow}
+                  onPayNow={payment.setPayNow}
+                  cycle={payment.cycle}
+                  onCycle={payment.setCycle}
+                  disabled={submitting}
+                />
+              )}
+
               {formError && <FormAlert>{formError}</FormAlert>}
 
               <Button
@@ -750,9 +797,11 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
                 {submitting
                   ? 'Creating your workspace…'
-                  : trialDays > 0
-                    ? 'Start free trial'
-                    : 'Create my workspace'}
+                  : payment.payNow
+                    ? 'Create workspace & continue to payment'
+                    : trialDays > 0
+                      ? 'Start free trial'
+                      : 'Create my workspace'}
               </Button>
 
               <p className="text-center text-sm text-white/40 light:text-gray-500">

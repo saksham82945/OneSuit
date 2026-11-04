@@ -66,6 +66,8 @@ func isCSRFExemptPath(path string) bool {
 		strings.HasSuffix(p, "/api/auth/accept-invite") ||
 		strings.HasSuffix(p, "/api/auth/logout") ||
 		strings.HasSuffix(p, "/api/webhook") ||
+		// Razorpay payment webhooks (signed with the webhook secret instead).
+		strings.HasPrefix(p, "/razorpay/") || strings.HasSuffix(p, "/api/razorpay/webhook") ||
 		// Lead URLs that outside lead sources (IndiaMART, forms...) send to.
 		strings.Contains(p, "/api/public/integrations/")
 }

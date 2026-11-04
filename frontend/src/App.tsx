@@ -56,6 +56,7 @@ import { SSOSettingsView } from '@/views/settings/SSOSettingsView';
 import { AuditLogsView } from '@/views/settings/AuditLogsView';
 import { ChatbotSettingsView } from '@/views/settings/ChatbotSettingsView';
 import { BillingView } from '@/views/settings/BillingView';
+import { CheckoutView } from '@/views/billing/CheckoutView';
 import { OptInView } from '@/views/settings/OptInView';
 
 // Ads Manager
@@ -102,6 +103,7 @@ import { SubscriptionsView } from '@/views/super-admin/SubscriptionsView';
 import { PagesManagementView } from '@/views/super-admin/PagesManagementView';
 import { ManageTicketsView } from '@/views/super-admin/ManageTicketsView';
 import { AICallSetupView } from '@/views/super-admin/AICallSetupView';
+import { PaymentsView } from '@/views/super-admin/PaymentsView';
 
 /**
  * RootRoute: Unauthenticated visitors visiting the homepage root `/` see the
@@ -247,6 +249,7 @@ export const App: React.FC = () => {
             <Route path="settings/accounts/connect" element={<WhatsAppSetupView />} />
             <Route path="settings/chatbot" element={<ChatbotSettingsView />} />
             <Route path="settings/billing" element={<BillingView />} />
+            <Route path="billing/checkout" element={<CheckoutView />} />
             <Route path="settings/opt-in" element={<OptInView />} />
             <Route path="settings/integrations" element={<IntegrationsView />} />
 
@@ -257,6 +260,7 @@ export const App: React.FC = () => {
               <Route path="vendors" element={<Navigate to="/super-admin/clients" replace />} />
               <Route path="subscriptions" element={<ClientSubscriptionsView />} />
               <Route path="plans" element={<SubscriptionsView />} />
+              <Route path="payments" element={<PaymentsView />} />
               <Route path="whatsapp-onboarding" element={<WhatsAppOnboardingView />} />
               <Route path="webhooks" element={<SuperAdminWebhooksView />} />
               <Route path="social-login" element={<SocialLoginView />} />

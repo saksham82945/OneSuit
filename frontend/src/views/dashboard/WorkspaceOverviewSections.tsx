@@ -248,13 +248,13 @@ export const WorkspaceOverviewSections: React.FC = () => {
   // --- Action needed ---
   const todos: { key: string; title: string; subtitle: string; to: string; tone: 'red' | 'amber' }[] = [];
   if (actions.plan_expired) {
-    todos.push({ key: 'expired', title: 'Your plan has expired', subtitle: 'Renew to keep sending messages', to: '/settings/billing', tone: 'red' });
+    todos.push({ key: 'expired', title: 'Your plan has expired', subtitle: 'Renew now to keep sending messages', to: '/billing/checkout', tone: 'red' });
   } else if (actions.plan_expiring_soon && plan) {
     todos.push({
       key: 'expiring',
       title: plan.status === 'trial' ? 'Your free trial ends soon' : 'Your plan renews soon',
-      subtitle: `${daysLeft} day${daysLeft === 1 ? '' : 's'} left · ${formatShortDate(plan.renewal_date)}`,
-      to: '/settings/billing',
+      subtitle: `${daysLeft} day${daysLeft === 1 ? '' : 's'} left · ${formatShortDate(plan.renewal_date)} · Renew now`,
+      to: '/billing/checkout',
       tone: 'amber',
     });
   }
@@ -397,6 +397,14 @@ export const WorkspaceOverviewSections: React.FC = () => {
                   ) : undefined
                 }
               />
+              {(actions.plan_expired || actions.plan_expiring_soon) && (
+                <PanelRow
+                  to="/billing/checkout"
+                  title="Renew now"
+                  subtitle="Pay online by UPI or card"
+                  right={<span className="text-[11px] font-semibold text-[#0f5c62] dark:text-teal-300">Pay →</span>}
+                />
+              )}
             </Panel>
           ) : agent ? (
             <Panel title="My queue" icon={Headphones} tone="green" linkLabel="Open chats" linkTo="/chat">

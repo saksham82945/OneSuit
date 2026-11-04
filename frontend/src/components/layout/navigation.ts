@@ -29,6 +29,7 @@ import {
   Phone,
   Globe,
   Radio,
+  IndianRupee,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -66,6 +67,7 @@ export const navigationSections: NavSection[] = [
       { name: 'nav.agencies', path: '/super-admin/clients', icon: Handshake, superAdminOnly: true },
       { name: 'nav.subscriptions', path: '/super-admin/subscriptions', icon: CreditCard, superAdminOnly: true },
       { name: 'Subscription Plans', path: '/super-admin/plans', icon: CreditCard, superAdminOnly: true },
+      { name: 'Payments', path: '/super-admin/payments', icon: IndianRupee, superAdminOnly: true },
       { name: 'Ads Manager', path: '/super-admin/ads', icon: Radio, superAdminOnly: true },
       { name: 'Website', path: '/super-admin/website', icon: Globe, superAdminOnly: true },
       { name: 'nav.pagesManagement', path: '/super-admin/pages', icon: FileText, superAdminOnly: true },

@@ -47,6 +47,7 @@ import {
   MessageCircle,
   LogIn,
   Cable,
+  IndianRupee,
 } from 'lucide-react';
 import { PrimaryRail, visibleRailModules } from './PrimaryRail';
 import { UserMenu } from './UserMenu';
@@ -64,6 +65,7 @@ const PLATFORM_ITEMS: SecondaryNavGroup['items'] = [
   { name: 'nav.agencies', path: '/super-admin/clients', icon: Handshake },
   { name: 'nav.subscriptions', path: '/super-admin/subscriptions', icon: CreditCard },
   { name: 'Subscription Plans', path: '/super-admin/plans', icon: Layers },
+  { name: 'Payments', path: '/super-admin/payments', icon: IndianRupee },
   { name: 'Ads Manager', path: '/super-admin/ads', icon: Radio },
   { name: 'Website', path: '/super-admin/website', icon: Globe },
   { name: 'nav.pagesManagement', path: '/super-admin/pages', icon: FileText },

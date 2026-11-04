@@ -571,7 +571,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 		// Skip auth for public routes
 		if path == "/health" || path == "/ready" ||
 			path == "/api/auth/login" || path == "/api/auth/register" || path == "/api/auth/refresh" ||
-			path == "/api/auth/logout" || path == "/api/webhook" || path == "/ws" ||
+			path == "/api/auth/logout" || path == "/api/webhook" || path == "/api/razorpay/webhook" || path == "/ws" ||
 			path == "/api/auth/signup" || path == "/api/auth/accept-invite" || path == "/api/auth/explore" {
 			return r
 		}
@@ -654,6 +654,20 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/me/organizations", app.ListMyOrganizations)
 	g.GET("/api/plan/modules", app.GetPlanModules)
 	g.GET("/api/billing", app.GetBilling)
+	// Subscription payments (Razorpay + UPI)
+	g.GET("/api/public/payment-options", app.GetPaymentOptions)
+	g.POST("/api/payments/checkout", app.CreatePaymentCheckout)
+	g.GET("/api/payments", app.ListMyPayments)
+	g.GET("/api/payments/{id}", app.GetMyPayment)
+	g.POST("/api/payments/{id}/razorpay/verify", app.VerifyRazorpayPayment)
+	g.POST("/api/payments/{id}/upi/submit", app.SubmitUPIPayment)
+	g.POST("/razorpay/order-payment-razorpay-webhook", app.RazorpayWebhook)
+	g.POST("/api/razorpay/webhook", app.RazorpayWebhook)
+	g.GET("/api/super-admin/payments", app.SuperAdminListPayments)
+	g.POST("/api/super-admin/payments/{id}/approve", app.SuperAdminApprovePayment)
+	g.POST("/api/super-admin/payments/{id}/reject", app.SuperAdminRejectPayment)
+	g.GET("/api/super-admin/payment-settings", app.SuperAdminGetPaymentSettings)
+	g.PUT("/api/super-admin/payment-settings", app.SuperAdminUpdatePaymentSettings)
 
 	// User Management (admin only - enforced by middleware)
 	g.GET("/api/users", app.ListUsers)

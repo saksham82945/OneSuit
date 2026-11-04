@@ -16,6 +16,8 @@ import { toast } from 'sonner';
 import { billingService, type BillingInfo, type BillingInvoice } from '@/services/api';
 import { readData } from '@/services/response';
 import { cn } from '@/lib/utils';
+import { checkoutPath } from '@/services/payments';
+import { PaymentsSection } from '@/views/billing/PaymentsSection';
 
 // Billing: the workspace's real plan, usage and invoices from GET /api/billing.
 
@@ -162,7 +164,9 @@ export const BillingView: React.FC = () => {
                 {plan?.days_left !== null && plan?.days_left !== undefined && plan.days_left >= 0 && plan.days_left <= 7 && (
                   <p className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-400">
                     {plan.days_left === 0 ? 'Your plan ends today.' : `Your plan ends in ${plan.days_left} day${plan.days_left === 1 ? '' : 's'}.`}{' '}
-                    Contact support to renew.
+                    <button onClick={() => navigate(checkoutPath(undefined, billing?.billing_cycle))} className="font-semibold underline underline-offset-2">
+                      Renew now
+                    </button>
                   </p>
                 )}
                 {(billing?.features?.length ?? 0) > 0 && (
@@ -182,9 +186,21 @@ export const BillingView: React.FC = () => {
                 >
                   <LifeBuoy className="h-3.5 w-3.5" /> Billing help
                 </button>
-                <button onClick={openPlans} className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-0.5">
-                  Change plan <ArrowUpRight className="h-3 w-3" />
-                </button>
+                <div className="flex items-center gap-3">
+                  <button onClick={openPlans} className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-0.5">
+                    Change plan <ArrowUpRight className="h-3 w-3" />
+                  </button>
+                  {plan && plan.price > 0 && (
+                    <Button
+                      size="sm"
+                      onClick={() => navigate(checkoutPath(undefined, billing?.billing_cycle))}
+                      className="h-8 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-500"
+                    >
+                      <CreditCard className="h-3.5 w-3.5 mr-1" />
+                      Pay / Renew
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -226,6 +242,8 @@ export const BillingView: React.FC = () => {
               </div>
             </div>
           </div>
+
+          <PaymentsSection />
 
           {/* Invoices */}
           <div className="rounded-2xl border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#141b1a] p-6 shadow-sm">
@@ -307,7 +325,7 @@ export const BillingView: React.FC = () => {
               <Sparkles className="h-5 w-5 text-teal-600" />
               OneSuit plans
             </DialogTitle>
-            <DialogDescription>To change your plan, contact support. We switch it for you and the invoice appears here.</DialogDescription>
+            <DialogDescription>Pick a plan and pay online by Razorpay or UPI. Your plan switches as soon as the payment is confirmed.</DialogDescription>
           </DialogHeader>
           {plans === null ? (
             <div className="flex justify-center p-8">
@@ -347,14 +365,14 @@ export const BillingView: React.FC = () => {
                     <Button
                       size="sm"
                       variant={current ? 'default' : 'outline'}
-                      disabled={current}
+                      disabled={current && p.price <= 0}
                       onClick={() => {
                         setPlansOpen(false);
-                        navigate('/support');
+                        navigate(p.price > 0 ? checkoutPath(p.id, current ? billing?.billing_cycle : undefined) : '/support');
                       }}
                       className="w-full mt-4 text-xs font-semibold"
                     >
-                      {current ? 'Your plan' : 'Ask to switch'}
+                      {p.price <= 0 ? (current ? 'Your plan' : 'Ask to switch') : current ? 'Renew' : p.price > (plan?.price ?? 0) ? 'Upgrade' : 'Switch'}
                     </Button>
                   </div>
                 );

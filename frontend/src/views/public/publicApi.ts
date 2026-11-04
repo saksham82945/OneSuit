@@ -126,12 +126,12 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
  * the backend), drop org-switching state left over from a previous session and
  * open the dashboard.
  */
-export function completeSignIn(user: User, navigate: NavigateFunction) {
+export function completeSignIn(user: User, navigate: NavigateFunction, to = '/') {
   localStorage.removeItem('selected_organization_id');
   localStorage.removeItem('super_admin_return_org');
   localStorage.removeItem('super_admin_vendor_name');
   useAuthStore.getState().setAuth(user);
-  navigate('/', { replace: true });
+  navigate(to, { replace: true });
 }
 
 /** Role name of accounts that are looking around the shared demo workspace. */
