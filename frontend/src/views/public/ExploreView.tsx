@@ -115,7 +115,6 @@ export const ExploreView: React.FC = () => {
 
   const branding = useBranding();
   const platformName = branding.platform_name;
-  const trialDays = info?.trial_days ?? 0;
   useDocumentTitle(`Explore ${platformName} free`);
 
   const setField = (name: FieldName, value: string) => {
@@ -170,7 +169,7 @@ export const ExploreView: React.FC = () => {
       } else if (status === 429) {
         setFormError('Too many attempts. Please wait a minute and try again.');
       } else if (status === 503) {
-        setFormError(`${message} You can still compare plans or start a free trial.`);
+        setFormError(`${message} You can still compare plans or sign up.`);
       } else {
         setFormError(message);
       }
@@ -231,7 +230,7 @@ export const ExploreView: React.FC = () => {
             <>
               <Button asChild className={primaryButtonClass}>
                 <Link to="/pricing">
-                  {info?.signup_enabled && trialDays > 0 ? `See plans · ${trialDays}-day free trial` : 'See plans'}
+                  See plans
                 </Link>
               </Button>
               <Button asChild className={secondaryButtonClass}>
@@ -386,7 +385,7 @@ export const ExploreView: React.FC = () => {
                   <p>
                     Ready to set up your business?{' '}
                     <Link to="/pricing" className={textLinkClass}>
-                      {trialDays > 0 ? 'Start a free trial' : 'See plans'}
+                      See plans
                     </Link>
                   </p>
                 )}
@@ -435,8 +434,7 @@ export const ExploreView: React.FC = () => {
                 <div>
                   <dt className="inline font-medium text-white/80 light:text-gray-800">Upgrade anytime. </dt>
                   <dd className="inline text-white/50 light:text-gray-500">
-                    Choose a plan when you're ready and get your own workspace with the same login
-                    {trialDays > 0 ? `, starting with a ${trialDays}-day free trial` : ''}.
+                    Choose a plan when you're ready and get your own workspace with the same login.
                   </dd>
                 </div>
               </div>

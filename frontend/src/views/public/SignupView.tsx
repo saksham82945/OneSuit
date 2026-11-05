@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, CheckCircle2, Gift, Loader2, Lock, Rocket } from 'lucide-react';
+import { Check, CheckCircle2, CreditCard, Loader2, Lock, Rocket } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -36,7 +36,7 @@ import {
   inputClass,
 } from './PublicLayout';
 import { AuthBackdrop } from '@/views/auth/AuthBackdrop';
-import { checkoutPath, isBillingCycle, useOnlinePaymentAvailable } from '@/services/payments';
+import { checkoutPath, isBillingCycle } from '@/services/payments';
 import type { BillingInterval } from '@/services/superAdmin';
 import { SignupPaymentChoice } from './SignupPaymentChoice';
 
@@ -83,9 +83,8 @@ const fieldOrder: FieldName[] = ['business_name', 'full_name', 'email', 'phone',
 
 const PlanSummary: React.FC<{
   plan: PublicPlan | null;
-  trialDays: number;
   businessName: string;
-}> = ({ plan, trialDays, businessName }) => (
+}> = ({ plan, businessName }) => (
   <aside className={cn(cardClass, 'p-6 sm:p-7')}>
     <p className="text-xs font-medium uppercase tracking-wider text-white/40 light:text-gray-500">
       Your plan
@@ -127,18 +126,18 @@ const PlanSummary: React.FC<{
       </>
     ) : (
       <h2 className="mt-3 text-lg font-semibold text-white light:text-gray-900">
-        {trialDays > 0 ? 'Free trial' : 'Your new workspace'}
+        Your new workspace
       </h2>
     )}
 
-    {trialDays > 0 && (
+    {plan && plan.price > 0 && (
       <div className="mt-6 flex gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-3.5 light:border-emerald-200 light:bg-emerald-50">
-        <Gift className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400 light:text-emerald-600" />
+        <CreditCard className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400 light:text-emerald-600" />
         <div className="text-sm">
-          <p className="font-medium text-emerald-200 light:text-emerald-800">
-            {trialDays} days free{plan && plan.price > 0 ? `, then ${formatPriceWithInterval(plan)}` : ''}
+          <p className="font-medium text-emerald-200 light:text-emerald-800">Pay after creating your account</p>
+          <p className="mt-0.5 text-emerald-100/60 light:text-emerald-900/70">
+            Your workspace unlocks as soon as your first payment goes through.
           </p>
-          <p className="mt-0.5 text-emerald-100/60 light:text-emerald-900/70">No card needed to start.</p>
         </div>
       </div>
     )}
@@ -195,20 +194,16 @@ function useInitialPlanId(info: PublicPlansInfo | null, plans: PublicPlan[]): st
   }, [searchParams, plans, info?.default_plan]);
 }
 
-/** "Free trial" or "Pay now" (with a billing cycle) for a paid plan; pay now opens checkout after sign-up. */
-function usePaymentChoice(plan: PublicPlan | null, trialDays: number) {
+/** A paid plan needs a billing cycle and opens checkout after sign-up; a free plan goes to the dashboard. */
+function usePaymentChoice(plan: PublicPlan | null) {
   const [searchParams] = useSearchParams();
-  const paymentAvailable = useOnlinePaymentAvailable();
-  const [chosenPayNow, setPayNow] = useState<boolean | null>(null);
   const [cycle, setCycle] = useState<BillingInterval>(() => {
     const c = searchParams.get('cycle');
     return isBillingCycle(c) ? c : 'monthly';
   });
-  const offered = paymentAvailable && !!plan && plan.price > 0;
-  // Without a free trial, paying is the natural first step.
-  const payNow = offered && (chosenPayNow ?? trialDays <= 0);
+  const payNow = !!plan && plan.price > 0;
   const afterSignup = payNow && plan ? checkoutPath(plan.id, cycle) : '/';
-  return { offered, payNow, setPayNow, cycle, setCycle, afterSignup };
+  return { payNow, cycle, setCycle, afterSignup };
 }
 
 export const SignupView: React.FC = () => {
@@ -239,13 +234,12 @@ const NewBusinessSignup: React.FC = () => {
   const branding = useBranding();
   const platformName = branding.platform_name;
   const plans = useMemo(() => info?.plans ?? [], [info]);
-  const trialDays = info?.trial_days ?? 0;
-  useDocumentTitle(`Start your free trial · ${platformName}`);
+  useDocumentTitle(`Create your account · ${platformName}`);
 
   const initialPlanId = useInitialPlanId(info, plans);
   const planId = chosenPlanId ?? initialPlanId;
   const selectedPlan = plans.find((p) => p.id === planId) ?? null;
-  const payment = usePaymentChoice(selectedPlan, trialDays);
+  const payment = usePaymentChoice(selectedPlan);
 
   const signupClosed = (info && !info.signup_enabled) || closedMessage !== null;
 
@@ -365,10 +359,10 @@ const NewBusinessSignup: React.FC = () => {
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
         <div className="auth-stagger mb-8 max-w-xl" style={{ '--auth-base-delay': '0ms' } as React.CSSProperties}>
           <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl light:text-gray-900">
-            {trialDays > 0 ? `Start your ${trialDays}-day free trial` : `Create your ${platformName} account`}
+            Create your {platformName} account
           </h1>
           <p className="mt-2 text-white/50 light:text-gray-500">
-            Set up a workspace for your business in under a minute. No card needed.
+            Set up a workspace for your business in under a minute, then pay for your plan to get started.
           </p>
         </div>
 
@@ -505,12 +499,9 @@ const NewBusinessSignup: React.FC = () => {
                 }}
               />
 
-              {payment.offered && selectedPlan && (
+              {payment.payNow && selectedPlan && (
                 <SignupPaymentChoice
                   plan={selectedPlan}
-                  trialDays={trialDays}
-                  payNow={payment.payNow}
-                  onPayNow={payment.setPayNow}
                   cycle={payment.cycle}
                   onCycle={payment.setCycle}
                   disabled={submitting}
@@ -530,9 +521,7 @@ const NewBusinessSignup: React.FC = () => {
                   ? 'Creating your workspace…'
                   : payment.payNow
                     ? 'Create account & continue to payment'
-                    : trialDays > 0
-                      ? 'Start free trial'
-                      : 'Create account'}
+                    : 'Create account'}
               </Button>
 
               <p className="text-center text-sm text-white/40 light:text-gray-500">
@@ -548,7 +537,7 @@ const NewBusinessSignup: React.FC = () => {
           </form>
 
           <div className="auth-enter lg:sticky lg:top-6" style={{ animationDelay: '120ms' }}>
-            <PlanSummary plan={selectedPlan} trialDays={trialDays} businessName={form.business_name} />
+            <PlanSummary plan={selectedPlan} businessName={form.business_name} />
           </div>
         </div>
       </div>
@@ -576,13 +565,12 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
   const branding = useBranding();
   const platformName = branding.platform_name;
   const plans = useMemo(() => info?.plans ?? [], [info]);
-  const trialDays = info?.trial_days ?? 0;
   useDocumentTitle(`Get your own workspace · ${platformName}`);
 
   const initialPlanId = useInitialPlanId(info, plans);
   const planId = chosenPlanId ?? initialPlanId;
   const selectedPlan = plans.find((p) => p.id === planId) ?? null;
-  const payment = usePaymentChoice(selectedPlan, trialDays);
+  const payment = usePaymentChoice(selectedPlan);
   const upgradeClosed = info ? !info.signup_enabled : false;
 
   const focusFirstError = (errs: Partial<Record<UpgradeField, string>>) => {
@@ -677,7 +665,7 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
             Upgrade to your own workspace
           </h1>
           <p className="mt-2 text-white/50 light:text-gray-500">
-            {trialDays > 0 ? `Start your ${trialDays}-day free trial` : 'Set up your business'} and keep your login
+            Set up your business and keep your login
             {email ? (
               <>
                 {' '}
@@ -774,12 +762,9 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
                 }}
               />
 
-              {payment.offered && selectedPlan && !upgradeClosed && (
+              {payment.payNow && selectedPlan && !upgradeClosed && (
                 <SignupPaymentChoice
                   plan={selectedPlan}
-                  trialDays={trialDays}
-                  payNow={payment.payNow}
-                  onPayNow={payment.setPayNow}
                   cycle={payment.cycle}
                   onCycle={payment.setCycle}
                   disabled={submitting}
@@ -799,9 +784,7 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
                   ? 'Creating your workspace…'
                   : payment.payNow
                     ? 'Create workspace & continue to payment'
-                    : trialDays > 0
-                      ? 'Start free trial'
-                      : 'Create my workspace'}
+                    : 'Create my workspace'}
               </Button>
 
               <p className="text-center text-sm text-white/40 light:text-gray-500">
@@ -817,7 +800,7 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
           </form>
 
           <div className="auth-enter lg:sticky lg:top-6" style={{ animationDelay: '120ms' }}>
-            <PlanSummary plan={selectedPlan} trialDays={trialDays} businessName={businessName} />
+            <PlanSummary plan={selectedPlan} businessName={businessName} />
           </div>
         </div>
       </div>

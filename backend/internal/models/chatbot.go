@@ -166,6 +166,7 @@ type ChatbotFlow struct {
 	CancelKeywords     StringArray  `gorm:"type:jsonb" json:"cancel_keywords"`
 	PanelConfig        JSONB        `gorm:"type:jsonb;default:'{}'" json:"panel_config"` // Contact info panel configuration
 	Graph              JSONB        `gorm:"type:jsonb" json:"graph"`                     // v2 flow graph: {version, nodes, edges, entry_node}
+	FlowType           string       `gorm:"size:20;not null;default:'advanced'" json:"flow_type"` // simple | media | advanced: what the builder and validator allow
 	CreatedByID        *uuid.UUID   `gorm:"type:uuid" json:"created_by_id,omitempty"`
 	UpdatedByID        *uuid.UUID   `gorm:"type:uuid" json:"updated_by_id,omitempty"`
 

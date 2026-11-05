@@ -16,6 +16,9 @@ const (
 	VendorStatusActive    = "active"
 	VendorStatusTrial     = "trial"
 	VendorStatusSuspended = "suspended"
+	// VendorStatusPendingPayment: signed up, hasn't paid yet. Only the
+	// payment screens work until the first payment activates the plan.
+	VendorStatusPendingPayment = "pending_payment"
 )
 
 // Subscription plan billing intervals. A plan's price is per month; longer

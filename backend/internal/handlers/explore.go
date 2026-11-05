@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
@@ -137,7 +136,7 @@ func (a *App) Subscribe(r *fastglue.Request) error {
 		planID = cfg.DefaultPlanID
 	}
 	sub := models.OrganizationSubscription{
-		Status: models.VendorStatusTrial, OwnerName: user.FullName, OwnerEmail: user.Email,
+		Status: models.VendorStatusPendingPayment, OwnerName: user.FullName, OwnerEmail: user.Email,
 		OwnerPhone: strings.TrimSpace(req.Phone),
 	}
 	if planID != "" {
@@ -147,11 +146,12 @@ func (a *App) Subscribe(r *fastglue.Request) error {
 		}
 		sub.PlanID = &plan.ID
 	}
-	if cfg.TrialDays > 0 {
-		trialEnds := time.Now().AddDate(0, 0, cfg.TrialDays)
-		sub.RenewalDate = &trialEnds
-	} else {
-		sub.Status = models.VendorStatusActive
+	// No free trial: a paid plan waits for its first payment, a free one starts now.
+	sub.Status = models.VendorStatusActive
+	if sub.PlanID != nil {
+		if plan, err := a.findPlan(sub.PlanID.String()); err == nil && plan.MonthlyPrice() > 0 {
+			sub.Status = models.VendorStatusPendingPayment
+		}
 	}
 
 	var orgID, adminRoleID uuid.UUID

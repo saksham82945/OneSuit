@@ -23,8 +23,9 @@ describe('plan billing cycles', () => {
 describe('subscriptionState', () => {
   const future = new Date(Date.now() + 86400000 * 10).toISOString();
   const past = new Date(Date.now() - 86400000).toISOString();
-  it('labels clients active, trial, idle, expired or suspended', () => {
+  it('labels clients active, awaiting payment, legacy trial, idle, expired or suspended', () => {
     expect(subscriptionState({ status: 'active', plan_id: 'p', renewal_date: future })).toBe('active');
+    expect(subscriptionState({ status: 'pending_payment', plan_id: 'p', renewal_date: null })).toBe('pending_payment');
     expect(subscriptionState({ status: 'trial', plan_id: 'p', renewal_date: future })).toBe('trial');
     expect(subscriptionState({ status: 'active', plan_id: null, renewal_date: null })).toBe('idle');
     expect(subscriptionState({ status: 'active', plan_id: 'p', renewal_date: past })).toBe('expired');

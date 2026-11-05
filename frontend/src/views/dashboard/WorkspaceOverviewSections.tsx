@@ -32,7 +32,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
-import { dashboardService, type DashboardOverview } from '@/services/dashboard';
+import { dashboardService, planStatusLabel, type DashboardOverview } from '@/services/dashboard';
 import {
   Panel,
   PanelEmpty,
@@ -225,14 +225,14 @@ export const WorkspaceOverviewSections: React.FC = () => {
       key: 'ai', label: 'AI Replies (30d)', value: formatCount(overview.ai_responses_30d), icon: Sparkles, tone: 'purple' as Tone,
     },
     plan && {
-      key: 'plan', label: plan.status === 'trial' ? 'Trial Plan' : 'Current Plan', value: plan.name || 'No plan', icon: CreditCard,
+      key: 'plan', label: 'Current Plan', value: plan.name || 'No plan', icon: CreditCard,
       tone: (actions.plan_expired ? 'red' : actions.plan_expiring_soon ? 'amber' : 'green') as Tone,
       hint:
         daysLeft === null
           ? 'No renewal date'
           : daysLeft < 0
             ? `Expired ${formatShortDate(plan.renewal_date)}`
-            : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left${plan.status === 'trial' ? ' in trial' : ''}`,
+            : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`,
       to: '/settings/billing',
     },
     quotaContacts && {
@@ -252,7 +252,7 @@ export const WorkspaceOverviewSections: React.FC = () => {
   } else if (actions.plan_expiring_soon && plan) {
     todos.push({
       key: 'expiring',
-      title: plan.status === 'trial' ? 'Your free trial ends soon' : 'Your plan renews soon',
+      title: 'Your plan renews soon',
       subtitle: `${daysLeft} day${daysLeft === 1 ? '' : 's'} left · ${formatShortDate(plan.renewal_date)} · Renew now`,
       to: '/billing/checkout',
       tone: 'amber',
@@ -362,7 +362,7 @@ export const WorkspaceOverviewSections: React.FC = () => {
 
           {plan ? (
             <Panel
-              title={plan.status === 'trial' ? 'Free trial' : 'Subscription'}
+              title="Subscription"
               icon={actions.plan_expired ? PhoneOff : CalendarClock}
               tone={actions.plan_expired ? 'red' : actions.plan_expiring_soon ? 'amber' : 'green'}
               linkLabel="Billing"
@@ -377,18 +377,18 @@ export const WorkspaceOverviewSections: React.FC = () => {
                       'rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize',
                       plan.status === 'active'
                         ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
-                        : plan.status === 'trial'
+                        : plan.status === 'pending_payment' || plan.status === 'trial'
                           ? 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300'
                           : 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'
                     )}
                   >
-                    {plan.status}
+                    {planStatusLabel(plan.status)}
                   </span>
                 }
               />
               <PanelRow
                 title={plan.renewal_date ? formatShortDate(plan.renewal_date) : 'No renewal date'}
-                subtitle={plan.status === 'trial' ? 'Trial ends' : 'Renews on'}
+                subtitle="Renews on"
                 right={
                   daysLeft !== null ? (
                     <span className={cn('text-xs font-semibold', daysLeft < 0 ? 'text-rose-600' : daysLeft <= 7 ? 'text-amber-600' : 'text-gray-500')}>

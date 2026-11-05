@@ -2,7 +2,8 @@ import { api } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import type { Branding } from '@/services/branding';
 
-export type VendorStatus = 'active' | 'trial' | 'suspended';
+/** 'trial' only on older workspaces (free trials are gone); never set it. */
+export type VendorStatus = 'active' | 'pending_payment' | 'suspended' | 'trial';
 export type BillingInterval = 'monthly' | 'quarterly' | 'half_yearly' | 'yearly';
 
 export interface Vendor {
@@ -120,7 +121,6 @@ export interface PlatformConfig {
   default_currency: string;
   /** Empty string = no default plan */
   default_plan_id: string;
-  trial_days: number;
   renewal_reminder_days: number;
   allow_vendor_signup: boolean;
   require_email_verification: boolean;
@@ -164,6 +164,7 @@ export const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 export interface SuperAdminDashboard {
   total_vendors: number;
   active_vendors: number;
+  /** Older workspaces still on a free trial (trials are gone). */
   trial_vendors: number;
   suspended_vendors: number;
   next_renewal: Vendor | null;
@@ -373,11 +374,25 @@ export const cyclePrice = (p: PricedPlan, cycle: BillingInterval) => {
 
 // --- Client subscription state ------------------------------------------------
 
-export type SubscriptionState = 'active' | 'trial' | 'idle' | 'expired' | 'suspended';
+export type SubscriptionState = 'active' | 'pending_payment' | 'trial' | 'idle' | 'expired' | 'suspended';
 
-/** Active: paid plan running. Trial: on trial. Idle: no plan. Expired: renewal date passed. */
+/** What each subscription state is called on screen. */
+export const subscriptionStateLabels: Record<SubscriptionState, string> = {
+  active: 'Active',
+  pending_payment: 'Awaiting payment',
+  trial: 'Trial (legacy)',
+  idle: 'Idle',
+  expired: 'Expired',
+  suspended: 'Suspended',
+};
+
+/**
+ * Active: paid plan running. Pending payment: signed up, first payment not made.
+ * Trial: legacy free trial. Idle: no plan. Expired: renewal date passed.
+ */
 export const subscriptionState = (v: Pick<Vendor, 'status' | 'plan_id' | 'renewal_date'>): SubscriptionState => {
   if (v.status === 'suspended') return 'suspended';
+  if (v.status === 'pending_payment') return 'pending_payment';
   if (v.renewal_date && new Date(v.renewal_date).getTime() < Date.now()) return 'expired';
   if (v.status === 'trial') return 'trial';
   if (!v.plan_id) return 'idle';

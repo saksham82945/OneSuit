@@ -2,6 +2,7 @@
 // and the backend's v2 graph: { version, nodes, edges, entry_node }.
 import type { Edge, Node } from '@xyflow/react';
 import type { ChatEdge, ChatFlowGraph, ChatNode, ChatNodeType } from '@/services/api';
+import { fromBotReply, replyOptions, replyWaits, toBotReply, type BotReply } from './chatbotFlowTypes';
 
 // ─── Button Types ─────────────────────────────────────────────────────────────
 export type FlowButtonType =
@@ -52,6 +53,8 @@ export interface BuilderNodeData extends Record<string, unknown> {
   queue?: string;
   config?: NodeConfig;
   backendType?: string;
+  /** The bot reply of a replyNode. */
+  reply?: BotReply;
 }
 export type BuilderNode = Node<BuilderNodeData>;
 
@@ -129,6 +132,8 @@ export function toCanvasNode(n: ChatNode): BuilderNode {
   switch (n.type) {
     case 'start':
       return { ...base, type: 'startNode', deletable: false, data };
+    case 'reply':
+      return { ...base, type: 'replyNode', data: { ...data, reply: toBotReply(config) } };
     case 'message':
       return { ...base, type: 'textNode', data: { ...data, message: str(config.message) || str(config.text) } };
     case 'buttons':
@@ -161,6 +166,10 @@ export function graphToCanvas(graph: ChatFlowGraph | null | undefined): { nodes:
     let condition = e.condition || 'default';
     let sourceHandle: string | undefined;
     const source = backendNodes.get(e.from);
+    if (source?.type === 'reply' && condition.startsWith('button:')) {
+      const index = replyOptions(toBotReply(source.config)).findIndex((o) => o.id === condition.slice('button:'.length));
+      if (index >= 0) sourceHandle = `opt-${index}`;
+    }
     if (source?.type === 'buttons' && condition !== 'default') {
       // Older graphs stored the bare button id; the runner matches `button:<id>`.
       const buttonId = condition.startsWith('button:') ? condition.slice('button:'.length) : condition;
@@ -190,6 +199,13 @@ export function toBackendNode(node: BuilderNode): ChatNode {
     case 'startNode':
       type = 'start';
       break;
+    case 'replyNode': {
+      type = 'reply';
+      // Keep keys this builder doesn't edit (store_as, skip_condition, ...).
+      for (const key of ['body', 'footer', 'header', 'interactive', 'buttons', 'list', 'cta', 'message', 'text']) delete config[key];
+      Object.assign(config, fromBotReply(d.reply ?? toBotReply(undefined)));
+      break;
+    }
     case 'textNode':
       type = 'message';
       config.message = d.message ?? '';
@@ -231,8 +247,11 @@ export function canvasToGraph(nodes: BuilderNode[], edges: Edge[], loadedEntry: 
     .map((e) => {
       const source = byId.get(e.source) as BuilderNode;
       const handle = /^btn-(\d+)$/.exec(e.sourceHandle || '');
-      const condition =
-        handle && source.type === 'buttonsNode'
+      const option = /^opt-(\d+)$/.exec(e.sourceHandle || '');
+      const optionId = option && source.data.reply ? replyOptions(source.data.reply)[Number(option[1])]?.id : undefined;
+      const condition = optionId
+        ? `button:${optionId}`
+        : handle && source.type === 'buttonsNode'
           ? `button:${buttonIdAt(source, Number(handle[1]))}`
           : str((e.data as { condition?: unknown } | undefined)?.condition) || 'default';
       return { from: e.source, to: e.target, condition };
@@ -261,5 +280,25 @@ export function edgesAfterButtonRemoved(edges: Edge[], nodeId: string, removed: 
     const index = Number(handle[1]);
     if (index === removed) return [];
     return index > removed ? [{ ...e, sourceHandle: `btn-${index - 1}` }] : [e];
+  });
+}
+
+/**
+ * Edges of reply node `nodeId` after its reply changed from `before` to `after`:
+ * option edges follow their option (by id) to its new handle, edges of removed
+ * options go, and a reply that stops/starts waiting for a choice loses the
+ * edges of the other mode.
+ */
+export function edgesAfterReplyChanged(edges: Edge[], nodeId: string, before: BotReply, after: BotReply): Edge[] {
+  const oldIds = replyOptions(before).map((o) => o.id);
+  const newIds = replyOptions(after).map((o) => o.id);
+  const waits = replyWaits(after);
+  return edges.flatMap((e) => {
+    if (e.source !== nodeId) return [e];
+    const option = /^opt-(\d+)$/.exec(e.sourceHandle || '');
+    if (!option) return waits ? [] : [e];
+    if (!waits) return [];
+    const index = newIds.indexOf(oldIds[Number(option[1])]);
+    return index < 0 ? [] : [{ ...e, sourceHandle: `opt-${index}` }];
   });
 }

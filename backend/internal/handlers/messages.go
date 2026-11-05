@@ -52,6 +52,10 @@ type OutgoingMessageRequest struct {
 	Buttons         []whatsapp.Button // For button/list messages
 	ButtonText      string            // For CTA URL button
 	URL             string            // For CTA URL button
+	// Interactive, when set, is sent as-is (header, footer, list sections,
+	// reply buttons or CTA URL). Chatbot bot-reply nodes use it; the fields
+	// above stay for the simpler callers.
+	Interactive *whatsapp.InteractiveMessage
 
 	// voice_call interactive (WhatsApp Business Calling)
 	DisplayText      string // Button face label
@@ -192,6 +196,9 @@ func (a *App) SendOutgoingMessage(ctx context.Context, req OutgoingMessageReques
 			}
 
 		case models.MessageTypeInteractive:
+			if req.Interactive != nil {
+				return a.WhatsApp.SendInteractive(sendCtx, waAccount, rcpt, *req.Interactive)
+			}
 			switch req.InteractiveType {
 			case "cta_url":
 				return a.WhatsApp.SendCTAURLButton(sendCtx, waAccount, rcpt, req.BodyText, req.ButtonText, req.URL)
@@ -301,6 +308,12 @@ func (a *App) createOutgoingMessage(req OutgoingMessageRequest, opts MessageSend
 	case models.MessageTypeInteractive:
 		msg.Content = req.BodyText
 		msg.InteractiveData = a.buildInteractiveData(req)
+		// A media header (chatbot bot replies) is kept so the chat shows it.
+		if req.MediaURL != "" {
+			msg.MediaURL = req.MediaURL
+			msg.MediaMimeType = req.MediaMimeType
+			msg.MediaFilename = req.MediaFilename
+		}
 
 	case models.MessageTypeFlow:
 		msg.Content = req.BodyText
@@ -379,6 +392,10 @@ func (a *App) buildInteractiveData(req OutgoingMessageRequest) models.JSONB {
 			"type":    "button",
 			"buttons": buttons,
 		}
+	}
+
+	if req.Interactive != nil {
+		return interactiveMessageData(req.Interactive)
 	}
 
 	switch req.InteractiveType {

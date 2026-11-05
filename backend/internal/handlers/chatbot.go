@@ -83,6 +83,7 @@ type ChatbotFlowResponse struct {
 	Description     string   `json:"description"`
 	TriggerKeywords []string `json:"trigger_keywords"`
 	Enabled         bool     `json:"enabled"`
+	FlowType        string   `json:"flow_type"`
 	CreatedAt       string   `json:"created_at"`
 }
 
@@ -863,6 +864,7 @@ func (a *App) ListChatbotFlows(r *fastglue.Request) error {
 			Description:     flow.Description,
 			TriggerKeywords: flow.TriggerKeywords,
 			Enabled:         flow.IsEnabled,
+			FlowType:        flow.FlowType,
 			CreatedAt:       flow.CreatedAt.Format(time.RFC3339),
 		}
 	}
@@ -892,6 +894,7 @@ func (a *App) CreateChatbotFlow(r *fastglue.Request) error {
 		PanelConfig       map[string]any `json:"panel_config"`
 		Graph             map[string]any `json:"graph"`
 		Enabled           bool           `json:"enabled"`
+		FlowType          string         `json:"flow_type"`
 	}
 
 	if err := json.Unmarshal(r.RequestCtx.PostBody(), &req); err != nil {
@@ -900,6 +903,14 @@ func (a *App) CreateChatbotFlow(r *fastglue.Request) error {
 
 	if req.Name == "" {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Name is required", nil, "")
+	}
+
+	flowType, err := normalizeChatFlowType(req.FlowType)
+	if err != nil {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, err.Error(), nil, "")
+	}
+	if err := validateChatbotFlowGraph(flowType, req.Graph); err != nil {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, err.Error(), nil, "")
 	}
 
 	flow := models.ChatbotFlow{
@@ -914,6 +925,7 @@ func (a *App) CreateChatbotFlow(r *fastglue.Request) error {
 		CompletionConfig:  models.JSONB(req.CompletionConfig),
 		PanelConfig:       models.JSONB(req.PanelConfig),
 		Graph:             models.JSONB(req.Graph),
+		FlowType:          flowType,
 		IsEnabled:         req.Enabled,
 		CreatedByID:       &userID,
 		UpdatedByID:       &userID,
@@ -996,6 +1008,7 @@ func (a *App) UpdateChatbotFlow(r *fastglue.Request) error {
 		PanelConfig       map[string]any `json:"panel_config"`
 		Graph             map[string]any `json:"graph"`
 		Enabled           *bool          `json:"enabled"`
+		FlowType          *string        `json:"flow_type"`
 	}
 
 	if err := json.Unmarshal(r.RequestCtx.PostBody(), &req); err != nil {
@@ -1032,6 +1045,21 @@ func (a *App) UpdateChatbotFlow(r *fastglue.Request) error {
 	}
 	if req.Enabled != nil {
 		flow.IsEnabled = *req.Enabled
+	}
+	if req.FlowType != nil {
+		flowType, err := normalizeChatFlowType(*req.FlowType)
+		if err != nil {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, err.Error(), nil, "")
+		}
+		flow.FlowType = flowType
+	} else if flow.FlowType == "" {
+		flow.FlowType = ChatFlowTypeAdvanced
+	}
+	// The stored graph is re-checked too when only the type changes.
+	if req.Graph != nil || req.FlowType != nil {
+		if err := validateChatbotFlowGraph(flow.FlowType, flow.Graph); err != nil {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, err.Error(), nil, "")
+		}
 	}
 	flow.UpdatedByID = &userID
 

@@ -146,7 +146,7 @@ func (a *App) GetPublicPlans(r *fastglue.Request) error {
 		"plans":           out,
 		"platform_name":   cfg.PlatformName,
 		"support_email":   cfg.SupportEmail,
-		"trial_days":      cfg.TrialDays,
+		"trial_days":      0, // free trials were removed
 		"default_plan":    cfg.DefaultPlanID,
 		"signup_enabled":  cfg.AllowVendorSignup && !cfg.MaintenanceMode,
 		"explore_enabled": cfg.AllowVendorSignup && !cfg.MaintenanceMode && a.demoOrgID() != uuid.Nil,
@@ -220,7 +220,7 @@ func (a *App) Signup(r *fastglue.Request) error {
 	}
 
 	sub := models.OrganizationSubscription{
-		Status:     models.VendorStatusTrial,
+		Status:     models.VendorStatusPendingPayment,
 		OwnerName:  req.FullName,
 		OwnerEmail: req.Email,
 		OwnerPhone: req.Phone,
@@ -228,11 +228,10 @@ func (a *App) Signup(r *fastglue.Request) error {
 	if plan != nil {
 		sub.PlanID = &plan.ID
 	}
-	if cfg.TrialDays > 0 {
-		trialEnds := time.Now().AddDate(0, 0, cfg.TrialDays)
-		sub.RenewalDate = &trialEnds
-	} else {
-		sub.Status = models.VendorStatusActive
+	// No free trial: a paid plan waits for its first payment, a free one starts now.
+	sub.Status = models.VendorStatusActive
+	if plan != nil && plan.MonthlyPrice() > 0 {
+		sub.Status = models.VendorStatusPendingPayment
 	}
 
 	var owner *models.User

@@ -31,7 +31,7 @@ func newPayEnv(t *testing.T) *payEnv {
 	t.Helper()
 	f := newSuperAdminFixture(t)
 	plan := f.createPlan(t, "Pay "+uuid.NewString()[:6]) // ₹49 / month
-	vendor := f.createVendor(t, map[string]any{"name": "Payer " + uuid.NewString()[:6], "plan_id": plan.ID.String(), "status": "trial"})
+	vendor := f.createVendor(t, map[string]any{"name": "Payer " + uuid.NewString()[:6], "plan_id": plan.ID.String(), "status": "pending_payment"})
 	admin := createAdminUser(t, f.app, vendor.ID)
 	return &payEnv{f: f, plan: plan, vendor: vendor, admin: admin}
 }
@@ -221,4 +221,27 @@ func TestApp_Payments_RazorpayCheckoutVerifyAndWebhook(t *testing.T) {
 	assert.NotContains(t, body, hookSecret)
 	assert.Contains(t, body, `"has_razorpay_secret":true`)
 	assert.Contains(t, body, "/razorpay/order-payment-razorpay-webhook")
+}
+
+func TestApp_PendingPaymentGuard(t *testing.T) {
+	e := newPayEnv(t) // the vendor is pending_payment
+	call := func(path string) int {
+		r := testutil.NewGETRequest(t)
+		r.RequestCtx.Request.SetRequestURI(path)
+		testutil.SetAuthContext(r, e.vendor.ID, e.admin.ID)
+		if e.f.app.PendingPaymentGuard(r) == nil {
+			return testutil.GetResponseStatusCode(r)
+		}
+		return 0
+	}
+	assert.Equal(t, fasthttp.StatusPaymentRequired, call("/api/contacts"))
+	assert.Equal(t, 0, call("/api/payments/checkout"))
+	assert.Equal(t, 0, call("/api/me"))
+	assert.Equal(t, 0, call("/api/public/plans"))
+
+	// Paying unlocks everything.
+	_, d := e.asAdmin(t, e.f.app.CreatePaymentCheckout, map[string]any{"plan_id": e.plan.ID.String(), "method": "upi"}, "")
+	_, _ = e.asAdmin(t, e.f.app.SubmitUPIPayment, map[string]any{"reference": "UTR" + uuid.NewString()[:9]}, d["payment_id"].(string))
+	require.Equal(t, fasthttp.StatusOK, e.asSuper(t, e.f.app.SuperAdminApprovePayment, nil, d["payment_id"].(string)))
+	assert.Equal(t, 0, call("/api/contacts"))
 }

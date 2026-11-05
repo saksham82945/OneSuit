@@ -44,9 +44,13 @@ export interface DashboardQuota {
   limit: number;
 }
 
+/** A workspace's subscription status as shown to its users. */
+export const planStatusLabel = (status: string) =>
+  status === 'pending_payment' ? 'Awaiting payment' : status === 'trial' ? 'Trial (legacy)' : status;
+
 export interface DashboardPlanInfo {
   name: string;
-  status: 'active' | 'trial' | 'suspended' | string;
+  status: 'active' | 'pending_payment' | 'suspended' | string;
   price: number;
   currency: string;
   interval: string;

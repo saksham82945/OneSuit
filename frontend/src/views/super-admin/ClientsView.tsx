@@ -27,6 +27,7 @@ import {
   cycleInfo,
   cyclePrice,
   subscriptionState,
+  subscriptionStateLabels,
   type Vendor,
   type VendorInput,
   type Plan,
@@ -47,7 +48,7 @@ const emptyForm = {
   owner_email: '',
   phone: '',
   plan_id: NO_PLAN,
-  status: 'trial' as VendorStatus,
+  status: 'active' as VendorStatus,
   billing_cycle: 'monthly' as BillingInterval,
   renewal_date: '',
   owner_password: '',
@@ -95,7 +96,7 @@ export const ClientsView: React.FC = () => {
   );
 
   const counts = useMemo(() => {
-    const c: Record<SubscriptionState, number> = { active: 0, trial: 0, idle: 0, expired: 0, suspended: 0 };
+    const c: Record<SubscriptionState, number> = { active: 0, pending_payment: 0, trial: 0, idle: 0, expired: 0, suspended: 0 };
     (vendors ?? []).forEach((v) => c[subscriptionState(v)]++);
     return c;
   }, [vendors]);
@@ -130,8 +131,13 @@ export const ClientsView: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      const { owner_password, renewal_date, ...fields } = form;
-      const payload: VendorInput = { ...fields, plan_id: form.plan_id === NO_PLAN ? '' : form.plan_id };
+      const { owner_password, renewal_date, status, ...fields } = form;
+      const payload: VendorInput = {
+        ...fields,
+        // A legacy trial can't be set any more: leave it untouched unless changed.
+        ...(status === 'trial' ? {} : { status }),
+        plan_id: form.plan_id === NO_PLAN ? '' : form.plan_id,
+      };
       if (editing || renewal_date) {
         payload.renewal_date = renewal_date; // YYYY-MM-DD, or '' to clear
       }
@@ -197,7 +203,12 @@ export const ClientsView: React.FC = () => {
     }
   };
 
-  const statusText: Record<VendorStatus, string> = { active: 'Active', trial: 'Trial', suspended: 'Suspended' };
+  const statusText: Record<VendorStatus, string> = {
+    active: 'Active',
+    pending_payment: 'Awaiting payment',
+    suspended: 'Suspended',
+    trial: 'Trial (legacy)',
+  };
 
   const columns: EntryColumn<Vendor>[] = [
     {
@@ -341,18 +352,21 @@ export const ClientsView: React.FC = () => {
         ) : (
           <div className="space-y-4">
             <div className="flex flex-wrap gap-1 rounded-lg bg-white/[0.04] light:bg-gray-100 p-1 w-fit">
-              {(['all', 'active', 'trial', 'idle', 'expired', 'suspended'] as StatusFilter[]).map((s) => (
+              {(['all', 'active', 'pending_payment', 'trial', 'idle', 'expired', 'suspended'] as StatusFilter[])
+                // Legacy trials only show up while some are left.
+                .filter((s) => s !== 'trial' || counts.trial > 0 || statusFilter === 'trial')
+                .map((s) => (
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
                   className={cn(
-                    'px-3 py-1 rounded-md text-xs capitalize transition-colors',
+                    'px-3 py-1 rounded-md text-xs transition-colors',
                     statusFilter === s
                       ? 'bg-white/[0.1] text-white light:bg-white light:text-gray-900 light:shadow-sm'
                       : 'text-white/50 hover:text-white light:text-gray-500 light:hover:text-gray-900'
                   )}
                 >
-                  {s}
+                  {s === 'all' ? 'All' : subscriptionStateLabels[s]}
                   {s !== 'all' && <span className="ml-1 tabular-nums opacity-60">{counts[s]}</span>}
                 </button>
               ))}
@@ -469,8 +483,9 @@ export const ClientsView: React.FC = () => {
                     <SelectTrigger className={fieldClass}><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="trial">Trial</SelectItem>
+                      <SelectItem value="pending_payment">Awaiting payment</SelectItem>
                       <SelectItem value="suspended">Suspended</SelectItem>
+                      {editing?.status === 'trial' && <SelectItem value="trial" disabled>Trial (legacy)</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
@@ -506,10 +521,10 @@ export const ClientsView: React.FC = () => {
                 </div>
               )}
               <div className="grid gap-1.5">
-                <Label className="text-xs">{form.status === 'trial' ? 'Trial ends on' : 'Renewal date'}</Label>
+                <Label className="text-xs">Renewal date</Label>
                 <Input type="date" value={form.renewal_date} onChange={set('renewal_date')} className={fieldClass} />
                 {!editing && (
-                  <p className="text-[11px] text-white/40 light:text-gray-500">Filled in from the billing cycle. Leave empty on trial to use the default trial length.</p>
+                  <p className="text-[11px] text-white/40 light:text-gray-500">Filled in from the billing cycle. Leave empty while awaiting payment — the first payment sets it.</p>
                 )}
               </div>
               {willInvoice ? (

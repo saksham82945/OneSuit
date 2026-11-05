@@ -30,13 +30,14 @@ describe('subscription metrics', () => {
         client({ plan_amount: 1000 }), // monthly → 1000
         client({ billing_cycle: 'yearly', plan_amount: 12000, renewal_date: inDays(5) }), // → 1000, expiring 7/30
         client({ billing_cycle: 'quarterly', plan_amount: 2700, renewal_date: inDays(20) }), // → 900, expiring 30
-        client({ status: 'trial', plan_id: null, plan_amount: 0 }),
+        client({ status: 'pending_payment', renewal_date: null }), // awaiting first payment: no MRR
+        client({ status: 'trial', plan_id: null, plan_amount: 0 }), // legacy trial
         client({ status: 'suspended', renewal_date: inDays(3) }), // suspended: not expiring, no MRR
         client({ renewal_date: inDays(-2) }), // expired: no MRR
       ],
       NOW
     );
-    expect(s).toMatchObject({ active: 3, trial: 1, suspended: 1, expired: 1, expiring7: 1, expiring30: 2, mrr: 2900, payingClients: 3 });
+    expect(s).toMatchObject({ active: 3, pendingPayment: 1, trial: 1, suspended: 1, expired: 1, expiring7: 1, expiring30: 2, mrr: 2900, payingClients: 3 });
   });
 
   it('filters by search, state, plan, cycle and expiry', () => {
@@ -53,6 +54,7 @@ describe('subscription metrics', () => {
 
   it('lists clients with a plan or a non-idle state', () => {
     expect(isSubscriptionRow(client({ plan_id: null }))).toBe(false);
+    expect(isSubscriptionRow(client({ plan_id: null, status: 'pending_payment' }))).toBe(true);
     expect(isSubscriptionRow(client({ plan_id: null, status: 'trial' }))).toBe(true);
   });
 

@@ -631,6 +631,8 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 
 	// Sections switched off in the workspace's plan are blocked
 	g.Before(app.PlanModuleGuard)
+	// Workspaces that haven't made their first payment only reach the payment screens
+	g.Before(app.PendingPaymentGuard)
 
 	// Role-based access control middleware
 	g.Before(func(r *fastglue.Request) *fastglue.Request {
@@ -826,6 +828,8 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	// Chatbot Flows
 	g.GET("/api/chatbot/flows", app.ListChatbotFlows)
 	g.POST("/api/chatbot/flows", app.CreateChatbotFlow)
+	g.POST("/api/chatbot/flows/media", app.UploadChatbotFlowMedia)
+	g.GET("/api/chatbot/flows/media/{file}", app.ServeChatbotFlowMedia)
 	g.GET("/api/chatbot/flows/{id}", app.GetChatbotFlow)
 	g.PUT("/api/chatbot/flows/{id}", app.UpdateChatbotFlow)
 	g.DELETE("/api/chatbot/flows/{id}", app.DeleteChatbotFlow)

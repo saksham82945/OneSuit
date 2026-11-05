@@ -44,6 +44,9 @@ export const matchesFilters = (c: Vendor, f: SubscriptionFilters, now = Date.now
 
 export interface SubscriptionSummary {
   active: number;
+  /** Signed up for a paid plan, first payment not made yet. */
+  pendingPayment: number;
+  /** Older workspaces still on a free trial (trials are gone). */
   trial: number;
   suspended: number;
   expired: number;
@@ -56,10 +59,11 @@ export interface SubscriptionSummary {
 
 /** Counts and an MRR estimate (cycle price ÷ months in the cycle, active non-expired clients only). */
 export const summarize = (clients: Vendor[], now = Date.now()): SubscriptionSummary => {
-  const s: SubscriptionSummary = { active: 0, trial: 0, suspended: 0, expired: 0, expiring7: 0, expiring30: 0, mrr: 0, payingClients: 0 };
+  const s: SubscriptionSummary = { active: 0, pendingPayment: 0, trial: 0, suspended: 0, expired: 0, expiring7: 0, expiring30: 0, mrr: 0, payingClients: 0 };
   for (const c of clients) {
     const state = subscriptionState(c);
     if (state === 'active') s.active++;
+    else if (state === 'pending_payment') s.pendingPayment++;
     else if (state === 'trial') s.trial++;
     else if (state === 'suspended') s.suspended++;
     else if (state === 'expired') s.expired++;

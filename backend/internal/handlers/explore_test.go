@@ -109,7 +109,7 @@ func TestApp_Subscribe_TurnsExplorerIntoBusinessAdmin(t *testing.T) {
 	vendor, err := loadVendorForTest(t, f, resp.User.OrganizationID)
 	require.NoError(t, err)
 	assert.Equal(t, "Eve's Bakery", vendor.Name)
-	assert.Equal(t, models.VendorStatusTrial, vendor.Status)
+	assert.Equal(t, models.VendorStatusPendingPayment, vendor.Status)
 	assert.Equal(t, plan.Name, vendor.PlanName)
 
 	var demoMembership int64

@@ -24,7 +24,6 @@ export interface PublicPlan {
 
 export interface PublicPlansInfo {
   plans: PublicPlan[];
-  trial_days: number;
   default_plan: string;
   signup_enabled: boolean;
   /** Visitors can open the shared demo workspace without a plan (POST /auth/explore). */
@@ -39,7 +38,6 @@ function normalizeInfo(raw: Partial<PublicPlansInfo> | null | undefined): Public
     plans: Array.isArray(raw?.plans)
       ? raw.plans.map((p) => ({ ...p, features: Array.isArray(p.features) ? p.features : [] }))
       : [],
-    trial_days: typeof raw?.trial_days === 'number' ? raw.trial_days : 0,
     default_plan: raw?.default_plan || '',
     signup_enabled: raw?.signup_enabled !== false,
     explore_enabled: raw?.explore_enabled === true,

@@ -63,7 +63,8 @@ export const SubscriptionDialog: React.FC<{
       const updated = await superAdminService.updateVendor(client.id, {
         plan_id: planId === NO_PLAN ? '' : planId,
         billing_cycle: cycle,
-        status,
+        // A legacy trial can't be set any more: leave it untouched unless changed.
+        ...(status === 'trial' ? {} : { status }),
         renewal_date: expiry,
       });
       toast.success(`${client.name}'s subscription updated`);
@@ -109,8 +110,9 @@ export const SubscriptionDialog: React.FC<{
                 <SelectTrigger className={fieldClass}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="trial">Trial</SelectItem>
+                  <SelectItem value="pending_payment">Awaiting payment</SelectItem>
                   <SelectItem value="suspended">Suspended</SelectItem>
+                  {client?.status === 'trial' && <SelectItem value="trial" disabled>Trial (legacy)</SelectItem>}
                 </SelectContent>
               </Select>
             </div>

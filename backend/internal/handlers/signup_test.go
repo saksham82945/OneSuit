@@ -100,10 +100,10 @@ func TestApp_Signup_CreatesTrialBusinessAndSignsIn(t *testing.T) {
 	vendor, err := loadVendorForTest(t, f, resp.User.OrganizationID)
 	require.NoError(t, err)
 	assert.Equal(t, "Sunrise Realty", vendor.Name)
-	assert.Equal(t, models.VendorStatusTrial, vendor.Status)
+	assert.Equal(t, models.VendorStatusPendingPayment, vendor.Status, "a paid plan waits for its first payment")
 	assert.Equal(t, plan.Name, vendor.PlanName)
 	assert.Equal(t, email, vendor.OwnerEmail)
-	require.NotNil(t, vendor.RenewalDate, "trial end date is set")
+	assert.Nil(t, vendor.RenewalDate, "no free trial")
 
 	// They can sign in again later.
 	assert.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(login(t, f.app, email, "secret-pass-1")))
@@ -256,7 +256,8 @@ func TestApp_ExpiredTrial_BlocksSignIn(t *testing.T) {
 	f := newSuperAdminFixture(t)
 	email := testutil.UniqueEmail("expired-trial")
 	vendor := f.createVendor(t, map[string]any{"name": "Old Trial", "owner_email": email, "owner_password": "owner-pass-1"})
-	require.Equal(t, models.VendorStatusTrial, vendor.Status)
+	// Free trials were removed; older workspaces can still be on one.
+	require.NoError(t, f.app.DB.Model(&models.OrganizationSubscription{}).Where("organization_id = ?", vendor.ID).Update("status", models.VendorStatusTrial).Error)
 
 	upd := f.asSuperAdmin(testutil.NewJSONRequest(t, map[string]any{"renewal_date": "2020-01-01"}))
 	testutil.SetPathParam(upd, "id", vendor.ID.String())
@@ -304,5 +305,5 @@ func TestApp_Signup_WithoutPlan(t *testing.T) {
 	vendor, err := loadVendorForTest(t, f, resp.User.OrganizationID)
 	require.NoError(t, err)
 	assert.Nil(t, vendor.PlanID)
-	assert.Equal(t, models.VendorStatusTrial, vendor.Status)
+	assert.Equal(t, models.VendorStatusActive, vendor.Status)
 }

@@ -189,13 +189,11 @@ export const LoginView: React.FC = () => {
                   </span>
                   <span className="text-[11px] text-white/40 light:text-gray-400">Password: <code className="bg-white/10 light:bg-gray-200 px-1 py-0.5 rounded font-mono text-[10px]">admin123</code></span>
                 </div>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-2 gap-1.5">
                   {[
                     { label: 'Super Admin', email: 'superadmin@login.com' },
                     { label: 'Admin', email: 'admin@login.com' },
                     { label: 'Manager', email: 'manager@login.com' },
-                    { label: 'Agent', email: 'agent@login.com' },
-                    { label: 'User', email: 'user@login.com' },
                     { label: 'Explorer', email: 'explorer@login.com' },
                   ].map((cred) => (
                     <button

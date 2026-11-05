@@ -2,7 +2,6 @@ package handlers_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/shridarpatil/whatomate/internal/handlers"
@@ -157,11 +156,10 @@ func TestApp_SuperAdmin_CreateVendorWithOwnerLogin(t *testing.T) {
 		"owner_password": "owner-password-1",
 	})
 	assert.Equal(t, "Acme Retail", vendor.Name)
-	assert.Equal(t, models.VendorStatusTrial, vendor.Status, "new vendors start on trial")
+	assert.Equal(t, models.VendorStatusActive, vendor.Status, "new vendors start active (no free trial)")
 	assert.Equal(t, plan.Name, vendor.PlanName)
 	assert.Equal(t, int64(1), vendor.UsersCount, "owner login was created")
-	require.NotNil(t, vendor.RenewalDate, "trial end is set")
-	assert.True(t, vendor.RenewalDate.After(time.Now()))
+	assert.Nil(t, vendor.RenewalDate, "no free trial end date")
 
 	// The owner is an admin of the new org and can sign in.
 	var owner models.User
@@ -231,7 +229,7 @@ func TestApp_SuperAdmin_SuspendedVendorCannotSignIn(t *testing.T) {
 	bad := f.asSuperAdmin(testutil.NewJSONRequest(t, map[string]any{"status": "paused"}))
 	testutil.SetPathParam(bad, "id", vendor.ID.String())
 	require.NoError(t, f.app.SuperAdminUpdateVendor(bad))
-	testutil.AssertErrorResponse(t, bad, fasthttp.StatusBadRequest, "active, trial or suspended")
+	testutil.AssertErrorResponse(t, bad, fasthttp.StatusBadRequest, "active, suspended or pending_payment")
 }
 
 // --- Pages ---
@@ -356,12 +354,12 @@ func TestApp_SuperAdmin_ConfigAndMaintenanceMode(t *testing.T) {
 	require.NoError(t, f.app.SuperAdminGetConfig(get))
 	var cfg handlers.PlatformConfig
 	testutil.ParseEnvelopeResponse(t, get, &cfg)
-	assert.Equal(t, 14, cfg.TrialDays)
+	assert.Equal(t, 7, cfg.RenewalReminderDays)
 
 	// Validation.
-	bad := f.asSuperAdmin(testutil.NewJSONRequest(t, map[string]any{"trial_days": 999}))
+	bad := f.asSuperAdmin(testutil.NewJSONRequest(t, map[string]any{"renewal_reminder_days": 999}))
 	require.NoError(t, f.app.SuperAdminUpdateConfig(bad))
-	testutil.AssertErrorResponse(t, bad, fasthttp.StatusBadRequest, "Trial days")
+	testutil.AssertErrorResponse(t, bad, fasthttp.StatusBadRequest, "Renewal reminder days")
 
 	// The platform currency is always INR.
 	cur := f.asSuperAdmin(testutil.NewJSONRequest(t, map[string]any{"default_currency": "USD"}))
@@ -371,13 +369,13 @@ func TestApp_SuperAdmin_ConfigAndMaintenanceMode(t *testing.T) {
 
 	// Turn on maintenance mode (partial update keeps the other fields).
 	upd := f.asSuperAdmin(testutil.NewJSONRequest(t, map[string]any{
-		"maintenance_mode": true, "maintenance_message": "Back at 6pm", "trial_days": 30,
+		"maintenance_mode": true, "maintenance_message": "Back at 6pm", "renewal_reminder_days": 30,
 	}))
 	require.NoError(t, f.app.SuperAdminUpdateConfig(upd))
 	require.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(upd), string(testutil.GetResponseBody(upd)))
 	testutil.ParseEnvelopeResponse(t, upd, &cfg)
 	assert.True(t, cfg.MaintenanceMode)
-	assert.Equal(t, 30, cfg.TrialDays)
+	assert.Equal(t, 30, cfg.RenewalReminderDays)
 	assert.Equal(t, "onesuit", cfg.PlatformName)
 
 	// Members are blocked; super admins are not.

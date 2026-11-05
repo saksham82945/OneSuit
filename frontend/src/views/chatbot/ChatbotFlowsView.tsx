@@ -24,6 +24,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Workflow, Plus, Pencil, Trash2, Upload, Download, FileCode, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { FlowTypeBadge } from './FlowTypePicker';
+import { asChatFlowType } from './chatbotFlowTypes';
 
 // Item shape of GET /api/chatbot/flows -> data: { flows: [...], total, page, limit }.
 // The list doesn't include the graph, so there is no step count to show.
@@ -34,6 +36,7 @@ export interface ChatbotFlow {
   trigger_keywords?: string[] | null;
   steps_count?: number;
   enabled: boolean;
+  flow_type?: string;
   created_at: string;
 }
 
@@ -57,6 +60,7 @@ export const ChatbotFlowsView: React.FC = () => {
     name: string;
     description?: string;
     trigger_keywords?: string[];
+    flow_type?: string;
     graph?: any;
     nodeCount: number;
   } | null>(null);
@@ -124,6 +128,7 @@ export const ChatbotFlowsView: React.FC = () => {
         name: detail?.name || flow.name,
         description: detail?.description || flow.description || '',
         trigger_keywords: detail?.trigger_keywords || flow.trigger_keywords || [],
+        flow_type: detail?.flow_type || flow.flow_type || 'advanced',
         graph: detail?.graph || null,
         exported_at: new Date().toISOString(),
       };
@@ -162,6 +167,7 @@ export const ChatbotFlowsView: React.FC = () => {
           description: parsed.description || '',
           trigger_keywords: Array.isArray(parsed.trigger_keywords) ? parsed.trigger_keywords : [],
           graph,
+          flow_type: typeof parsed.flow_type === 'string' ? parsed.flow_type : undefined,
           nodeCount: nodes.length,
         });
       } catch (err) {
@@ -180,6 +186,7 @@ export const ChatbotFlowsView: React.FC = () => {
         name: importPreview.name,
         trigger_keywords: importPreview.trigger_keywords,
         graph: importPreview.graph,
+        flow_type: importPreview.flow_type,
         enabled: true,
       });
       toast.success(`Flow “${importPreview.name}” imported successfully`);
@@ -187,8 +194,8 @@ export const ChatbotFlowsView: React.FC = () => {
       setImportFile(null);
       setImportPreview(null);
       fetchFlows();
-    } catch {
-      toast.error('Failed to import flow');
+    } catch (err) {
+      toast.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to import flow');
     } finally {
       setIsImporting(false);
     }
@@ -207,8 +214,9 @@ export const ChatbotFlowsView: React.FC = () => {
           >
             {flow.name}
           </button>
-          <span className="text-xs text-white/40 truncate max-w-[280px] light:text-gray-400">
-            {flow.description || 'No description provided'}
+          <span className="flex items-center gap-2 text-xs text-white/40 truncate max-w-[280px] light:text-gray-400">
+            <FlowTypeBadge type={asChatFlowType(flow.flow_type)} />
+            {flow.description || ''}
           </span>
         </div>
       ),

@@ -19,7 +19,8 @@ type PresetAccount struct {
 	UseDemoOrg   bool
 }
 
-// DefaultPresetAccounts defines standard logins with password "admin123".
+// DefaultPresetAccounts defines the quick logins (password "admin123"):
+// super admin, admin, manager and explorer.
 var DefaultPresetAccounts = []PresetAccount{
 	{
 		Email:        "superadmin@login.com",
@@ -39,20 +40,6 @@ var DefaultPresetAccounts = []PresetAccount{
 		Email:        "manager@login.com",
 		FullName:     "Manager User",
 		RoleName:     "manager",
-		IsSuperAdmin: false,
-		UseDemoOrg:   false,
-	},
-	{
-		Email:        "agent@login.com",
-		FullName:     "Support Agent",
-		RoleName:     "agent",
-		IsSuperAdmin: false,
-		UseDemoOrg:   false,
-	},
-	{
-		Email:        "user@login.com",
-		FullName:     "Standard User",
-		RoleName:     "agent",
 		IsSuperAdmin: false,
 		UseDemoOrg:   false,
 	},
@@ -165,5 +152,14 @@ func EnsurePresetLoginUsers(db *gorm.DB) error {
 		"is_active":     true,
 	})
 
+	// Quick logins that were retired: switch them off so their known
+	// password stops working.
+	if err := db.Model(&models.User{}).Where("email IN ?", RetiredPresetEmails).
+		Update("is_active", false).Error; err != nil {
+		return fmt.Errorf("failed to disable retired preset logins: %w", err)
+	}
 	return nil
 }
+
+// RetiredPresetEmails are former quick logins that are now disabled.
+var RetiredPresetEmails = []string{"agent@login.com", "user@login.com"}

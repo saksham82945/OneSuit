@@ -184,7 +184,6 @@ export const ConfigurationView: React.FC<{ embedded?: boolean }> = ({ embedded }
         timezone: config.timezone.trim() || 'UTC',
         default_currency: 'INR',
         default_plan_id: config.default_plan_id,
-        trial_days: config.trial_days,
         renewal_reminder_days: config.renewal_reminder_days,
         allow_vendor_signup: config.allow_vendor_signup,
         require_email_verification: config.require_email_verification,
@@ -723,7 +722,7 @@ export const ConfigurationView: React.FC<{ embedded?: boolean }> = ({ embedded }
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-semibold">Subscription Defaults</CardTitle>
                   <CardDescription className="text-xs text-white/50 light:text-gray-500">
-                    Default plans and trial duration applied to new clients
+                    Default plan and renewal reminders for new clients
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -751,18 +750,6 @@ export const ConfigurationView: React.FC<{ embedded?: boolean }> = ({ embedded }
                     <Label className="text-xs font-medium">Currency</Label>
                     <Input value="₹ INR (Indian Rupee)" readOnly disabled className={fieldClass} />
                     <p className="text-[11px] text-white/40 light:text-gray-500">All plans and payments are in rupees.</p>
-                  </div>
-
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs font-medium">Free trial duration (days)</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={365}
-                      value={config.trial_days}
-                      onChange={(e) => update('trial_days', Number(e.target.value))}
-                      className={fieldClass}
-                    />
                   </div>
 
                   <div className="grid gap-1.5">

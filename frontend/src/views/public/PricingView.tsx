@@ -34,10 +34,9 @@ interface PlanCardProps {
   plan: PublicPlan;
   highlighted: boolean;
   signupEnabled: boolean;
-  trialDays: number;
 }
 
-const PlanCard: React.FC<PlanCardProps> = ({ plan, highlighted, signupEnabled, trialDays }) => {
+const PlanCard: React.FC<PlanCardProps> = ({ plan, highlighted, signupEnabled }) => {
   const suffix = intervalSuffix(plan);
   return (
     <div
@@ -116,7 +115,7 @@ const PlanCard: React.FC<PlanCardProps> = ({ plan, highlighted, signupEnabled, t
             )}
           >
             <Link to={`/signup?plan=${encodeURIComponent(plan.id)}`}>
-              {trialDays > 0 ? 'Start free trial' : 'Get started'}
+              {plan.price > 0 ? 'Buy now' : 'Get started'}
             </Link>
           </Button>
         ) : (
@@ -150,7 +149,6 @@ export const PricingView: React.FC = () => {
   const branding = useBranding();
   const platformName = branding.platform_name;
   const plans = info?.plans ?? [];
-  const trialDays = info?.trial_days ?? 0;
   const signupEnabled = info?.signup_enabled ?? true;
   const supportEmail = branding.support_email;
   const highlighted = highlightedPlanId(plans, info?.default_plan ?? '');
@@ -177,13 +175,6 @@ export const PricingView: React.FC = () => {
         <h1 className="mt-5 text-3xl font-bold tracking-tight text-white sm:text-5xl light:text-gray-900">
           {loading && !info ? (
             <span className="inline-block h-10 w-3/4 animate-pulse rounded-lg bg-white/[0.05] align-middle sm:h-12 light:bg-gray-50" />
-          ) : signupEnabled && trialDays > 0 ? (
-            <>
-              Start your {trialDays}-day free trial,{' '}
-              <span className="bg-gradient-to-r from-emerald-300 to-green-400 bg-clip-text text-transparent light:from-emerald-600 light:to-green-600">
-                no card needed
-              </span>
-            </>
           ) : (
             'Simple plans for every team'
           )}
@@ -292,7 +283,6 @@ export const PricingView: React.FC = () => {
                 plan={plan}
                 highlighted={plan.id === highlighted}
                 signupEnabled={signupEnabled}
-                trialDays={trialDays}
               />
             ))}
           </div>
@@ -300,9 +290,7 @@ export const PricingView: React.FC = () => {
 
         {plans.length > 0 && signupEnabled && (
           <p className="mt-10 text-center text-sm text-white/40 light:text-gray-500">
-            {trialDays > 0
-              ? `Every plan starts with a ${trialDays}-day free trial. No credit card required.`
-              : 'No credit card required to get started.'}
+            Create your account, pay securely by UPI, card or net banking, and start right away.
             {!exploring && (
               <>
                 {' '}

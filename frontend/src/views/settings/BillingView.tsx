@@ -17,6 +17,7 @@ import { billingService, type BillingInfo, type BillingInvoice } from '@/service
 import { readData } from '@/services/response';
 import { cn } from '@/lib/utils';
 import { checkoutPath } from '@/services/payments';
+import { planStatusLabel } from '@/services/dashboard';
 import { PaymentsSection } from '@/views/billing/PaymentsSection';
 
 // Billing: the workspace's real plan, usage and invoices from GET /api/billing.
@@ -117,7 +118,7 @@ export const BillingView: React.FC = () => {
   const statusColor =
     plan?.status === 'active'
       ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
-      : plan?.status === 'trial'
+      : plan?.status === 'pending_payment' || plan?.status === 'trial'
         ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30'
         : 'bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30';
 
@@ -152,7 +153,7 @@ export const BillingView: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Current Plan</span>
-                  {plan && <Badge className={cn('text-[10px] font-bold uppercase', statusColor)}>{plan.status}</Badge>}
+                  {plan && <Badge className={cn('text-[10px] font-bold uppercase', statusColor)}>{planStatusLabel(plan.status)}</Badge>}
                 </div>
                 <h3 className="text-2xl font-black text-gray-900 dark:text-white mt-2">{plan?.name || 'No plan yet'}</h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
@@ -161,6 +162,14 @@ export const BillingView: React.FC = () => {
                     : 'Choose a plan to unlock higher limits.'}
                   {plan?.renewal_date && ` · ${plan.days_left !== null && plan.days_left < 0 ? 'Expired' : 'Renews'} ${day(plan.renewal_date)}`}
                 </p>
+                {plan?.status === 'pending_payment' && (
+                  <p className="mt-2 text-xs font-medium text-blue-700 dark:text-blue-300">
+                    Your workspace is ready — complete your first payment to start using it.{' '}
+                    <button onClick={() => navigate(checkoutPath(undefined, billing?.billing_cycle))} className="font-semibold underline underline-offset-2">
+                      Pay now
+                    </button>
+                  </p>
+                )}
                 {plan?.days_left !== null && plan?.days_left !== undefined && plan.days_left >= 0 && plan.days_left <= 7 && (
                   <p className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-400">
                     {plan.days_left === 0 ? 'Your plan ends today.' : `Your plan ends in ${plan.days_left} day${plan.days_left === 1 ? '' : 's'}.`}{' '}

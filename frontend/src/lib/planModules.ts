@@ -44,15 +44,27 @@ const RAIL_MODULES: Record<string, PlanModuleKey[]> = {
   flows: ['chatbot', 'ai_agents'],
 };
 
-let cache: { userId: string; modules: PlanModules } | null = null;
-let inflight: Promise<PlanModules> | null = null;
+interface PlanState {
+  modules: PlanModules;
+  /** The workspace signed up for a paid plan and hasn't paid yet. */
+  pendingPayment: boolean;
+}
 
-function fetchModules(): Promise<PlanModules> {
+const EMPTY: PlanState = { modules: {}, pendingPayment: false };
+
+let cache: { userId: string; state: PlanState } | null = null;
+let inflight: Promise<PlanState> | null = null;
+const listeners = new Set<() => void>();
+
+function fetchModules(): Promise<PlanState> {
   if (!inflight) {
     inflight = api
       .get('/plan/modules')
-      .then((r) => readData<{ modules: PlanModules }>(r)?.modules ?? {})
-      .catch(() => ({}))
+      .then((r) => {
+        const d = readData<{ modules?: PlanModules; pending_payment?: boolean }>(r);
+        return { modules: d?.modules ?? {}, pendingPayment: d?.pending_payment === true };
+      })
+      .catch(() => EMPTY)
       .finally(() => {
         inflight = null;
       });
@@ -60,27 +72,45 @@ function fetchModules(): Promise<PlanModules> {
   return inflight;
 }
 
+/** Drops the cached plan state and reloads it in every mounted usePlanModules (e.g. after a payment). */
+export function refreshPlanModules() {
+  cache = null;
+  listeners.forEach((l) => l());
+}
+
 /** The current workspace's module switches; everything is on until loaded. */
 export function usePlanModules() {
   const user = useAuthStore((s) => s.user);
   const key = user ? `${user.id}:${user.organization_id ?? ''}` : '';
-  const [modules, setModules] = useState<PlanModules>(cache?.userId === key ? cache.modules : {});
+  const [state, setState] = useState<PlanState>(cache?.userId === key ? cache.state : EMPTY);
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    const bump = () => setVersion((v) => v + 1);
+    listeners.add(bump);
+    return () => {
+      listeners.delete(bump);
+    };
+  }, []);
 
   useEffect(() => {
     if (!key) return;
     let alive = true;
-    void fetchModules().then((m) => {
-      cache = { userId: key, modules: m };
-      if (alive) setModules(m);
+    void fetchModules().then((next) => {
+      cache = { userId: key, state: next };
+      if (alive) setState(next);
     });
     return () => {
       alive = false;
     };
-  }, [key]);
+  }, [key, version]);
+
+  const { modules, pendingPayment } = state;
 
   const isOn = (m?: PlanModuleKey) => !m || modules[m] !== false;
   return {
     modules,
+    pendingPayment,
     isOn,
     pathAllowed: (path: string) => isOn(moduleForPath(path)),
     railAllowed: (railId: string) => {

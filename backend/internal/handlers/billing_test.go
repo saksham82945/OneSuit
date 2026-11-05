@@ -73,8 +73,8 @@ func TestApp_Billing_InvoiceForEachPaidPlanPeriod(t *testing.T) {
 	f.updateVendor(t, vendor.ID, map[string]any{"renewal_date": time.Now().AddDate(0, 2, 0).Format("2006-01-02")})
 	assert.Len(t, f.billing(t, vendor.ID).Invoices, 2)
 
-	// A trial isn't billed.
-	trial := f.createVendor(t, map[string]any{"name": "Trial Vendor " + uuid.NewString()[:6], "plan_id": plan.ID.String(), "status": "trial"})
+	// A workspace waiting for its first payment isn't billed yet.
+	trial := f.createVendor(t, map[string]any{"name": "Trial Vendor " + uuid.NewString()[:6], "plan_id": plan.ID.String(), "status": "pending_payment"})
 	assert.Empty(t, f.billing(t, trial.ID).Invoices)
 
 	// Another workspace's invoices never show.

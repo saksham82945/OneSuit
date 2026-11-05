@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance, type AxiosError, type InternalAxiosRequestConfig } from 'axios'
+import { CHECKOUT_PATH, pathOpenWhilePendingPayment } from '@/lib/pendingPayment'
 
 // Get base path from server-injected config or fallback
 const basePath = ((window as any).__BASE_PATH__ ?? '').replace(/\/$/, '')
@@ -111,11 +112,27 @@ async function refreshAccessToken(): Promise<void> {
   }
 }
 
+// 402: the workspace signed up for a paid plan and hasn't paid yet. Send the user to
+// checkout once per page load (several requests can fail together; no loops, no toasts).
+let sentToCheckout = false
+
+function openCheckoutForPayment() {
+  const path = window.location.pathname.slice(basePath.length) || '/'
+  if (sentToCheckout || pathOpenWhilePendingPayment(path)) return
+  sentToCheckout = true
+  window.location.assign(basePath + CHECKOUT_PATH)
+}
+
 // Response interceptor for error handling
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
+
+    if (error.response?.status === 402) {
+      openCheckoutForPayment()
+      return Promise.reject(error)
+    }
 
     // Skip token refresh logic for auth endpoints
     const isAuthEndpoint = originalRequest?.url?.startsWith('/auth/')
@@ -425,6 +442,15 @@ export const chatbotService = {
   createFlow: (data: any) => api.post('/chatbot/flows', data),
   updateFlow: (id: string, data: any) => api.put(`/chatbot/flows/${id}`, data),
   deleteFlow: (id: string) => api.delete(`/chatbot/flows/${id}`),
+  /** Stores a bot-reply media file; returns { media_path, file, filename, mime_type, media_type, size }. */
+  uploadFlowMedia: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/chatbot/flows/media', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+  /** An uploaded bot-reply media file (by its file name) for previews. */
+  getFlowMedia: (file: string) =>
+    api.get<Blob>(`/chatbot/flows/media/${encodeURIComponent(file)}`, { responseType: 'blob' }),
 
   // AI Contexts
   listAIContexts: (params?: { search?: string; page?: number; limit?: number }) =>
@@ -1169,6 +1195,7 @@ export interface IVRFlowData {
 // implemented today; others land in Phase 3.
 export type ChatNodeType =
   | 'start'
+  | 'reply'
   | 'message'
   | 'buttons'
   | 'end'

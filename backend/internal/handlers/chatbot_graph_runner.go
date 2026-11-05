@@ -197,6 +197,8 @@ func (a *App) executeChatNode(node *ChatNode, ctx *chatNodeCtx) (nodeOutcome, er
 		return nodeOutcome{outcome: "default"}, nil
 	case ChatNodeMessage:
 		return a.execChatMessage(node, ctx)
+	case ChatNodeReply:
+		return a.execChatReply(node, ctx)
 	case ChatNodeButtons:
 		return a.execChatButtons(node, ctx)
 	case ChatNodePrompt:

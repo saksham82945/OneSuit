@@ -477,6 +477,7 @@ const PlanCard: React.FC<{ plan: PublicPlan; cycle: BillingInterval; featured: b
       <div className="pt-8">
         <Link
           to={`/signup?plan=${plan.id}`}
+          aria-label={`${plan.price > 0 ? 'Buy' : 'Get started with'} ${plan.name}`}
           className={cn(
             'block w-full text-center rounded-full py-3 text-sm font-bold transition-all',
             featured
@@ -484,7 +485,7 @@ const PlanCard: React.FC<{ plan: PublicPlan; cycle: BillingInterval; featured: b
               : 'border border-gray-300 dark:border-white/20 text-gray-700 dark:text-gray-200 hover:border-[#27c462] hover:text-[#27c462]'
           )}
         >
-          Choose {plan.name}
+          {plan.price > 0 ? 'Buy now' : 'Get started'}
         </Link>
       </div>
     </div>

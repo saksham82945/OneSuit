@@ -66,15 +66,30 @@ const priorityStyles = {
 
 const statusStyles: Record<string, string> = {
   active: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+  pending_payment: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
   trial: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
   suspended: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
 };
 
+const statusLabels: Record<string, string> = {
+  pending_payment: 'Awaiting payment',
+  trial: 'Trial (legacy)',
+};
+
 const StatusPill: React.FC<{ status: string }> = ({ status }) => (
-  <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize', statusStyles[status] ?? statusStyles.active)}>
-    {status}
+  <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize whitespace-nowrap', statusStyles[status] ?? statusStyles.active)}>
+    {statusLabels[status] ?? status}
   </span>
 );
+
+/** "N awaiting payment · N suspended" (plus any legacy trials) for the clients card. */
+const clientsHint = (d: SuperAdminDashboard) => {
+  // The backend counts active, (legacy) trial and suspended; everyone else is awaiting payment.
+  const awaiting = Math.max(0, d.total_vendors - d.active_vendors - d.trial_vendors - d.suspended_vendors);
+  const parts = [`${awaiting} awaiting payment`, `${d.suspended_vendors} suspended`];
+  if (d.trial_vendors > 0) parts.push(`${d.trial_vendors} legacy trial`);
+  return parts.join(' · ');
+};
 
 const reminderHref = (email: string, client: string, plan: string, date: string) =>
   `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(`Your ${plan || 'plan'} renews soon`)}&body=${encodeURIComponent(
@@ -150,7 +165,7 @@ export const SuperAdminDashboardView: React.FC = () => {
                 value={formatCount(data.total_vendors)}
                 icon={Building2}
                 tone="purple"
-                hint={`${data.trial_vendors} on trial · ${data.suspended_vendors} suspended`}
+                hint={clientsHint(data)}
                 to="/super-admin/clients"
               />
               <StatCard

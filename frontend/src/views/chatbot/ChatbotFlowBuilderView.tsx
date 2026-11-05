@@ -1,45 +1,33 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   ReactFlow,
-  Controls,
   Background,
-  useNodesState,
-  useEdgesState,
-  addEdge,
-  Connection,
-  Edge,
-  Handle,
-  Position,
   BackgroundVariant,
+  Controls,
+  MiniMap,
+  addEdge,
+  useEdgesState,
+  useNodesState,
+  type Connection,
+  type Edge,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { chatbotService, type ChatFlowGraph } from '@/services/api';
 import {
-  START_NODE_ID,
-  canvasToGraph,
-  edgesAfterButtonRemoved,
-  graphToCanvas,
-  startNode,
-  type BuilderNode,
-  type BuilderNodeData,
-  type FlowButton,
-  type FlowButtonType,
-} from './chatbotFlowGraph';
-import { readData } from '@/services/response';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Save,
-  Play,
-  MessageSquare,
-  HelpCircle,
+  ArrowLeft,
+  ArrowRight,
+  ChevronDown,
+  Download,
   Globe,
+  Loader2,
+  MoreHorizontal,
+  Plus,
+  Save,
+  Trash2,
+  Upload,
   UserX,
   X,
-  Trash2,
+  Zap,
   Link2,
   PhoneCall,
   Phone,
@@ -47,229 +35,76 @@ import {
   CheckCircle2,
   Copy,
   Share2,
-  Zap,
-  Upload,
-  Download,
-  ChevronDown,
-  ChevronUp,
   type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { chatbotService, type ChatFlowGraph } from '@/services/api';
+import { readData } from '@/services/response';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-
-const BUTTON_TYPE_META: Record<FlowButtonType, { label: string; icon: LucideIcon; color: string; description: string; maxCount: number }> = {
-  quick_reply:      { label: 'Quick Reply',       icon: Zap,          color: 'text-purple-400',  description: 'Simple text reply button',               maxCount: 3 },
-  link:             { label: 'Link',              icon: Link2,        color: 'text-blue-400',    description: 'Opens a URL in the browser',               maxCount: 2 },
-  callback_request: { label: 'Request Callback',  icon: PhoneCall,    color: 'text-emerald-400', description: 'Customer requests a phone callback',       maxCount: 1 },
-  call_number:      { label: 'Call Number',       icon: Phone,        color: 'text-cyan-400',    description: 'Dials a phone number directly',            maxCount: 1 },
-  call_whatsapp:    { label: 'Call on WhatsApp',  icon: MessageCircle,color: 'text-green-400',   description: 'Starts a WhatsApp voice call',             maxCount: 1 },
-  complete_flow:    { label: 'Complete Flow',     icon: CheckCircle2, color: 'text-amber-400',   description: 'Marks the conversation flow as complete',  maxCount: 1 },
-  copy_code:        { label: 'Copy Code',         icon: Copy,         color: 'text-orange-400',  description: 'Copies a promo/discount code',             maxCount: 1 },
-  share_info:       { label: 'Share Info',        icon: Share2,       color: 'text-rose-400',    description: 'Shares an info card or message',           maxCount: 1 },
-};
-
-const MAX_BUTTONS = 10;
-
-// ─── Canvas Node Components ───────────────────────────────────────────────────
-const StartNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => (
-  <div className="rounded-xl border border-emerald-500/40 bg-[#16231a] px-4 py-2.5 shadow-xl min-w-[160px] text-white light:bg-emerald-50 light:text-gray-900">
-    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
-      <Play className="h-3.5 w-3.5 fill-current" />
-      <span>{data.label || 'Trigger / Start'}</span>
-    </div>
-    <div className="text-[10px] text-white/50 mt-1 light:text-gray-500">Starts on a trigger keyword</div>
-    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-emerald-500 border-2 border-white" />
-  </div>
-);
-
-const TextNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => (
-  <div className="rounded-xl border border-white/[0.1] bg-[#1a1a1c] p-3 shadow-xl min-w-[200px] max-w-[260px] text-white light:border-gray-200 light:bg-white light:text-gray-900">
-    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500 border-2 border-white" />
-    <div className="flex items-center gap-2 text-xs font-semibold text-blue-400 pb-1 border-b border-white/[0.08] light:border-gray-200">
-      <MessageSquare className="h-3.5 w-3.5" />
-      <span>Send Message</span>
-    </div>
-    <p className="text-xs text-white/80 mt-2 line-clamp-3 leading-relaxed light:text-gray-800">
-      {data.message || 'Hello! How can we help you today?'}
-    </p>
-    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-blue-500 border-2 border-white" />
-  </div>
-);
-
-const ButtonsNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => {
-  const displayButtons: FlowButton[] = data.flowButtons || [];
-  return (
-    <div className="rounded-xl border border-purple-500/40 bg-[#21162b] p-3 shadow-xl min-w-[220px] text-white light:bg-purple-50 light:text-gray-900">
-      <Handle type="target" position={Position.Top} className="w-3 h-3 bg-purple-500 border-2 border-white" />
-      <div className="flex items-center gap-2 text-xs font-semibold text-purple-400 pb-1 border-b border-white/[0.08] light:border-gray-200">
-        <HelpCircle className="h-3.5 w-3.5" />
-        <span>Interactive Buttons</span>
-        <span className="ml-auto text-[10px] text-white/30 light:text-gray-400">{displayButtons.length}/{MAX_BUTTONS}</span>
-      </div>
-      <p className="text-xs text-white/80 mt-2 mb-2 light:text-gray-800">{data.question || 'Please select an option:'}</p>
-      <div className="space-y-1.5">
-        {displayButtons.map((btn, i) => {
-          const meta = BUTTON_TYPE_META[btn.type as FlowButtonType] || BUTTON_TYPE_META.quick_reply;
-          const BtnIcon = meta.icon;
-          return (
-            <div key={btn.id || i} className="relative rounded-lg bg-white/[0.06] px-2.5 py-1.5 text-xs text-white/90 flex items-center gap-2 light:bg-gray-100 light:text-gray-800">
-              <BtnIcon className={cn('h-3 w-3 shrink-0', meta.color)} />
-              <span className="truncate flex-1">{btn.title || meta.label}</span>
-              <Handle
-                id={`btn-${i}`}
-                type="source"
-                position={Position.Right}
-                className="w-2.5 h-2.5 bg-purple-400 border border-white"
-                style={{ top: '50%' }}
-              />
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
-const ApiNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => (
-  <div className="rounded-xl border border-amber-500/40 bg-[#261d12] p-3 shadow-xl min-w-[200px] text-white light:bg-amber-50 light:text-gray-900">
-    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-amber-500 border-2 border-white" />
-    <div className="flex items-center gap-2 text-xs font-semibold text-amber-400 pb-1 border-b border-white/[0.08] light:border-gray-200">
-      <Globe className="h-3.5 w-3.5" />
-      <span>HTTP Webhook API</span>
-    </div>
-    <p className="text-[11px] font-mono text-white/70 mt-1 truncate light:text-gray-600">
-      {data.url || 'https://api.crm.com/v1/lead'}
-    </p>
-    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-amber-500 border-2 border-white" />
-  </div>
-);
-
-const TransferNode: React.FC<{ data: BuilderNodeData }> = ({ data }) => (
-  <div className="rounded-xl border border-rose-500/40 bg-[#261217] p-3 shadow-xl min-w-[180px] text-white light:bg-rose-50 light:text-gray-900">
-    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-rose-500 border-2 border-white" />
-    <div className="flex items-center gap-2 text-xs font-semibold text-rose-400">
-      <UserX className="h-3.5 w-3.5" />
-      <span>Agent Handover</span>
-    </div>
-    <div className="text-[10px] text-white/50 mt-1 light:text-gray-500">Queue: {data.queue || 'Support Tier 1'}</div>
-  </div>
-);
-
-// ─── Button Inspector Row ─────────────────────────────────────────────────────
-const ButtonInspectorRow: React.FC<{
-  btn: FlowButton;
-  meta: typeof BUTTON_TYPE_META[FlowButtonType];
-  BtnIcon: LucideIcon;
-  onUpdate: (patch: Partial<FlowButton>) => void;
-  onRemove: () => void;
-}> = ({ btn, meta, BtnIcon, onUpdate, onRemove }) => {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] overflow-hidden light:border-gray-200 light:bg-gray-50">
-      {/* Row header */}
-      <div className="flex items-center gap-2 px-2.5 py-2">
-        <BtnIcon className={cn('h-3.5 w-3.5 shrink-0', meta.color)} />
-        <Input
-          value={btn.title}
-          onChange={(e) => onUpdate({ title: e.target.value })}
-          placeholder={meta.label}
-          className="h-7 text-xs flex-1 bg-transparent border-transparent hover:border-white/10 focus:border-emerald-500 px-0"
-        />
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="text-white/30 hover:text-white/70 transition-colors p-0.5 light:text-gray-400 light:hover:text-gray-900"
-        >
-          {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        </button>
-        <button
-          onClick={onRemove}
-          className="text-white/20 hover:text-rose-400 transition-colors p-0.5 light:text-gray-300"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
-      </div>
-      {/* Expanded config fields */}
-      {expanded && (
-        <div className="px-2.5 pb-2.5 pt-1 border-t border-white/[0.06] space-y-2 light:border-gray-200">
-          <p className="text-[10px] text-white/30 light:text-gray-400">{meta.description}</p>
-          {(btn.type === 'link') && (
-            <div>
-              <Label className="text-[10px] text-white/50 light:text-gray-500">URL</Label>
-              <Input
-                value={btn.url || ''}
-                onChange={(e) => onUpdate({ url: e.target.value })}
-                placeholder="https://example.com"
-                className="h-7 text-xs mt-0.5"
-              />
-            </div>
-          )}
-          {(btn.type === 'call_number' || btn.type === 'call_whatsapp' || btn.type === 'callback_request') && (
-            <div>
-              <Label className="text-[10px] text-white/50 light:text-gray-500">{btn.type === 'callback_request' ? 'Callback Number (optional)' : 'Phone Number'}</Label>
-              <Input
-                value={btn.phone || ''}
-                onChange={(e) => onUpdate({ phone: e.target.value })}
-                placeholder="+91 98765 43210"
-                className="h-7 text-xs mt-0.5"
-              />
-            </div>
-          )}
-          {btn.type === 'copy_code' && (
-            <div>
-              <Label className="text-[10px] text-white/50 light:text-gray-500">Code / Coupon</Label>
-              <Input
-                value={btn.code || ''}
-                onChange={(e) => onUpdate({ code: e.target.value })}
-                placeholder="SAVE20"
-                className="h-7 text-xs mt-0.5"
-              />
-            </div>
-          )}
-          {btn.type === 'share_info' && (
-            <div>
-              <Label className="text-[10px] text-white/50 light:text-gray-500">Info / Message</Label>
-              <Textarea
-                rows={2}
-                value={btn.info || ''}
-                onChange={(e) => onUpdate({ info: e.target.value })}
-                placeholder="Info to share with the user..."
-                className="text-xs mt-0.5"
-              />
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
+import {
+  START_NODE_ID,
+  canvasToGraph,
+  edgesAfterButtonRemoved,
+  edgesAfterReplyChanged,
+  graphToCanvas,
+  startNode,
+  type BuilderNode,
+  type BuilderNodeData,
+  type FlowButton,
+  type FlowButtonType,
+} from './chatbotFlowGraph';
+import {
+  CHAT_FLOW_TYPE_INFO,
+  REPLY_KIND_LABEL,
+  asChatFlowType,
+  newOptionId,
+  newReply,
+  replyKindsFor,
+  validateReply,
+  type BotReply,
+  type ChatFlowType,
+  type ReplyKind,
+} from './chatbotFlowTypes';
+import { BotReplyEditor } from './BotReplyEditor';
+import { FlowTypeBadge, FlowTypePicker } from './FlowTypePicker';
+import { FlowBuilderContext, type FlowBuilderActions } from './flowBuilderContext';
+import { ApiNode, ButtonsNode, OtherNode, ReplyNode, StartNode, TextNode, TransferNode } from './FlowCanvasNodes';
 
 const nodeTypes = {
   startNode: StartNode,
+  replyNode: ReplyNode,
   textNode: TextNode,
   buttonsNode: ButtonsNode,
   apiNode: ApiNode,
   transferNode: TransferNode,
+  default: OtherNode,
 };
 
-
-// Starter canvas for a new flow. Everything here is saved as-is, so it holds no sample URLs or queues.
-const initialNodes: BuilderNode[] = [
-  startNode(),
-  {
-    id: 'welcome',
-    type: 'textNode',
-    position: { x: 220, y: 160 },
-    data: { message: 'Hello! Welcome to onesuit support. How can we help you today?' },
-  },
-];
-
-const initialEdges: Edge[] = [
-  { id: 'e-start-welcome', source: START_NODE_ID, target: 'welcome', animated: true, style: { stroke: '#10b981', strokeWidth: 2 } },
-];
+const EDGE_STYLE = { stroke: '#10b981', strokeWidth: 2 };
+const styleEdge = (e: Edge): Edge => ({ ...e, type: 'default', animated: false, style: EDGE_STYLE });
 
 /** The backend's `{ status: 'error', message }` text, if the request got that far. */
 const apiErrorMessage = (err: unknown, fallback: string): string =>
   (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
+
+const parseKeywords = (s: string) =>
+  s
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean);
 
 // Fields of GET /api/chatbot/flows/:id this screen uses (the raw model: note `is_enabled`, `graph`).
 interface ChatbotFlowDetail {
@@ -277,27 +112,249 @@ interface ChatbotFlowDetail {
   name: string;
   trigger_keywords?: string[] | null;
   is_enabled?: boolean;
+  flow_type?: string;
   graph?: ChatFlowGraph | null;
 }
 
-export const ChatbotFlowBuilderView: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+/** Steps only Advanced bots may hold. */
+const ADVANCED_ONLY_NODES = new Set(['apiNode', 'transferNode', 'default']);
 
-  const [flowName, setFlowName] = useState('New Customer Welcome Sequence');
+// ─── New flow: choose the bot type, then name + keywords ──────────────────────
+
+const starterGraph = (): ChatFlowGraph => {
+  const welcome: BuilderNode = {
+    id: 'welcome',
+    type: 'replyNode',
+    position: { x: 320, y: 80 },
+    data: { label: 'Welcome', reply: newReply('text') },
+  };
+  const start = { ...startNode(), position: { x: 0, y: 100 } };
+  return canvasToGraph([start, welcome], [{ id: 'e0', source: START_NODE_ID, target: 'welcome' }], START_NODE_ID);
+};
+
+const NewFlowSetup: React.FC = () => {
+  const navigate = useNavigate();
+  const [flowType, setFlowType] = useState<ChatFlowType | null>(null);
+  const [name, setName] = useState('');
+  const [keywords, setKeywords] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const create = async () => {
+    if (!flowType) return;
+    if (!name.trim()) {
+      toast.error('Give the bot a name');
+      return;
+    }
+    setCreating(true);
+    try {
+      const res = await chatbotService.createFlow({
+        name: name.trim(),
+        trigger_keywords: parseKeywords(keywords),
+        flow_type: flowType,
+        enabled: true,
+        graph: starterGraph(),
+      });
+      const created = readData<{ id?: string }>(res);
+      toast.success(`${CHAT_FLOW_TYPE_INFO[flowType].title} created`);
+      navigate(created?.id ? `/chatbot/flows/${created.id}/edit` : '/chatbot/flows', { replace: true });
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'Failed to create flow'));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="h-full overflow-y-auto bg-[#0a0a0b] light:bg-gray-50">
+      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
+        <button
+          onClick={() => navigate('/chatbot/flows')}
+          className="mb-6 inline-flex items-center gap-1.5 text-xs text-white/50 hover:text-white light:text-gray-500 light:hover:text-gray-900"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" /> Back to Bot Flows
+        </button>
+        <h1 className="text-xl font-bold text-white light:text-gray-900 sm:text-2xl">Create a bot flow</h1>
+        <p className="mt-1 text-sm text-white/50 light:text-gray-500">
+          Pick what this bot may send. You can build it on the canvas right after.
+        </p>
+
+        <div className="mt-6">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-emerald-400">1 · Bot type</div>
+          <FlowTypePicker value={flowType} onChange={setFlowType} />
+        </div>
+
+        <div className={cn('mt-8 transition-opacity', !flowType && 'pointer-events-none opacity-40')}>
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-emerald-400">2 · Name & trigger</div>
+          <div className="grid gap-4 rounded-2xl border border-white/[0.08] bg-[#141416] p-4 sm:grid-cols-2 light:border-gray-200 light:bg-white">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Bot name</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Store assistant" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Trigger keywords</Label>
+              <Input value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="hi, hello, menu" />
+              <p className="text-[11px] text-white/40 light:text-gray-500">Comma-separated. The bot starts when a customer sends one.</p>
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Button className="bg-emerald-600 text-white hover:bg-emerald-500" disabled={!flowType || creating} onClick={create}>
+              {creating ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-1.5 h-4 w-4" />}
+              Create & open builder
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Classic step inspector (message / buttons / webhook / transfer) ─────────
+
+const BUTTON_TYPE_META: Record<FlowButtonType, { label: string; icon: LucideIcon; link: boolean }> = {
+  quick_reply: { label: 'Quick Reply', icon: Zap, link: false },
+  link: { label: 'Link', icon: Link2, link: true },
+  callback_request: { label: 'Request Callback', icon: PhoneCall, link: false },
+  call_number: { label: 'Call Number', icon: Phone, link: true },
+  call_whatsapp: { label: 'Call on WhatsApp', icon: MessageCircle, link: true },
+  complete_flow: { label: 'Complete Flow', icon: CheckCircle2, link: false },
+  copy_code: { label: 'Copy Code', icon: Copy, link: false },
+  share_info: { label: 'Share Info', icon: Share2, link: false },
+};
+
+const ClassicInspector: React.FC<{
+  node: BuilderNode;
+  flowType: ChatFlowType;
+  onChange: (data: Partial<BuilderNodeData>) => void;
+  onButtonRemoved: (index: number) => void;
+  onClose: () => void;
+}> = ({ node, flowType, onChange, onButtonRemoved, onClose }) => {
+  const d = node.data;
+  const buttons = d.flowButtons || [];
+  const allowedTypes = (Object.keys(BUTTON_TYPE_META) as FlowButtonType[]).filter(
+    (t) => flowType === 'advanced' || !BUTTON_TYPE_META[t].link
+  );
+  return (
+    <aside className="absolute inset-y-0 right-0 z-20 flex w-full flex-col gap-4 overflow-y-auto border-l border-white/[0.08] bg-[#141416] p-4 sm:w-80 light:border-gray-200 light:bg-white">
+      <div className="flex items-center justify-between border-b border-white/[0.08] pb-2 light:border-gray-200">
+        <span className="text-xs font-semibold text-white light:text-gray-900">Edit step</span>
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Step name</Label>
+        <Input value={d.label || ''} onChange={(e) => onChange({ label: e.target.value })} />
+      </div>
+      {node.type === 'textNode' && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Message</Label>
+          <Textarea rows={5} value={d.message || ''} onChange={(e) => onChange({ message: e.target.value })} />
+        </div>
+      )}
+      {node.type === 'buttonsNode' && (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Question</Label>
+            <Input value={d.question || ''} onChange={(e) => onChange({ question: e.target.value })} />
+          </div>
+          {buttons.map((b, i) => {
+            const meta = BUTTON_TYPE_META[b.type] || BUTTON_TYPE_META.quick_reply;
+            return (
+              <div key={b.id} className="space-y-1.5 rounded-lg border border-white/[0.08] p-2 light:border-gray-200">
+                <div className="flex items-center gap-2">
+                  <meta.icon className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                  <Input
+                    value={b.title}
+                    onChange={(e) => onChange({ flowButtons: buttons.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })}
+                    className="h-7 text-xs"
+                  />
+                  <button
+                    className="text-white/30 hover:text-rose-400 light:text-gray-400"
+                    onClick={() => {
+                      onChange({ flowButtons: buttons.filter((_, j) => j !== i) });
+                      onButtonRemoved(i);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                {b.type === 'link' && (
+                  <Input
+                    value={b.url || ''}
+                    placeholder="https://"
+                    onChange={(e) => onChange({ flowButtons: buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)) })}
+                    className="h-7 text-xs"
+                  />
+                )}
+                {(b.type === 'call_number' || b.type === 'call_whatsapp') && (
+                  <Input
+                    value={b.phone || ''}
+                    placeholder="+91 98765 43210"
+                    onChange={(e) => onChange({ flowButtons: buttons.map((x, j) => (j === i ? { ...x, phone: e.target.value } : x)) })}
+                    className="h-7 text-xs"
+                  />
+                )}
+              </div>
+            );
+          })}
+          {buttons.length < 10 && (
+            <div className="grid grid-cols-2 gap-1.5">
+              {allowedTypes.map((t) => {
+                const meta = BUTTON_TYPE_META[t];
+                return (
+                  <button
+                    key={t}
+                    onClick={() =>
+                      onChange({ flowButtons: [...buttons, { id: `btn_${node.id}_${Date.now()}`, type: t, title: meta.label } as FlowButton] })
+                    }
+                    className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-2 py-1.5 text-[11px] text-white/70 hover:bg-white/[0.04] light:border-gray-200 light:text-gray-600 light:hover:bg-gray-50"
+                  >
+                    <meta.icon className="h-3 w-3 text-emerald-400" />
+                    {meta.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      {node.type === 'apiNode' && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Request URL</Label>
+          <Input value={d.url || ''} onChange={(e) => onChange({ url: e.target.value })} placeholder="https://api.example.com/hook" />
+          <p className="text-[11px] text-white/40 light:text-gray-500">Sends a POST with the conversation data, then continues.</p>
+        </div>
+      )}
+      {node.type === 'transferNode' && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Queue / department</Label>
+          <Input value={d.queue || ''} onChange={(e) => onChange({ queue: e.target.value })} />
+          <p className="text-[11px] text-white/40 light:text-gray-500">Ends the bot and hands the chat to an agent.</p>
+        </div>
+      )}
+    </aside>
+  );
+};
+
+// ─── Flow editor ──────────────────────────────────────────────────────────────
+
+const FlowEditor: React.FC<{ id: string }> = ({ id }) => {
+  const navigate = useNavigate();
+  const [flowName, setFlowName] = useState('');
   const [triggerKeywords, setTriggerKeywords] = useState('');
-  const [nodes, setNodes, onNodesChange] = useNodesState<BuilderNode>(id ? [] : initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(id ? [] : initialEdges);
-  const [selectedNode, setSelectedNode] = useState<BuilderNode | null>(null);
+  const [flowType, setFlowType] = useState<ChatFlowType>('advanced');
+  const [enabled, setEnabled] = useState(true);
+  const [nodes, setNodes, onNodesChange] = useNodesState<BuilderNode>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [entryNodeId, setEntryNodeId] = useState(START_NODE_ID);
-  const [isLoading, setIsLoading] = useState(!!id);
+  const [isLoading, setIsLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
+  const [inspectorId, setInspectorId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load the flow being edited. The canvas mounts only after this so fitView sees its nodes.
   useEffect(() => {
-    if (!id) return;
     let cancelled = false;
     setIsLoading(true);
     setLoadFailed(false);
@@ -309,10 +366,11 @@ export const ChatbotFlowBuilderView: React.FC = () => {
         const canvas = graphToCanvas(flow?.graph);
         setFlowName(flow?.name || '');
         setTriggerKeywords((flow?.trigger_keywords || []).join(', '));
+        setFlowType(asChatFlowType(flow?.flow_type));
+        setEnabled(flow?.is_enabled ?? true);
         setNodes(canvas.nodes);
-        setEdges(canvas.edges);
+        setEdges(canvas.edges.map(styleEdge));
         setEntryNodeId(canvas.entry);
-        setSelectedNode(null);
       })
       .catch(() => {
         if (cancelled) return;
@@ -327,57 +385,129 @@ export const ChatbotFlowBuilderView: React.FC = () => {
     };
   }, [id, setNodes, setEdges]);
 
+  const keywords = useMemo(() => parseKeywords(triggerKeywords), [triggerKeywords]);
+
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge({ ...params, animated: true }, eds)),
+    (params: Connection) =>
+      // Each output (button, list row, or a reply's single "next") leads to one step.
+      setEdges((eds) =>
+        addEdge(
+          { ...params, type: 'default', style: EDGE_STYLE },
+          eds.filter((e) => !(e.source === params.source && (e.sourceHandle ?? null) === (params.sourceHandle ?? null)))
+        )
+      ),
     [setEdges]
   );
 
-  const addNode = (type: string) => {
-    const newId = `node-${Date.now()}`;
-    const newNode: BuilderNode = {
+  const nextPosition = useCallback(() => {
+    const maxX = nodes.reduce((m, n) => Math.max(m, n.position.x), 0);
+    return { x: maxX + 320, y: 80 + Math.random() * 120 };
+  }, [nodes]);
+
+  const addReply = (kind: ReplyKind) => {
+    const newId = `reply-${Date.now().toString(36)}`;
+    const node: BuilderNode = {
+      id: newId,
+      type: 'replyNode',
+      position: nextPosition(),
+      data: { label: REPLY_KIND_LABEL[kind], reply: newReply(kind) },
+    };
+    setNodes((nds) => [...nds, node]);
+    setEditingReplyId(newId);
+  };
+
+  const addAdvancedStep = (type: 'apiNode' | 'transferNode') => {
+    const newId = `${type === 'apiNode' ? 'webhook' : 'transfer'}-${Date.now().toString(36)}`;
+    const node: BuilderNode = {
       id: newId,
       type,
-      position: { x: 300 + Math.random() * 50, y: 250 + Math.random() * 50 },
-      data:
-        type === 'textNode'
-          ? { message: 'Type your message here...' }
-          : type === 'buttonsNode'
-          ? {
-              question: 'Choose an option:',
-              flowButtons: [
-                { id: `btn_${newId}_0`, type: 'quick_reply', title: 'Option A' },
-                { id: `btn_${newId}_1`, type: 'quick_reply', title: 'Option B' },
-              ],
-            }
-          : type === 'apiNode'
-          ? { url: 'https://api.service.com/endpoint' }
-          : { queue: 'General Queue' },
+      position: nextPosition(),
+      data: type === 'apiNode' ? { label: 'Webhook', url: 'https://', backendType: 'webhook' } : { label: 'Transfer to agent', queue: '' },
     };
-    setNodes((nds) => [...nds, newNode]);
-    toast.success('Node added to canvas');
+    setNodes((nds) => [...nds, node]);
+    setInspectorId(newId);
   };
 
-  const onNodeClick = (_: React.MouseEvent, node: BuilderNode) => {
-    setSelectedNode(node);
-  };
-
-  const updateSelectedNodeData = (key: keyof BuilderNodeData, value: BuilderNodeData[keyof BuilderNodeData]) => {
-    if (!selectedNode) return;
-    setNodes((nds) =>
-      nds.map((n) => {
-        if (n.id === selectedNode.id) {
-          const updated = { ...n, data: { ...n.data, [key]: value } };
-          setSelectedNode(updated);
-          return updated;
+  const actions: FlowBuilderActions = useMemo(
+    () => ({
+      flowType,
+      keywords,
+      onEdit: (nodeId) => {
+        const node = nodes.find((n) => n.id === nodeId);
+        if (!node) return;
+        if (node.type === 'replyNode') setEditingReplyId(nodeId);
+        else if (node.type !== 'default' && node.type !== 'startNode') setInspectorId(nodeId);
+      },
+      onDelete: (nodeId) => {
+        if (nodeId === START_NODE_ID) return;
+        setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+        setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+        setInspectorId((cur) => (cur === nodeId ? null : cur));
+      },
+      onDuplicate: (nodeId) => {
+        const node = nodes.find((n) => n.id === nodeId);
+        if (!node || node.type === 'startNode') return;
+        const copyId = `${node.type === 'replyNode' ? 'reply' : 'step'}-${Date.now().toString(36)}`;
+        const data: BuilderNodeData = structuredClone(node.data);
+        data.label = `${node.data.label || 'Step'} (copy)`;
+        if (data.reply) {
+          // Fresh option ids so the copy's branches are its own.
+          data.reply.buttons = data.reply.buttons.map((b) => ({ ...b, id: newOptionId('btn') }));
+          data.reply.list.sections = data.reply.list.sections.map((s) => ({ ...s, rows: s.rows.map((r) => ({ ...r, id: newOptionId('row') })) }));
         }
-        return n;
-      })
-    );
+        setNodes((nds) => [
+          ...nds.map((n) => ({ ...n, selected: false })),
+          { id: copyId, type: node.type, position: { x: node.position.x + 40, y: node.position.y + 60 }, data, selected: true },
+        ]);
+        toast.success('Step duplicated');
+      },
+    }),
+    [flowType, keywords, nodes, setNodes, setEdges]
+  );
+
+  const editingNode = nodes.find((n) => n.id === editingReplyId);
+  const inspectorNode = nodes.find((n) => n.id === inspectorId);
+
+  const saveReply = (title: string, reply: BotReply) => {
+    if (!editingNode) return;
+    const before = editingNode.data.reply;
+    setNodes((nds) => nds.map((n) => (n.id === editingNode.id ? { ...n, data: { ...n.data, label: title, reply } } : n)));
+    if (before) setEdges((eds) => edgesAfterReplyChanged(eds, editingNode.id, before, reply));
+    setEditingReplyId(null);
+  };
+
+  const updateInspected = (patch: Partial<BuilderNodeData>) => {
+    if (!inspectorNode) return;
+    setNodes((nds) => nds.map((n) => (n.id === inspectorNode.id ? { ...n, data: { ...n.data, ...patch } } : n)));
+  };
+
+  const toggleEnabled = async (value: boolean) => {
+    setEnabled(value);
+    try {
+      await chatbotService.updateFlow(id, { enabled: value });
+      toast.success(value ? 'Bot is live' : 'Bot paused');
+    } catch (err) {
+      setEnabled(!value);
+      toast.error(apiErrorMessage(err, 'Failed to update status'));
+    }
+  };
+
+  /** First problem that would stop the save, or ''. */
+  const findProblem = (): string => {
+    for (const n of nodes) {
+      if (flowType !== 'advanced' && ADVANCED_ONLY_NODES.has(n.type || '')) {
+        return `“${n.data.label || n.type}” needs an Advanced bot. Remove it to save this ${CHAT_FLOW_TYPE_INFO[flowType].title}.`;
+      }
+      if (n.type === 'replyNode' && n.data.reply) {
+        const errs = validateReply(n.data.reply, flowType);
+        if (errs.length) return `“${n.data.label || 'Bot reply'}”: ${errs[0]}`;
+      }
+    }
+    return '';
   };
 
   const handleSave = async () => {
     if (isLoading || loadFailed) {
-      // Saving now would overwrite the stored graph with an empty canvas.
       toast.error('The flow has not loaded, so it cannot be saved');
       return;
     }
@@ -385,22 +515,20 @@ export const ChatbotFlowBuilderView: React.FC = () => {
       toast.error('Flow name is required');
       return;
     }
+    const problem = findProblem();
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
     setIsSaving(true);
     try {
-      const payload = {
+      await chatbotService.updateFlow(id, {
         name: flowName.trim(),
-        trigger_keywords: triggerKeywords.split(',').map((k) => k.trim()).filter(Boolean),
+        trigger_keywords: keywords,
+        flow_type: flowType,
         graph: canvasToGraph(nodes, edges, entryNodeId),
-      };
-      if (id) {
-        await chatbotService.updateFlow(id, payload);
-        toast.success('Flow saved successfully');
-      } else {
-        const res = await chatbotService.createFlow({ ...payload, enabled: true });
-        const created = readData<{ id?: string }>(res);
-        toast.success('Flow created');
-        navigate(created?.id ? `/chatbot/flows/${created.id}/edit` : '/chatbot/flows', { replace: true });
-      }
+      });
+      toast.success('Flow saved');
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Failed to save flow'));
     } finally {
@@ -409,185 +537,160 @@ export const ChatbotFlowBuilderView: React.FC = () => {
   };
 
   const handleExportJSON = () => {
-    try {
-      const graph = canvasToGraph(nodes, edges, entryNodeId);
-      const exportData = {
-        $schema: 'https://whatomate.com/schemas/flow-v1.json',
-        version: 1,
-        name: flowName.trim() || 'Untitled Flow',
-        trigger_keywords: triggerKeywords.split(',').map((k) => k.trim()).filter(Boolean),
-        graph,
-        exported_at: new Date().toISOString(),
-      };
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      const safeName = (flowName || 'flow').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
-      link.download = `${safeName}.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Flow exported to JSON');
-    } catch {
-      toast.error('Failed to export flow');
-    }
+    const exportData = {
+      $schema: 'https://whatomate.com/schemas/flow-v1.json',
+      version: 1,
+      name: flowName.trim() || 'Untitled Flow',
+      flow_type: flowType,
+      trigger_keywords: keywords,
+      graph: canvasToGraph(nodes, edges, entryNodeId),
+      exported_at: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${(flowName || 'flow').toLowerCase().replace(/[^a-z0-9_-]/g, '_')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast.success('Flow exported to JSON');
   };
 
   const handleImportJSON = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const content = e.target?.result as string;
-        const parsed = JSON.parse(content);
-        if (!parsed || typeof parsed !== 'object') {
-          throw new Error('Invalid JSON format');
-        }
-        if (parsed.name) setFlowName(parsed.name);
-        if (Array.isArray(parsed.trigger_keywords)) {
-          setTriggerKeywords(parsed.trigger_keywords.join(', '));
-        }
-        if (parsed.graph) {
-          const canvas = graphToCanvas(parsed.graph);
-          setNodes(canvas.nodes);
-          setEdges(canvas.edges);
-          setEntryNodeId(canvas.entry);
-          setSelectedNode(null);
-          toast.success(`Imported “${parsed.name || 'Flow'}” onto canvas`);
-        } else {
+        const parsed = JSON.parse(String(e.target?.result));
+        if (!parsed?.graph) {
           toast.warning('No graph definition found in JSON');
+          return;
         }
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to import JSON file');
+        const canvas = graphToCanvas(parsed.graph);
+        setNodes(canvas.nodes);
+        setEdges(canvas.edges.map(styleEdge));
+        setEntryNodeId(canvas.entry);
+        if (Array.isArray(parsed.trigger_keywords)) setTriggerKeywords(parsed.trigger_keywords.join(', '));
+        toast.success('Imported onto the canvas. Save to keep it.');
+      } catch {
+        toast.error('Failed to import JSON file');
       }
     };
     reader.readAsText(file);
   };
 
-  const handleTestSimulate = () => {
-    // There is no simulation endpoint in the backend yet.
-    toast.info('Flow preview is not available yet. Save the flow and message a trigger keyword to try it.');
-  };
+  const replyKinds = replyKindsFor(flowType);
+  const ghostBtn =
+    'border-white/10 text-white hover:bg-white/[0.04] light:border-gray-200 light:text-gray-700 light:hover:bg-gray-100';
 
   return (
-    <div className="flex flex-col h-full bg-[#0a0a0b] light:bg-gray-50 overflow-hidden">
-      {/* Top Header */}
-      <header className="h-14 border-b border-white/[0.08] bg-[#0a0a0b] px-4 flex items-center justify-between shrink-0 light:border-gray-200 light:bg-gray-50">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/chatbot/flows')}>
-            <X className="h-4 w-4 mr-1" /> Close
+    <FlowBuilderContext.Provider value={actions}>
+      <div className="flex h-full flex-col overflow-hidden bg-[#0a0a0b] light:bg-gray-50">
+        {/* Top bar */}
+        <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-white/[0.08] bg-[#0f0f11] px-3 py-2 light:border-gray-200 light:bg-white">
+          <Button variant="ghost" size="sm" className="px-2 text-xs" onClick={() => navigate('/chatbot/flows')}>
+            <ArrowLeft className="mr-1 h-4 w-4" />
+            <span className="hidden sm:inline">Back to Bot Flows</span>
           </Button>
-          <div className="h-4 w-px bg-white/10 light:bg-gray-100" />
+          <div className="hidden h-5 w-px bg-white/10 sm:block light:bg-gray-200" />
           <Input
             value={flowName}
             onChange={(e) => setFlowName(e.target.value)}
             placeholder="Flow name"
-            className="h-8 text-xs font-semibold bg-transparent border-transparent hover:border-white/10 focus:border-emerald-500 text-white w-64 light:text-gray-900"
+            className="h-8 w-40 border-transparent bg-transparent text-sm font-semibold text-white hover:border-white/10 focus:border-emerald-500 sm:w-56 light:text-gray-900 light:hover:border-gray-200"
           />
+          <FlowTypeBadge type={flowType} className="hidden md:inline-flex" />
           <Input
             value={triggerKeywords}
             onChange={(e) => setTriggerKeywords(e.target.value)}
-            placeholder="Trigger keywords (comma-separated)"
-            className="h-8 text-xs bg-transparent border-white/10 hover:border-white/20 focus:border-emerald-500 text-white w-64 light:border-gray-200 light:text-gray-900"
+            placeholder="Trigger keywords: hi, menu"
+            className="order-last h-8 w-full border-white/10 text-xs text-white md:order-none md:w-56 light:border-gray-200 light:text-gray-900"
           />
-        </div>
 
-        <div className="flex items-center gap-2">
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept=".json,application/json"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleImportJSON(file);
-              e.target.value = '';
-            }}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            title="Import AI-generated or exported bot JSON"
-            className="text-xs border-white/10 hover:bg-white/[0.04] text-white light:border-gray-200 light:text-gray-700 light:hover:bg-gray-100"
-          >
-            <Upload className="h-3.5 w-3.5 mr-1 text-emerald-400" />
-            Import JSON
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportJSON}
-            title="Download bot flow as JSON file"
-            className="text-xs border-white/10 hover:bg-white/[0.04] text-white light:border-gray-200 light:text-gray-700 light:hover:bg-gray-100"
-          >
-            <Download className="h-3.5 w-3.5 mr-1 text-emerald-400" />
-            Export JSON
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleTestSimulate}>
-            <Play className="h-3.5 w-3.5 mr-1 text-emerald-400" />
-            Test Flow
-          </Button>
-          <Button
-            size="sm"
-            className="bg-emerald-600 hover:bg-emerald-500 text-white"
-            onClick={handleSave}
-            disabled={isSaving || isLoading || loadFailed}
-          >
-            <Save className="h-3.5 w-3.5 mr-1" />
-            {isSaving ? 'Saving...' : 'Save Flow'}
-          </Button>
-        </div>
-      </header>
+          <div className="ml-auto flex items-center gap-2">
+            <label className="flex items-center gap-2 rounded-lg border border-white/10 px-2 py-1 text-xs text-white/70 light:border-gray-200 light:text-gray-600">
+              <span className="hidden sm:inline">Status</span>
+              <Switch checked={enabled} onCheckedChange={toggleEnabled} disabled={isLoading || loadFailed} />
+            </label>
 
-      {/* Main Studio Work Area */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Node Toolbar */}
-        <aside className="w-56 border-r border-white/[0.08] bg-[#101012] p-3 flex flex-col gap-2 z-10 shrink-0 light:border-gray-200 light:bg-white">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-white/40 mb-1 light:text-gray-400">
-            Canvas Steps
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="justify-start text-xs border-white/[0.08] hover:bg-white/[0.04] light:border-gray-200 light:hover:bg-gray-100"
-            onClick={() => addNode('textNode')}
-          >
-            <MessageSquare className="h-3.5 w-3.5 mr-2 text-blue-400" />
-            Send Message
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="justify-start text-xs border-white/[0.08] hover:bg-white/[0.04] light:border-gray-200 light:hover:bg-gray-100"
-            onClick={() => addNode('buttonsNode')}
-          >
-            <HelpCircle className="h-3.5 w-3.5 mr-2 text-purple-400" />
-            Buttons Menu
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="justify-start text-xs border-white/[0.08] hover:bg-white/[0.04] light:border-gray-200 light:hover:bg-gray-100"
-            onClick={() => addNode('apiNode')}
-          >
-            <Globe className="h-3.5 w-3.5 mr-2 text-amber-400" />
-            Webhook API
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="justify-start text-xs border-white/[0.08] hover:bg-white/[0.04] light:border-gray-200 light:hover:bg-gray-100"
-            onClick={() => addNode('transferNode')}
-          >
-            <UserX className="h-3.5 w-3.5 mr-2 text-rose-400" />
-            Agent Transfer
-          </Button>
-        </aside>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className={cn('text-xs', ghostBtn)} disabled={isLoading || loadFailed}>
+                  <Plus className="mr-1 h-3.5 w-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline">Add New Bot Reply</span>
+                  <span className="sm:hidden">Add</span>
+                  <ChevronDown className="ml-1 h-3 w-3 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wide opacity-60">Bot replies</DropdownMenuLabel>
+                {replyKinds.map((k) => (
+                  <DropdownMenuItem key={k} onClick={() => addReply(k)}>
+                    {REPLY_KIND_LABEL[k]}
+                  </DropdownMenuItem>
+                ))}
+                {flowType === 'advanced' && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-[10px] uppercase tracking-wide opacity-60">Advanced steps</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => addAdvancedStep('apiNode')}>
+                      <Globe className="mr-2 h-3.5 w-3.5 text-amber-400" /> Webhook / API call
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => addAdvancedStep('transferNode')}>
+                      <UserX className="mr-2 h-3.5 w-3.5 text-rose-400" /> Transfer to agent
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {flowType !== 'advanced' && (
+                  <div className="px-2 py-1.5 text-[10px] text-white/40 light:text-gray-500">
+                    {flowType === 'simple' ? 'Media, links and API steps' : 'Links and API steps'} need an Advanced bot.
+                  </div>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-        {/* Center React Flow Canvas */}
-        <div className="flex-1 h-full bg-[#0d0d0f] relative light:bg-gray-100">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleImportJSON(f);
+                e.target.value = '';
+              }}
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className={cn('px-2', ghostBtn)} aria-label="More">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="mr-2 h-3.5 w-3.5" /> Import JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportJSON}>
+                  <Download className="mr-2 h-3.5 w-3.5" /> Export JSON
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button
+              size="sm"
+              className="bg-emerald-600 text-white hover:bg-emerald-500"
+              onClick={handleSave}
+              disabled={isSaving || isLoading || loadFailed}
+            >
+              {isSaving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 h-3.5 w-3.5" />}
+              Save
+            </Button>
+          </div>
+        </header>
+
+        {/* Canvas */}
+        <div className="relative flex-1 overflow-hidden bg-[#0d0d0f] light:bg-gray-100">
           {isLoading || loadFailed ? (
             <div className="absolute inset-0 flex items-center justify-center text-xs text-white/40 light:text-gray-400">
               {loadFailed ? 'Could not load this flow.' : 'Loading flow...'}
@@ -600,201 +703,59 @@ export const ChatbotFlowBuilderView: React.FC = () => {
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               nodeTypes={nodeTypes}
-              onNodeClick={onNodeClick}
+              onNodeDoubleClick={(_, n) => actions.onEdit(n.id)}
+              defaultEdgeOptions={{ type: 'default', style: EDGE_STYLE }}
+              connectionLineStyle={EDGE_STYLE}
+              deleteKeyCode={['Delete', 'Backspace']}
               fitView
+              fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+              minZoom={0.2}
+              proOptions={{ hideAttribution: true }}
+              colorMode={document.documentElement.classList.contains('light') ? 'light' : 'dark'}
             >
-              <Background color="#2a2a2e" gap={18} variant={BackgroundVariant.Dots} />
-              <Controls className="bg-[#141415] border border-white/10 rounded-lg text-white light:bg-white light:border-gray-200 light:text-gray-900" />
+              <Background gap={20} variant={BackgroundVariant.Dots} className="!bg-transparent" color="#3f3f46" />
+              <Controls className="!border !border-white/10 !shadow-none light:!border-gray-200" />
+              <MiniMap pannable zoomable className="!hidden md:!block !bg-[#141416] light:!bg-white" maskColor="rgba(0,0,0,0.35)" nodeColor="#10b981" />
             </ReactFlow>
+          )}
+
+          {nodes.length <= 1 && !isLoading && !loadFailed && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center">
+              <div className="rounded-full border border-white/10 bg-[#141416] px-4 py-2 text-xs text-white/60 light:border-gray-200 light:bg-white light:text-gray-600">
+                Use <span className="font-semibold text-emerald-400">Add New Bot Reply</span> and drag from each output to the next reply.
+              </div>
+            </div>
+          )}
+
+          {inspectorNode && (
+            <ClassicInspector
+              node={inspectorNode}
+              flowType={flowType}
+              onChange={updateInspected}
+              onButtonRemoved={(i) => setEdges((eds) => edgesAfterButtonRemoved(eds, inspectorNode.id, i))}
+              onClose={() => setInspectorId(null)}
+            />
           )}
         </div>
 
-        {/* Right Properties Inspector */}
-        {selectedNode && (() => {
-          const nodeData: BuilderNodeData = selectedNode.data || {};
-          return (
-          <aside className="w-80 border-l border-white/[0.08] bg-[#141416] p-4 flex flex-col gap-4 z-10 shrink-0 overflow-y-auto light:border-gray-200 light:bg-white">
-            <div className="flex items-center justify-between pb-2 border-b border-white/[0.08] light:border-gray-200">
-              <div>
-                <span className="text-xs font-semibold text-white light:text-gray-900">Step Inspector</span>
-                <p className="text-[10px] text-white/40 font-mono light:text-gray-400">{selectedNode.id}</p>
-              </div>
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedNode(null)}>
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-
-            {selectedNode.type === 'textNode' && (
-              <div className="space-y-2">
-                <Label className="text-xs">Message Content</Label>
-                <Textarea
-                  rows={4}
-                  value={nodeData.message || ''}
-                  onChange={(e) => updateSelectedNodeData('message', e.target.value)}
-                />
-              </div>
-            )}
-
-            {selectedNode.type === 'buttonsNode' && (() => {
-              const flowBtns: FlowButton[] = (nodeData.flowButtons as FlowButton[]) || [];
-
-              const addButton = (type: FlowButtonType) => {
-                const typeCount = flowBtns.filter(b => b.type === type).length;
-                const maxForType = BUTTON_TYPE_META[type].maxCount;
-                if (typeCount >= maxForType) {
-                  toast.error(`Max ${maxForType} "${BUTTON_TYPE_META[type].label}" button${maxForType > 1 ? 's' : ''} allowed`);
-                  return;
-                }
-                if (flowBtns.length >= MAX_BUTTONS) {
-                  toast.error(`Maximum ${MAX_BUTTONS} buttons reached`);
-                  return;
-                }
-                const newBtn: FlowButton = {
-                  id: `btn_${selectedNode.id}_${Date.now()}`,
-                  type,
-                  title: BUTTON_TYPE_META[type].label,
-                };
-                updateSelectedNodeData('flowButtons', [...flowBtns, newBtn]);
-              };
-
-              const updateButton = (index: number, patch: Partial<FlowButton>) => {
-                const updated = flowBtns.map((b, i) => i === index ? { ...b, ...patch } : b);
-                updateSelectedNodeData('flowButtons', updated);
-              };
-
-              const removeButton = (index: number) => {
-                updateSelectedNodeData('flowButtons', flowBtns.filter((_, i) => i !== index));
-                // Edges hang off per-button handles (btn-<index>), so they follow their button.
-                setEdges((eds) => edgesAfterButtonRemoved(eds, selectedNode.id, index));
-              };
-
-              const canAdd = flowBtns.length < MAX_BUTTONS;
-
-              return (
-                <div className="space-y-4">
-                  {/* Header question */}
-                  <div className="space-y-1">
-                    <Label className="text-xs">Header / Question Text</Label>
-                    <Input
-                      value={nodeData.question as string || ''}
-                      onChange={(e) => updateSelectedNodeData('question', e.target.value)}
-                      placeholder="Please select an option:"
-                    />
-                  </div>
-
-                  {/* Existing buttons */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs">Buttons ({flowBtns.length}/{MAX_BUTTONS})</Label>
-                      {!canAdd && (
-                        <span className="text-[10px] text-amber-400 font-medium">Max reached</span>
-                      )}
-                    </div>
-
-                    {flowBtns.length === 0 && (
-                      <p className="text-xs text-white/30 py-3 text-center border border-white/[0.06] rounded-lg light:text-gray-400 light:border-gray-200">
-                        Add buttons from the palette below
-                      </p>
-                    )}
-
-                    {flowBtns.map((btn, i) => {
-                      const meta = BUTTON_TYPE_META[btn.type];
-                      const BtnIcon = meta.icon;
-                      return (
-                        <ButtonInspectorRow
-                          key={btn.id}
-                          btn={btn}
-                          meta={meta}
-                          BtnIcon={BtnIcon}
-                          onUpdate={(patch) => updateButton(i, patch)}
-                          onRemove={() => removeButton(i)}
-                        />
-                      );
-                    })}
-                  </div>
-
-                  {/* Button type palette */}
-                  {canAdd && (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-white/50 light:text-gray-500">Add Button Type</Label>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {(Object.keys(BUTTON_TYPE_META) as FlowButtonType[]).map((type) => {
-                          const meta = BUTTON_TYPE_META[type];
-                          const BtnIcon = meta.icon;
-                          const typeCount = flowBtns.filter(b => b.type === type).length;
-                          const disabled = typeCount >= meta.maxCount || flowBtns.length >= MAX_BUTTONS;
-                          return (
-                            <button
-                              key={type}
-                              disabled={disabled}
-                              onClick={() => addButton(type)}
-                              className={cn(
-                                'flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] text-left transition-all',
-                                disabled
-                                  ? 'border-white/[0.04] text-white/20 cursor-not-allowed light:border-gray-200 light:text-gray-300'
-                                  : 'border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/70 cursor-pointer light:border-gray-200 light:hover:bg-gray-100 light:text-gray-600'
-                              )}
-                            >
-                              <BtnIcon className={cn('h-3 w-3 shrink-0', disabled ? 'text-white/20 light:text-gray-300' : meta.color)} />
-                              <span className="truncate">{meta.label}</span>
-                              {typeCount > 0 && <span className="ml-auto text-white/30 light:text-gray-400">{typeCount}/{meta.maxCount}</span>}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {selectedNode.type === 'apiNode' && (
-              <div className="space-y-2">
-                <Label className="text-xs">Webhook Request URL</Label>
-                <Input
-                  value={nodeData.url as string || ''}
-                  onChange={(e) => updateSelectedNodeData('url', e.target.value)}
-                />
-              </div>
-            )}
-
-            {selectedNode.type === 'transferNode' && (
-              <div className="space-y-2">
-                <Label className="text-xs">Routing Department / Queue</Label>
-                <Input
-                  value={nodeData.queue as string || ''}
-                  onChange={(e) => updateSelectedNodeData('queue', e.target.value)}
-                />
-              </div>
-            )}
-
-            {selectedNode.type === 'default' && (
-              <p className="text-xs text-white/50 light:text-gray-500">
-                This step type ({nodeData.backendType as string}) can't be edited here yet. It is kept as-is when you save.
-              </p>
-            )}
-
-            {selectedNode.type !== 'startNode' && (
-              <Button
-                variant="destructive"
-                size="sm"
-                className="mt-auto"
-                onClick={() => {
-                  setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
-                  setEdges((eds) => eds.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id));
-                  setSelectedNode(null);
-                  toast.success('Node removed');
-                }}
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-1" />
-                Remove Step
-              </Button>
-            )}
-          </aside>
-          );
-        })()}
+        {editingNode?.data.reply && (
+          <BotReplyEditor
+            open
+            flowType={flowType}
+            title={editingNode.data.label || ''}
+            reply={editingNode.data.reply}
+            onClose={() => setEditingReplyId(null)}
+            onSave={saveReply}
+          />
+        )}
       </div>
-    </div>
+    </FlowBuilderContext.Provider>
   );
 };
+
+export const ChatbotFlowBuilderView: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  return id ? <FlowEditor key={id} id={id} /> : <NewFlowSetup />;
+};
+
 export default ChatbotFlowBuilderView;

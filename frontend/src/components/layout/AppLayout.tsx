@@ -62,6 +62,8 @@ import { useBrandedTitle, useBranding } from '@/services/branding';
 import { BrandMark } from '@/views/public/PublicLayout';
 import { usePlanModules } from '@/lib/planModules';
 import { PlanLockedNotice } from './PlanLockedNotice';
+import { PendingPaymentNotice } from './PendingPaymentNotice';
+import { pathOpenWhilePendingPayment } from '@/lib/pendingPayment';
 
 /** Category headings of the super admin's navbar (and the Platform Admin sub-menu). */
 const PLATFORM_CATEGORIES: NavCategoryDef[] = [
@@ -401,7 +403,7 @@ export const AppLayout: React.FC = () => {
   // inbox navigation, so its one-link sub-navbar is replaced by the slim strip.
   const hideSubnav = activeModuleId === 'chat';
   const subnavCollapsed = isCollapsed || hideSubnav;
-  const { pathAllowed, railAllowed } = usePlanModules();
+  const { pathAllowed, railAllowed, pendingPayment } = usePlanModules();
   const railModules = visibleRailModules(isSuperAdmin, insideClient, hasPermission).filter((m) => railAllowed(m.id));
   // Hide pages the workspace's plan switches off.
   const navGroup: SecondaryNavGroup | null = currentNavGroup
@@ -411,6 +413,8 @@ export const AppLayout: React.FC = () => {
   const superAdminCategories = groupByCategory(superAdminItems.filter((i) => pathAllowed(i.path)), PLATFORM_CATEGORIES);
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
   const pageLocked = !singleNav && !pathAllowed(location.pathname);
+  // A paid sign-up waits for its first payment: only billing, support and profile stay open.
+  const awaitingPayment = pendingPayment && !isSuperAdmin && !pathOpenWhilePendingPayment(location.pathname);
 
   return (
     <div className="flex h-screen bg-[#f8faf9] dark:bg-[#0a0f0e] text-gray-900 dark:text-gray-100 overflow-hidden font-sans">
@@ -570,13 +574,13 @@ export const AppLayout: React.FC = () => {
         {/* Top Status & Telemetry Bar */}
         <TopStatusBar />
 
-        {/* Global Access / Trial Banners */}
+        {/* Global Access Banners */}
         <VendorAccessBanner />
         <ExplorerBanner />
 
         {/* Page Content Scroll Container */}
         <main className="flex-1 min-w-0 overflow-y-auto bg-[#f8faf9] dark:bg-[#0a0f0e] relative">
-          {pageLocked ? <PlanLockedNotice /> : <Outlet />}
+          {awaitingPayment ? <PendingPaymentNotice /> : pageLocked ? <PlanLockedNotice /> : <Outlet />}
         </main>
       </div>
     </div>

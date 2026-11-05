@@ -159,7 +159,8 @@ func (a *App) GetPlanModules(r *fastglue.Request) error {
 	if superAdmin {
 		mods["teams"] = cfg.TeamsEnabledSuperAdmin
 	}
-	return r.SendEnvelope(map[string]any{"modules": mods})
+	pending := !superAdmin && a.orgPendingPayment(orgID)
+	return r.SendEnvelope(map[string]any{"modules": mods, "pending_payment": pending})
 }
 
 // SuperAdminListPlanModules lists the switchable modules for the plan editor
@@ -169,4 +170,42 @@ func (a *App) SuperAdminListPlanModules(r *fastglue.Request) error {
 		return nil
 	}
 	return r.SendEnvelope(map[string]any{"modules": PlanModules})
+}
+
+// Pending payment: a workspace that signed up for a paid plan but hasn't paid
+// yet can only reach the payment and account endpoints.
+
+var pendingPaymentAllowed = []string{
+	"/api/me", "/api/auth/", "/api/public/", "/api/payments", "/api/billing", "/api/plan/modules",
+	"/api/organizations/current", "/api/support-tickets", "/api/branding", "/api/users/me",
+}
+
+// orgPendingPayment reports whether the workspace still owes its first payment.
+func (a *App) orgPendingPayment(orgID uuid.UUID) bool {
+	var status string
+	a.DB.Model(&models.OrganizationSubscription{}).Select("status").Where("organization_id = ?", orgID).Scan(&status)
+	return status == models.VendorStatusPendingPayment
+}
+
+// PendingPaymentGuard answers 402 for everything else until the workspace pays.
+func (a *App) PendingPaymentGuard(r *fastglue.Request) *fastglue.Request {
+	path := string(r.RequestCtx.Path())
+	if !strings.HasPrefix(path, "/api/") || string(r.RequestCtx.Method()) == "OPTIONS" {
+		return r
+	}
+	for _, p := range pendingPaymentAllowed {
+		if strings.HasPrefix(path, p) {
+			return r
+		}
+	}
+	userID, ok := r.RequestCtx.UserValue("user_id").(uuid.UUID)
+	if !ok || a.IsSuperAdmin(userID) {
+		return r
+	}
+	orgID, err := a.getOrgID(r)
+	if err != nil || !a.orgPendingPayment(orgID) {
+		return r
+	}
+	_ = r.SendErrorEnvelope(fasthttp.StatusPaymentRequired, "Complete your payment to start using OneSuit.", nil, "")
+	return nil
 }

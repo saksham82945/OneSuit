@@ -35,7 +35,6 @@ const mockConfig = {
   timezone: 'UTC',
   default_currency: 'USD',
   default_plan_id: '',
-  trial_days: 14,
   renewal_reminder_days: 7,
   allow_vendor_signup: true,
   require_email_verification: false,

@@ -31,7 +31,7 @@ import {
   CreditCard,
   Eye,
   FileText,
-  FlaskConical,
+  Hourglass,
   IndianRupee,
   Info,
   MoreHorizontal,
@@ -256,7 +256,7 @@ export const ClientSubscriptionsView: React.FC = () => {
             {(
               [
                 { label: 'Active', value: summary.active, icon: CheckCircle2, tone: 'emerald', f: { state: 'active' } },
-                { label: 'Trial', value: summary.trial, icon: FlaskConical, tone: 'blue', f: { state: 'trial' } },
+                { label: 'Awaiting payment', value: summary.pendingPayment, icon: Hourglass, tone: 'blue', f: { state: 'pending_payment' } },
                 { label: 'Suspended', value: summary.suspended, icon: Ban, tone: 'rose', f: { state: 'suspended' } },
                 { label: 'Expiring in 7 days', value: summary.expiring7, icon: AlarmClock, tone: 'amber', f: { expiry: '7' } },
                 { label: 'Expiring in 30 days', value: summary.expiring30, icon: CalendarClock, tone: 'violet', f: { expiry: '30' } },
@@ -313,7 +313,8 @@ export const ClientSubscriptionsView: React.FC = () => {
                     <SelectContent>
                       <SelectItem value="all">All statuses</SelectItem>
                       <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="trial">Trial</SelectItem>
+                      <SelectItem value="pending_payment">Awaiting payment</SelectItem>
+                      {(summary.trial > 0 || filters.state === 'trial') && <SelectItem value="trial">Trial (legacy)</SelectItem>}
                       <SelectItem value="expired">Expired</SelectItem>
                       <SelectItem value="suspended">Suspended</SelectItem>
                     </SelectContent>
@@ -370,7 +371,7 @@ export const ClientSubscriptionsView: React.FC = () => {
 
               <InvoiceNote>
                 <b>Billing:</b> renewing, changing the plan or cycle, or activating a client issues a <b>paid invoice</b> for one cycle automatically
-                when the client ends up active. Suspending or editing a trial/suspended client never bills.
+                when the client ends up active. Suspending, or editing a client that's suspended or awaiting payment, never bills.
               </InvoiceNote>
 
               {rows.length === 0 ? (

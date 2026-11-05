@@ -17,6 +17,7 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { refreshPlanModules } from '@/lib/planModules';
 import { api, billingService, type BillingInfo } from '@/services/api';
 import { readData } from '@/services/response';
 import { BILLING_CYCLES, cyclePrice, formatLimit, formatPrice, type BillingInterval } from '@/services/superAdmin';
@@ -86,6 +87,11 @@ export const CheckoutView: React.FC = () => {
       cancelled = true;
     };
   }, []);
+
+  // Paid: the "complete your payment" gate and plan switches update straight away.
+  useEffect(() => {
+    if (phase.kind === 'paid') refreshPlanModules();
+  }, [phase.kind]);
 
   const paidPlans = useMemo(() => (plans ?? []).filter((p) => p.price > 0), [plans]);
   const queryPlan = params.get('plan');

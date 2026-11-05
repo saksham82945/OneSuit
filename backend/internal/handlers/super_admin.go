@@ -56,7 +56,6 @@ type PlatformConfig struct {
 	SupportPhone             string `json:"support_phone"`
 	DefaultCurrency          string `json:"default_currency"`
 	DefaultPlanID            string `json:"default_plan_id"` // empty = no plan
-	TrialDays                int    `json:"trial_days"`
 	RenewalReminderDays      int    `json:"renewal_reminder_days"`
 	AllowVendorSignup        bool   `json:"allow_vendor_signup"`
 	RequireEmailVerification bool   `json:"require_email_verification"`
@@ -93,7 +92,6 @@ func defaultPlatformConfig() PlatformConfig {
 	return PlatformConfig{
 		PlatformName:          "onesuit",
 		DefaultCurrency:       models.PlatformCurrency,
-		TrialDays:             14,
 		RenewalReminderDays:   7,
 		AllowVendorSignup:     true,
 		MaintenanceMessage:    "We are performing scheduled maintenance. Please try again shortly.",
@@ -208,8 +206,6 @@ func (a *App) SuperAdminUpdateConfig(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Platform name is required", nil, "")
 	case cfg.SupportEmail != "" && !validEmail(cfg.SupportEmail):
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Support email is not a valid email address", nil, "")
-	case cfg.TrialDays < 0 || cfg.TrialDays > 365:
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Trial days must be between 0 and 365", nil, "")
 	case cfg.RenewalReminderDays < 0 || cfg.RenewalReminderDays > 365:
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Renewal reminder days must be between 0 and 365", nil, "")
 	}
@@ -493,10 +489,10 @@ func (a *App) applyVendorRequest(req *VendorRequest, sub *models.OrganizationSub
 	}
 	if req.Status != nil {
 		switch *req.Status {
-		case models.VendorStatusActive, models.VendorStatusTrial, models.VendorStatusSuspended:
+		case models.VendorStatusActive, models.VendorStatusSuspended, models.VendorStatusPendingPayment:
 			sub.Status = *req.Status
 		default:
-			return "Status must be active, trial or suspended"
+			return "Status must be active, suspended or pending_payment"
 		}
 	}
 	if req.BillingCycle != nil {
@@ -555,7 +551,7 @@ func (a *App) SuperAdminCreateVendor(r *fastglue.Request) error {
 	}
 
 	cfg := a.loadPlatformConfig()
-	sub := models.OrganizationSubscription{Status: models.VendorStatusTrial}
+	sub := models.OrganizationSubscription{Status: models.VendorStatusActive}
 	if cfg.DefaultPlanID != "" {
 		if plan, err := a.findPlan(cfg.DefaultPlanID); err == nil {
 			sub.PlanID = &plan.ID
@@ -563,10 +559,6 @@ func (a *App) SuperAdminCreateVendor(r *fastglue.Request) error {
 	}
 	if msg := a.applyVendorRequest(&req, &sub); msg != "" {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, msg, nil, "")
-	}
-	if sub.RenewalDate == nil && sub.Status == models.VendorStatusTrial {
-		trialEnds := time.Now().AddDate(0, 0, cfg.TrialDays)
-		sub.RenewalDate = &trialEnds
 	}
 
 	createOwner := req.OwnerPassword != ""
