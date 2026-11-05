@@ -108,6 +108,14 @@ func (a *App) PlanModuleGuard(r *fastglue.Request) *fastglue.Request {
 	if !strings.HasPrefix(path, "/api/") || string(r.RequestCtx.Method()) == "OPTIONS" {
 		return r
 	}
+	// Teams switched off for client workspaces: their changes are refused
+	// (reading teams stays open, chat transfers use it).
+	if (path == "/api/teams" || strings.HasPrefix(path, "/api/teams/")) && string(r.RequestCtx.Method()) != "GET" {
+		if userID, ok := r.RequestCtx.UserValue("user_id").(uuid.UUID); ok && !a.IsSuperAdmin(userID) && !a.loadPlatformConfig().TeamsEnabledAdmin {
+			_ = r.SendErrorEnvelope(fasthttp.StatusForbidden, "Teams are turned off for workspaces. Contact support.", nil, "")
+			return nil
+		}
+	}
 	var module *PlanModule
 	for i := range PlanModules {
 		for _, p := range PlanModules[i].Paths {
@@ -139,10 +147,17 @@ func (a *App) GetPlanModules(r *fastglue.Request) error {
 	if err != nil {
 		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
 	}
-	mods := make(map[string]bool, len(PlanModules))
+	mods := make(map[string]bool, len(PlanModules)+1)
 	superAdmin := a.callerIsSuperAdmin(r)
 	for k, on := range a.orgModules(orgID) {
 		mods[k] = on || superAdmin
+	}
+	// Teams is switched platform-wide by the super admin, separately for
+	// client workspaces and for super admins.
+	cfg := a.loadPlatformConfig()
+	mods["teams"] = cfg.TeamsEnabledAdmin
+	if superAdmin {
+		mods["teams"] = cfg.TeamsEnabledSuperAdmin
 	}
 	return r.SendEnvelope(map[string]any{"modules": mods})
 }

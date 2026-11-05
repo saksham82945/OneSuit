@@ -144,6 +144,14 @@ func (a *App) CreateTemplate(r *fastglue.Request) error {
 		}
 	}
 
+	// Validate buttons against Meta's limits and group quick replies together
+	if !isAuthTemplate {
+		if err := ValidateTemplateButtons(req.Category, req.Buttons); err != nil {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, err.Error(), nil, "")
+		}
+		req.Buttons = NormalizeTemplateButtons(req.Buttons)
+	}
+
 	// Verify account belongs to organization
 	if _, err := a.resolveWhatsAppAccount(orgID, req.WhatsAppAccount); err != nil {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "WhatsApp account not found", nil, "")
@@ -275,6 +283,17 @@ func (a *App) UpdateTemplate(r *fastglue.Request) error {
 	}
 	if isAuthTemplate && req.CodeExpirationMinutes != 0 && (req.CodeExpirationMinutes < 1 || req.CodeExpirationMinutes > 90) {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "code_expiration_minutes must be between 1 and 90", nil, "")
+	}
+
+	if !isAuthTemplate && req.Buttons != nil {
+		category := req.Category
+		if category == "" {
+			category = template.Category
+		}
+		if err := ValidateTemplateButtons(category, req.Buttons); err != nil {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, err.Error(), nil, "")
+		}
+		req.Buttons = NormalizeTemplateButtons(req.Buttons)
 	}
 
 	// Update fields

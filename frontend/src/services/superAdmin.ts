@@ -139,6 +139,9 @@ export interface PlatformConfig {
   /** Button text businesses see on Settings → Accounts (max 40 chars; blank = default). */
   embedded_button_label?: string;
   manual_button_label?: string;
+  /** Teams section on/off for client workspaces and for super admins. */
+  teams_enabled_admin?: boolean;
+  teams_enabled_super_admin?: boolean;
   /** Hide the "Connect WhatsApp with Facebook" shortcut button for business users. */
   hide_connect_button?: boolean;
   /** Meta hosted WhatsApp onboarding link that button opens (blank = built from the Meta IDs). */
@@ -232,6 +235,7 @@ export const superAdminService = {
   listVendors: () => unwrap<Vendor[]>(api.get('/super-admin/vendors')),
   createVendor: (data: VendorInput) => unwrap<Vendor>(api.post('/super-admin/vendors', data)),
   updateVendor: (id: string, data: VendorInput) => unwrap<Vendor>(api.put(`/super-admin/vendors/${id}`, data)),
+  deleteVendor: (id: string) => api.delete(`/super-admin/vendors/${id}`),
 
   listPlans: () => unwrap<Plan[]>(api.get('/super-admin/plans')),
   listPlanModules: () => unwrap<{ modules: PlanModuleInfo[] }>(api.get('/super-admin/plan-modules')).then((d) => d.modules),

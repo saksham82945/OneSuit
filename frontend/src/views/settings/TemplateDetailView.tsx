@@ -11,8 +11,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { FileText, Save, Send, Smartphone, Check } from 'lucide-react';
 import { toast } from 'sonner';
+import { TemplateButtonsEditor, TemplateButtonsPreview } from '@/components/templates/TemplateButtonsEditor';
+import {
+  COPY_CODE_LABEL,
+  firstButtonError,
+  fromStored,
+  groupButtons,
+  toStored,
+  type EditableButton,
+  type StoredButton,
+} from '@/components/templates/templateButtons';
 
-type TemplateButton = Record<string, unknown> & { type?: string; text?: string };
+type TemplateButton = StoredButton;
 type SampleValue = { component?: string; index?: number; value?: string; param_name?: string };
 
 // Shape of GET /api/templates/{id} (handlers.TemplateResponse)
@@ -89,7 +99,8 @@ export const TemplateDetailView: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [bodyText, setBodyText] = useState('Hello {{1}}, thank you for contacting us!');
   const [footerText, setFooterText] = useState('Reply STOP to unsubscribe');
-  const [buttonText, setButtonText] = useState('Visit Website');
+  const [buttons, setButtons] = useState<EditableButton[]>([]);
+  const [showButtonErrors, setShowButtonErrors] = useState(false);
   const [existingButtons, setExistingButtons] = useState<TemplateButton[]>([]);
   const [sampleValues, setSampleValues] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -141,10 +152,10 @@ export const TemplateDetailView: React.FC = () => {
         setBodyText(data.body_content ?? component('BODY')?.text ?? '');
         setFooterText(data.footer_content ?? component('FOOTER')?.text ?? '');
 
-        const buttons = Array.isArray(data.buttons) ? data.buttons : [];
-        setExistingButtons(buttons);
-        const quickReply = buttons.find((b) => String(b.type || '').toUpperCase() === 'QUICK_REPLY');
-        setButtonText(typeof quickReply?.text === 'string' ? quickReply.text : '');
+        const stored = Array.isArray(data.buttons) ? data.buttons.filter((b) => b && typeof b === 'object') : [];
+        setExistingButtons(stored);
+        // The OTP button belongs to authentication templates and is handled separately.
+        setButtons(stored.filter((b) => String(b.type || '').toUpperCase() !== 'OTP').map(fromStored));
 
         const samples: Record<string, string> = {};
         (Array.isArray(data.sample_values) ? data.sample_values : []).forEach((sv) => {
@@ -171,17 +182,8 @@ export const TemplateDetailView: React.FC = () => {
       const otp = existingButtons.find((b) => String(b.type || '').toUpperCase() === 'OTP');
       return [otp || { type: 'OTP', text: 'Copy code', otp_type: 'COPY_CODE' }];
     }
-    // Keep buttons this form doesn't edit (URL, phone, ...) and only manage the quick reply.
-    const buttons = existingButtons.filter((b) => String(b.type || '').toUpperCase() !== 'OTP');
-    const idx = buttons.findIndex((b) => String(b.type || '').toUpperCase() === 'QUICK_REPLY');
-    const text = buttonText.trim();
-    if (text) {
-      if (idx >= 0) buttons[idx] = { ...buttons[idx], text };
-      else buttons.push({ type: 'QUICK_REPLY', text });
-    } else if (idx >= 0) {
-      buttons.splice(idx, 1);
-    }
-    return buttons;
+    // Meta requires quick replies to be grouped together.
+    return groupButtons(buttons).map(toStored);
   };
 
   // Body for POST/PUT /api/templates (handlers.TemplateRequest)
@@ -226,6 +228,17 @@ export const TemplateDetailView: React.FC = () => {
     if (!isAuthentication && MEDIA_HEADER_TYPES.includes(headerType) && !headerHandle) {
       toast.error(`Upload a sample ${headerType.toLowerCase()} for the header first`);
       return false;
+    }
+    if (!isAuthentication) {
+      const buttonError = firstButtonError(buttons, category);
+      if (buttonError) {
+        setShowButtonErrors(true);
+        toast.error(buttonError);
+        return false;
+      }
+      // Show the order that will be saved.
+      const grouped = groupButtons(buttons);
+      if (grouped.some((b, i) => b !== buttons[i])) setButtons(grouped);
     }
     if (forMeta && variables.some((v) => !(sampleValues[`${v.component}:${v.index}`] || '').trim())) {
       toast.error('Meta requires a sample value for every variable');
@@ -534,14 +547,23 @@ export const TemplateDetailView: React.FC = () => {
                     />
                   </div>
 
-                  <div className="grid gap-1.5 pt-2 border-t border-white/[0.06] light:border-gray-200">
-                    <Label htmlFor="btnText" className="text-xs">Quick Reply Button (Optional)</Label>
-                    <Input
-                      id="btnText"
-                      placeholder="e.g. Confirm Order"
-                      value={buttonText}
-                      onChange={(e) => setButtonText(e.target.value)}
-                    />
+                  <div className="pt-2 border-t border-white/[0.06] light:border-gray-200">
+                    {isAuthentication ? (
+                      <div className="space-y-1">
+                        <Label className="text-xs">Buttons</Label>
+                        <p className="text-[10px] text-white/50 light:text-gray-500">
+                          Authentication templates can only use Meta's one-time password "Copy code" button, which is added automatically.
+                          {buttons.length > 0 && ' Other buttons on this template will be removed when you save it as authentication.'}
+                        </p>
+                      </div>
+                    ) : (
+                      <TemplateButtonsEditor
+                        buttons={buttons}
+                        onChange={setButtons}
+                        category={category}
+                        showErrors={showButtonErrors}
+                      />
+                    )}
                   </div>
                 </form>
               </CardContent>
@@ -557,7 +579,7 @@ export const TemplateDetailView: React.FC = () => {
               </div>
 
               {/* Phone Frame */}
-              <div className="rounded-3xl border-4 border-white/[0.12] bg-[#0c1317] p-4 shadow-2xl relative overflow-hidden light:border-gray-200">
+              <div className="rounded-3xl border-4 border-white/[0.12] bg-[#0c1317] p-4 shadow-2xl relative overflow-hidden light:border-gray-200 light:bg-[#efeae2]">
                 {/* Chat Header Mock */}
                 <div className="flex items-center gap-2.5 pb-3 border-b border-white/[0.08] mb-4 light:border-gray-200">
                   <div className="h-8 w-8 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs font-bold">
@@ -572,7 +594,7 @@ export const TemplateDetailView: React.FC = () => {
                 </div>
 
                 {/* WhatsApp Chat Bubble */}
-                <div className="rounded-xl bg-[#202c33] border border-[#202c33] p-3 text-white max-w-[90%] shadow-md space-y-2 light:text-gray-900">
+                <div className="rounded-xl bg-[#202c33] border border-[#202c33] p-3 text-white max-w-[90%] shadow-md space-y-2 light:bg-white light:border-gray-200 light:text-gray-900">
                   {headerType === 'TEXT' && headerText && (
                     <div className="font-semibold text-xs text-white pb-1 border-b border-white/[0.08] light:text-gray-900 light:border-gray-200">
                       {fillVariables(headerText, 'header')}
@@ -597,14 +619,17 @@ export const TemplateDetailView: React.FC = () => {
                   <div className="text-[9px] text-white/40 text-right light:text-gray-400">
                     12:00 PM
                   </div>
-                </div>
 
-                {/* Quick Reply Button Mock */}
-                {buttonText && (
-                  <div className="mt-2 max-w-[90%] rounded-xl bg-[#202c33] border border-[#202c33] py-2 text-center text-xs font-medium text-[#53bdeb] hover:bg-[#202c33]/80 cursor-pointer shadow-sm">
-                    {buttonText}
-                  </div>
-                )}
+                  <TemplateButtonsPreview
+                    buttons={isAuthentication
+                      ? [{ key: 'otp', type: 'COPY_CODE', text: 'Copy code' }]
+                      : groupButtons(buttons).map((b) => ({
+                        key: b.key,
+                        type: b.type,
+                        text: b.type === 'COPY_CODE' ? COPY_CODE_LABEL : b.text.trim(),
+                      }))}
+                  />
+                </div>
               </div>
             </div>
           </div>

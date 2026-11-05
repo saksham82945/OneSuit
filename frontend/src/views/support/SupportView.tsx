@@ -1,3 +1,4 @@
+import { useAuthStore } from '@/stores/auth';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -58,6 +59,7 @@ const errorMessage = (err: unknown, fallback: string): string => {
 };
 
 export const SupportView: React.FC = () => {
+  const isSuperAdmin = Boolean(useAuthStore((st) => st.user?.is_super_admin));
   const { t } = useTranslation();
   const [tickets, setTickets] = useState<SupportTicket[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -250,9 +252,12 @@ export const SupportView: React.FC = () => {
         subtitle="Ask the platform team for assistance, attach screenshots, and track resolutions"
         icon={LifeBuoy}
         actions={
-          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold" onClick={openDialog}>
-            <Plus className="h-4 w-4 mr-2" /> New ticket
-          </Button>
+          // The platform team answers tickets; it doesn't raise them.
+          isSuperAdmin ? undefined : (
+            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold" onClick={openDialog}>
+              <Plus className="h-4 w-4 mr-2" /> New ticket
+            </Button>
+          )
         }
       />
 
@@ -304,7 +309,9 @@ export const SupportView: React.FC = () => {
                     {filter === 'all' ? 'No tickets yet' : `No ${filter} tickets`}
                   </p>
                   <p className="text-xs text-white/50 light:text-gray-500 mt-1 max-w-sm">
-                    {filter === 'all'
+                    {filter === 'all' && isSuperAdmin
+                      ? 'Client tickets show up here.'
+                      : filter === 'all'
                       ? 'Have an issue or need assistance? Click "New ticket" above to notify the platform administrators.'
                       : `You don't have any tickets currently marked as ${filter}.`}
                   </p>

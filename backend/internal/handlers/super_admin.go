@@ -82,6 +82,9 @@ type PlatformConfig struct {
 	// Where that button goes: Meta's hosted WhatsApp onboarding link. Empty
 	// means build it from the Meta App ID and Configuration ID.
 	ConnectURL string `json:"connect_url"`
+	// Teams section on/off: for client workspaces (admins) and for super admins.
+	TeamsEnabledAdmin      bool `json:"teams_enabled_admin"`
+	TeamsEnabledSuperAdmin bool `json:"teams_enabled_super_admin"`
 	// Read-only in responses; the secret itself is stored encrypted under its own key.
 	HasMetaAppSecret bool `json:"has_meta_app_secret"`
 }
@@ -97,6 +100,8 @@ func defaultPlatformConfig() PlatformConfig {
 		Timezone:              "UTC",
 		ManualSignupEnabled:   true,
 		EmbeddedSignupEnabled: true, // only offered once Meta app keys exist
+		TeamsEnabledAdmin:      true,
+		TeamsEnabledSuperAdmin: true,
 	}
 }
 

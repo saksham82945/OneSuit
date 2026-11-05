@@ -916,6 +916,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/super-admin/webhooks", app.SuperAdminListWebhooks)
 	g.POST("/api/super-admin/vendors", app.SuperAdminCreateVendor)
 	g.PUT("/api/super-admin/vendors/{id}", app.SuperAdminUpdateVendor)
+	g.DELETE("/api/super-admin/vendors/{id}", app.SuperAdminDeleteVendor)
 	g.GET("/api/super-admin/plans", app.SuperAdminListPlans)
 	g.GET("/api/super-admin/plan-modules", app.SuperAdminListPlanModules)
 	g.POST("/api/super-admin/plans", app.SuperAdminCreatePlan)

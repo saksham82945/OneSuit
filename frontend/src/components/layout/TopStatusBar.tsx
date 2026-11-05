@@ -69,15 +69,6 @@ export const TopStatusBar: React.FC<TopStatusBarProps> = ({ className }) => {
           </span>
         </div>
 
-        {/* Support Helpdesk */}
-        <Link
-          to="/support"
-          className="telemetry-pill hover:bg-teal-100/70 dark:hover:bg-teal-950/50 text-teal-800 dark:text-teal-300 border border-teal-300/70 dark:border-teal-700/50 transition-all flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold shadow-xs hover:shadow-sm"
-          title="Open Helpdesk & Support"
-        >
-          <LifeBuoy className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400" />
-          <span>Support</span>
-        </Link>
       </div>
     </div>
   );

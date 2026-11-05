@@ -197,6 +197,8 @@ export const ConfigurationView: React.FC<{ embedded?: boolean }> = ({ embedded }
         embedded_button_label: (config.embedded_button_label ?? '').trim(),
         manual_button_label: (config.manual_button_label ?? '').trim(),
         hide_connect_button: Boolean(config.hide_connect_button),
+        teams_enabled_admin: config.teams_enabled_admin !== false,
+        teams_enabled_super_admin: config.teams_enabled_super_admin !== false,
         connect_url: (config.connect_url ?? '').trim(),
       };
 
@@ -798,6 +800,18 @@ export const ConfigurationView: React.FC<{ embedded?: boolean }> = ({ embedded }
                     <Switch
                       checked={config.require_email_verification}
                       onCheckedChange={(v) => update('require_email_verification', v)}
+                    />
+                  </Row>
+                  <Row label="Teams for client admins" hint="Show the Teams section in every client workspace. Off hides it and blocks changes to teams.">
+                    <Switch
+                      checked={config.teams_enabled_admin !== false}
+                      onCheckedChange={(v) => update('teams_enabled_admin', v)}
+                    />
+                  </Row>
+                  <Row label="Teams for super admins" hint="Show the Teams section in the super admin menus.">
+                    <Switch
+                      checked={config.teams_enabled_super_admin !== false}
+                      onCheckedChange={(v) => update('teams_enabled_super_admin', v)}
                     />
                   </Row>
                   <Row label="Maintenance mode" hint="Blocks regular client access and displays maintenance banner">

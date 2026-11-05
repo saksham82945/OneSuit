@@ -15,7 +15,8 @@ export type PlanModuleKey =
   | 'api_integration'
   | 'calling'
   | 'catalogue'
-  | 'integrations';
+  | 'integrations'
+  | 'teams';
 
 export type PlanModules = Partial<Record<PlanModuleKey, boolean>>;
 
@@ -31,6 +32,7 @@ export function moduleForPath(path: string): PlanModuleKey | undefined {
   if (is('/calling')) return 'calling';
   if (is('/catalogs')) return 'catalogue';
   if (is('/settings/integrations')) return 'integrations';
+  if (is('/settings/teams')) return 'teams';
   return undefined;
 }
 

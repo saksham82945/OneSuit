@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Building2, Plus, LogIn, Pencil, Ban, CheckCircle2 } from 'lucide-react';
+import { Building2, Plus, LogIn, Pencil, Ban, CheckCircle2, Trash2, AlertTriangle, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   superAdminService,
@@ -73,6 +73,9 @@ export const ClientsView: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [accessingId, setAccessingId] = useState<string | null>(null);
   const [subFor, setSubFor] = useState<Vendor | null>(null);
+  const [deleting, setDeleting] = useState<Vendor | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const load = () => {
     setError(null);
@@ -161,6 +164,26 @@ export const ClientsView: React.FC = () => {
     }
   };
 
+  const openDelete = (v: Vendor) => {
+    setDeleteConfirm('');
+    setDeleting(v);
+  };
+
+  const handleDelete = async () => {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    try {
+      await superAdminService.deleteVendor(deleting.id);
+      setVendors((list) => (list ?? []).filter((v) => v.id !== deleting.id));
+      toast.success(`${deleting.name} deleted`);
+      setDeleting(null);
+    } catch (err) {
+      toast.error(errorMessage(err, `Could not delete ${deleting.name}`));
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   const handleAccess = async (v: Vendor) => {
     setAccessingId(v.id);
     try {
@@ -182,9 +205,31 @@ export const ClientsView: React.FC = () => {
       label: 'Client title',
       sortValue: (v) => v.name,
       render: (v) => (
-        <button type="button" onClick={() => openEdit(v)} className="text-left font-medium text-emerald-400 hover:underline light:text-emerald-600">
-          {v.name}
-        </button>
+        <div className="flex items-start justify-between gap-3 min-w-[11rem]">
+          <button type="button" onClick={() => openEdit(v)} className="text-left font-medium text-emerald-400 hover:underline light:text-emerald-600">
+            {v.name}
+          </button>
+          <div className="flex shrink-0 items-center gap-0.5 -mt-0.5">
+            <button
+              type="button"
+              onClick={() => openEdit(v)}
+              title={`Edit ${v.name}`}
+              aria-label={`Edit ${v.name}`}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-white/50 hover:bg-white/[0.06] hover:text-white light:text-gray-400 light:hover:bg-gray-100 light:hover:text-gray-900"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => openDelete(v)}
+              title={`Delete ${v.name}`}
+              aria-label={`Delete ${v.name}`}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-white/50 hover:bg-rose-500/10 hover:text-rose-400 light:text-gray-400 light:hover:bg-rose-50 light:hover:text-rose-600"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
       ),
     },
     {
@@ -264,6 +309,16 @@ export const ClientsView: React.FC = () => {
 
   const selectedPlan = plans.find((p) => p.id === form.plan_id);
 
+  // Mirrors the backend: an invoice is issued when an active client starts a
+  // paid plan period (plan, cycle or renewal date changed, or just activated).
+  const willInvoice = (() => {
+    if (form.status !== 'active' || !selectedPlan) return false;
+    if (cyclePrice(selectedPlan, form.billing_cycle).total <= 0) return false;
+    if (!editing) return true;
+    const sameRenewal = (editing.renewal_date ? editing.renewal_date.slice(0, 10) : '') === form.renewal_date;
+    return !(editing.status === 'active' && editing.plan_id === form.plan_id && editing.billing_cycle === form.billing_cycle && sameRenewal);
+  })();
+
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
 
   return (
@@ -316,6 +371,45 @@ export const ClientsView: React.FC = () => {
           </div>
         )}
       </div>
+
+      <Dialog open={deleting !== null} onOpenChange={(open) => !open && !deleteBusy && setDeleting(null)}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-rose-400" /> Delete {deleting?.name}?
+            </DialogTitle>
+            <DialogDescription>
+              This removes the client's workspace: its subscription, WhatsApp numbers and team access. All of its users are
+              signed out, and users who don't belong to another workspace lose their login. This can't be undone from the panel.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-1.5 py-2">
+            <Label className="text-xs">
+              Type <strong className="select-all">{deleting?.name}</strong> to confirm
+            </Label>
+            <Input
+              autoFocus
+              value={deleteConfirm}
+              onChange={(e) => setDeleteConfirm(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && deleting && deleteConfirm.trim() === deleting.name.trim() && !deleteBusy) handleDelete();
+              }}
+              className={fieldClass}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={deleteBusy} onClick={() => setDeleting(null)}>Cancel</Button>
+            <Button
+              type="button"
+              disabled={deleteBusy || !deleting || deleteConfirm.trim() !== deleting.name.trim()}
+              onClick={handleDelete}
+              className="bg-rose-600 hover:bg-rose-500 text-white"
+            >
+              <Trash2 className="h-4 w-4 mr-1.5" /> {deleteBusy ? 'Deleting…' : 'Delete client'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <SubscriptionDialog client={subFor} plans={plans} onClose={() => setSubFor(null)} onSaved={replaceVendor} />
 
@@ -418,6 +512,18 @@ export const ClientsView: React.FC = () => {
                   <p className="text-[11px] text-white/40 light:text-gray-500">Filled in from the billing cycle. Leave empty on trial to use the default trial length.</p>
                 )}
               </div>
+              {willInvoice ? (
+                <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300 light:border-amber-200 light:bg-amber-50 light:text-amber-800">
+                  <Receipt className="mt-px h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Saving will issue a paid invoice of {formatPrice(cyclePrice(selectedPlan!, form.billing_cycle).total)} for this {editing ? 'renewal' : 'plan'}.
+                  </span>
+                </p>
+              ) : (
+                <p className="text-[11px] text-white/40 light:text-gray-500">
+                  Activating or renewing a paid plan (status Active) issues a paid invoice for the client.
+                </p>
+              )}
               {!editing && (
                 <div className="grid gap-1.5">
                   <Label className="text-xs">Owner password</Label>

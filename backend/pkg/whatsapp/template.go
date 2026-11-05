@@ -263,7 +263,8 @@ func (c *Client) buildStandardComponents(template *TemplateSubmission) ([]map[st
 				btnType = strings.ToUpper(btnType)
 				btnText, _ := btnMap["text"].(string)
 
-				if btnText == "" {
+				// COPY_CODE uses Meta's fixed label, so it carries no text.
+				if btnText == "" && btnType != "COPY_CODE" {
 					continue
 				}
 
@@ -309,7 +310,6 @@ func (c *Client) buildStandardComponents(template *TemplateSubmission) ([]map[st
 					button["phone_number"] = phoneNum
 				case "COPY_CODE":
 					button["type"] = "COPY_CODE"
-					button["text"] = btnText
 					switch ex := btnMap["example"].(type) {
 					case string:
 						if ex != "" {

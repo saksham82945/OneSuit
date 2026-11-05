@@ -11,7 +11,6 @@ import {
   Menu,
   X,
   PanelLeftOpen,
-  PanelLeftClose,
   LayoutDashboard,
   ShieldCheck,
   MessageSquare,
@@ -48,39 +47,65 @@ import {
   LogIn,
   Cable,
   IndianRupee,
+  Building2,
+  Code2,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { PrimaryRail, visibleRailModules } from './PrimaryRail';
 import { UserMenu } from './UserMenu';
 import { SecondarySidebar, type SecondaryNavGroup } from './SecondarySidebar';
 import { TopStatusBar } from './TopStatusBar';
-import { SuperAdminNavbar, type SuperAdminNavSection } from './SuperAdminNavbar';
+import { SuperAdminNavbar } from './SuperAdminNavbar';
+import { CategoryNav } from './CategoryNav';
+import { groupByCategory, type NavCategoryDef } from './navCategories';
 import { useBrandedTitle, useBranding } from '@/services/branding';
 import { BrandMark } from '@/views/public/PublicLayout';
 import { usePlanModules } from '@/lib/planModules';
 import { PlanLockedNotice } from './PlanLockedNotice';
 
+/** Category headings of the super admin's navbar (and the Platform Admin sub-menu). */
+const PLATFORM_CATEGORIES: NavCategoryDef[] = [
+  { id: 'overview', title: 'Overview', flat: true },
+  { id: 'clients', title: 'Clients & Billing', icon: Handshake },
+  { id: 'messaging', title: 'Messaging & WhatsApp', icon: MessageCircle },
+  { id: 'marketing', title: 'Marketing & Ads', icon: Megaphone },
+  { id: 'website', title: 'Website & Content', icon: Globe },
+  { id: 'platform', title: 'Platform', icon: SlidersHorizontal },
+];
+
 /** Platform Admin pages (super admin only). */
 const PLATFORM_ITEMS: SecondaryNavGroup['items'] = [
-  { name: 'nav.superAdminDashboard', path: '/super-admin', icon: ShieldCheck, exact: true },
-  { name: 'nav.agencies', path: '/super-admin/clients', icon: Handshake },
-  { name: 'nav.subscriptions', path: '/super-admin/subscriptions', icon: CreditCard },
-  { name: 'Subscription Plans', path: '/super-admin/plans', icon: Layers },
-  { name: 'Payments', path: '/super-admin/payments', icon: IndianRupee },
-  { name: 'Ads Manager', path: '/super-admin/ads', icon: Radio },
-  { name: 'Website', path: '/super-admin/website', icon: Globe },
-  { name: 'nav.pagesManagement', path: '/super-admin/pages', icon: FileText },
-  { name: 'WhatsApp Onboarding', path: '/super-admin/whatsapp-onboarding', icon: MessageCircle },
-  { name: 'WEBHOOKS', path: '/super-admin/webhooks', icon: Webhook },
-  { name: 'Social Login', path: '/super-admin/social-login', icon: LogIn },
-  { name: 'Setup & Integrations', path: '/super-admin/integrations', icon: Cable },
-  { name: 'nav.manageTickets', path: '/super-admin/tickets', icon: Ticket },
-  { name: 'nav.aiCallSetup', path: '/super-admin/ai-call-setup', icon: Phone },
-  { name: 'nav.aiAgents', path: '/chatbot/ai', icon: Sparkles, badge: 'AI', badgeVariant: 'ai' },
+  { name: 'nav.superAdminDashboard', path: '/super-admin', icon: ShieldCheck, exact: true, category: 'overview' },
+  { name: 'nav.agencies', path: '/super-admin/clients', icon: Handshake, category: 'clients' },
+  { name: 'nav.subscriptions', path: '/super-admin/subscriptions', icon: CreditCard, category: 'clients' },
+  { name: 'Subscription Plans', path: '/super-admin/plans', icon: Layers, category: 'clients' },
+  { name: 'Payments', path: '/super-admin/payments', icon: IndianRupee, category: 'clients' },
+  { name: 'WhatsApp Onboarding', path: '/super-admin/whatsapp-onboarding', icon: MessageCircle, category: 'messaging' },
+  { name: 'WEBHOOKS', path: '/super-admin/webhooks', icon: Webhook, category: 'messaging' },
+  { name: 'nav.aiCallSetup', path: '/super-admin/ai-call-setup', icon: Phone, category: 'messaging' },
+  { name: 'nav.aiAgents', path: '/chatbot/ai', icon: Sparkles, badge: 'AI', badgeVariant: 'ai', category: 'messaging' },
+  { name: 'Ads Manager', path: '/super-admin/ads', icon: Radio, category: 'marketing' },
+  { name: 'Website', path: '/super-admin/website', icon: Globe, category: 'website' },
+  { name: 'nav.pagesManagement', path: '/super-admin/pages', icon: FileText, category: 'website' },
+  { name: 'Social Login', path: '/super-admin/social-login', icon: LogIn, category: 'website' },
+  { name: 'Setup & Integrations', path: '/super-admin/integrations', icon: Cable, category: 'platform' },
+  { name: 'nav.manageTickets', path: '/super-admin/tickets', icon: Ticket, category: 'platform' },
+];
+
+/** Category headings of the Settings sub-menu. */
+const SETTINGS_CATEGORIES: NavCategoryDef[] = [
+  { id: 'workspace', title: 'Workspace', icon: Building2 },
+  { id: 'whatsapp', title: 'WhatsApp', icon: MessageCircle },
+  { id: 'contacts', title: 'nav.contacts', icon: Contact },
+  { id: 'automation', title: 'Automation', icon: Bot },
+  { id: 'developer', title: 'Developer', icon: Code2 },
+  { id: 'logs', title: 'Logs', icon: ScrollText },
 ];
 
 /**
- * Settings pages. `business` adds the pages only a business needs (WhatsApp
- * setup, contacts, tags, billing...); the super admin's own Settings skip them.
+ * Settings pages, tagged with their SETTINGS_CATEGORIES heading. `business`
+ * adds the pages only a business needs (WhatsApp setup, contacts, tags,
+ * billing...); the super admin's own Settings skip them.
  */
 function settingsItems(
   hasPermission: (resource: string, action: string) => boolean,
@@ -88,24 +113,30 @@ function settingsItems(
   business: boolean
 ): SecondaryNavGroup['items'] {
   return [
-    hasPermission('settings.general', 'read') ? { name: 'nav.general', path: '/settings', icon: Settings, exact: true } : null,
-    hasPermission('accounts', 'read') ? { name: 'nav.accounts', path: '/settings/accounts', icon: Users, badge: 'Meta', badgeVariant: 'popular' as const, exact: true } : null,
-    business && hasPermission('accounts', 'read') ? { name: 'WhatsApp Setup', path: '/settings/whatsapp-setup', icon: Phone } : null,
-    business && hasPermission('contacts', 'read') ? { name: 'nav.contacts', path: '/settings/contacts', icon: Contact } : null,
-    business && hasPermission('canned_responses', 'read') ? { name: 'nav.cannedResponses', path: '/settings/canned-responses', icon: MessageSquareText } : null,
-    business && hasPermission('tags', 'read') ? { name: 'nav.tags', path: '/settings/tags', icon: Tags } : null,
-    business && hasPermission('settings.chatbot', 'read') ? { name: 'nav.chatbot', path: '/settings/chatbot', icon: Bot } : null,
-    hasPermission('teams', 'read') ? { name: 'nav.teams', path: '/settings/teams', icon: Users } : null,
+    // Workspace
+    hasPermission('settings.general', 'read') ? { name: 'nav.general', path: '/settings', icon: Settings, exact: true, category: 'workspace' } : null,
+    business ? { name: 'nav.billing', path: '/settings/billing', icon: CreditCard, badge: 'Plan', badgeVariant: 'popular' as const, category: 'workspace' } : null,
     // Team users are managed by each business's admin; the super admin doesn't need this page.
-    !isSuperAdmin && hasPermission('users', 'read') ? { name: 'nav.users', path: '/settings/users', icon: Users } : null,
-    hasPermission('api_keys', 'read') ? { name: 'nav.apiKeys', path: '/settings/api-keys', icon: Key } : null,
-    hasPermission('webhooks', 'read') ? { name: 'nav.webhooks', path: '/settings/webhooks', icon: Webhook } : null,
-    hasPermission('custom_actions', 'read') ? { name: 'nav.customActions', path: '/settings/custom-actions', icon: Zap } : null,
-    hasPermission('settings.sso', 'read') ? { name: 'nav.sso', path: '/settings/sso', icon: ShieldCheck } : null,
-    isSuperAdmin ? { name: 'nav.auditLogs', path: '/settings/audit-logs', icon: ScrollText } : null,
-    business ? { name: 'nav.billing', path: '/settings/billing', icon: CreditCard, badge: 'Plan', badgeVariant: 'popular' as const } : null,
-    business ? { name: 'nav.optIn', path: '/settings/opt-in', icon: Globe } : null,
-    business && hasPermission('contacts', 'read') ? { name: 'Integrations', path: '/settings/integrations', icon: Cable, badge: 'Leads', badgeVariant: 'new' as const } : null,
+    !isSuperAdmin && hasPermission('users', 'read') ? { name: 'nav.users', path: '/settings/users', icon: Users, category: 'workspace' } : null,
+    hasPermission('teams', 'read') ? { name: 'nav.teams', path: '/settings/teams', icon: UsersRound, category: 'workspace' } : null,
+    // WhatsApp
+    hasPermission('accounts', 'read') ? { name: 'nav.accounts', path: '/settings/accounts', icon: Users, badge: 'Meta', badgeVariant: 'popular' as const, exact: true, category: 'whatsapp' } : null,
+    business && hasPermission('accounts', 'read') ? { name: 'WhatsApp Setup', path: '/settings/whatsapp-setup', icon: Phone, category: 'whatsapp' } : null,
+    business ? { name: 'nav.optIn', path: '/settings/opt-in', icon: Globe, category: 'whatsapp' } : null,
+    // Contacts
+    business && hasPermission('contacts', 'read') ? { name: 'nav.contacts', path: '/settings/contacts', icon: Contact, category: 'contacts' } : null,
+    business && hasPermission('tags', 'read') ? { name: 'nav.tags', path: '/settings/tags', icon: Tags, category: 'contacts' } : null,
+    business && hasPermission('canned_responses', 'read') ? { name: 'nav.cannedResponses', path: '/settings/canned-responses', icon: MessageSquareText, category: 'contacts' } : null,
+    // Automation
+    business && hasPermission('settings.chatbot', 'read') ? { name: 'nav.chatbot', path: '/settings/chatbot', icon: Bot, category: 'automation' } : null,
+    hasPermission('custom_actions', 'read') ? { name: 'nav.customActions', path: '/settings/custom-actions', icon: Zap, category: 'automation' } : null,
+    // Developer
+    hasPermission('api_keys', 'read') ? { name: 'nav.apiKeys', path: '/settings/api-keys', icon: Key, category: 'developer' } : null,
+    hasPermission('webhooks', 'read') ? { name: 'nav.webhooks', path: '/settings/webhooks', icon: Webhook, category: 'developer' } : null,
+    business && hasPermission('contacts', 'read') ? { name: 'Integrations', path: '/settings/integrations', icon: Cable, badge: 'Leads', badgeVariant: 'new' as const, category: 'developer' } : null,
+    hasPermission('settings.sso', 'read') ? { name: 'nav.sso', path: '/settings/sso', icon: ShieldCheck, category: 'developer' } : null,
+    // Logs
+    isSuperAdmin ? { name: 'nav.auditLogs', path: '/settings/audit-logs', icon: ScrollText, category: 'logs' } : null,
   ].filter(Boolean) as SecondaryNavGroup['items'];
 }
 
@@ -144,7 +175,9 @@ export const AppLayout: React.FC = () => {
       const next = !prev;
       try {
         localStorage.setItem('onesuit-rail-expanded', String(next));
-      } catch {}
+      } catch {
+        // Not saved; the toggle still applies for this page load.
+      }
       return next;
     });
   };
@@ -154,7 +187,9 @@ export const AppLayout: React.FC = () => {
       const next = !prev;
       try {
         localStorage.setItem('onesuit-subnav-collapsed', String(next));
-      } catch {}
+      } catch {
+        // Not saved; the toggle still applies for this page load.
+      }
       return next;
     });
   };
@@ -188,6 +223,7 @@ export const AppLayout: React.FC = () => {
         title: 'nav.sectionSuperAdmin',
         subtitle: 'Platform Operations',
         items: PLATFORM_ITEMS,
+        categories: PLATFORM_CATEGORIES,
       };
     }
 
@@ -335,6 +371,7 @@ export const AppLayout: React.FC = () => {
         title: 'nav.settings',
         subtitle: 'Workspace Settings',
         items,
+        categories: SETTINGS_CATEGORIES,
       };
     }
 
@@ -344,17 +381,14 @@ export const AppLayout: React.FC = () => {
   // The super admin (outside a client's account) gets one navbar with every
   // Platform Admin and Settings page instead of the rail + sub-menu.
   const singleNav = isSuperAdmin && !insideClient;
-  const superAdminSections = useMemo<SuperAdminNavSection[]>(
+  const superAdminItems = useMemo<SecondaryNavGroup['items']>(
     () => [
-      { title: 'Platform', items: PLATFORM_ITEMS },
-      {
-        title: 'Settings',
-        // Configuration and General are one Settings page for the super admin.
-        items: [
-          { name: 'Settings', path: '/super-admin/settings', icon: Settings },
-          ...settingsItems(hasPermission, true, false).filter((i) => i.path !== '/settings'),
-        ],
-      },
+      ...PLATFORM_ITEMS,
+      // Configuration and General are one Settings page for the super admin.
+      { name: 'Settings', path: '/super-admin/settings', icon: Settings, category: 'platform' },
+      ...settingsItems(hasPermission, true, false)
+        .filter((i) => i.path !== '/settings')
+        .map((i) => ({ ...i, category: i.path === '/settings/accounts' ? 'messaging' : 'platform' })),
     ],
     [hasPermission]
   );
@@ -373,6 +407,9 @@ export const AppLayout: React.FC = () => {
   const navGroup: SecondaryNavGroup | null = currentNavGroup
     ? { ...currentNavGroup, items: currentNavGroup.items.filter((i) => pathAllowed(i.path)) }
     : null;
+  // Same plan / platform switches for the super admin's navbar; categories left empty drop out.
+  const superAdminCategories = groupByCategory(superAdminItems.filter((i) => pathAllowed(i.path)), PLATFORM_CATEGORIES);
+  const closeMobileMenu = () => setIsMobileMenuOpen(false);
   const pageLocked = !singleNav && !pathAllowed(location.pathname);
 
   return (
@@ -404,7 +441,7 @@ export const AppLayout: React.FC = () => {
       {/* Super admin: one navbar with every Platform Admin and Settings page */}
       {singleNav && (
         <div className="hidden md:flex shrink-0 h-full">
-          <SuperAdminNavbar sections={superAdminSections} />
+          <SuperAdminNavbar categories={superAdminCategories} />
         </div>
       )}
 
@@ -472,31 +509,11 @@ export const AppLayout: React.FC = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto p-3">
-          {singleNav &&
-            superAdminSections.map((section) => (
-              <div key={section.title} className="mb-4">
-                <h3 className="px-3 text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">{section.title}</h3>
-                <div className="mt-2 space-y-1">
-                  {section.items.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <button
-                        key={item.path}
-                        type="button"
-                        onClick={() => {
-                          setIsMobileMenuOpen(false);
-                          navigate(item.path);
-                        }}
-                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/[0.06]"
-                      >
-                        <Icon className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                        <span>{t(item.name) || item.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+          {singleNav && (
+            <nav aria-label="Platform admin" className="mb-4">
+              <CategoryNav categories={superAdminCategories} storageKey="onesuit-sa-nav-cats" tone="surface" onNavigate={closeMobileMenu} />
+            </nav>
+          )}
           {!singleNav && (
             <div className="mb-4">
               <h3 className="px-3 text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">Menu</h3>
@@ -532,25 +549,14 @@ export const AppLayout: React.FC = () => {
               <h3 className="px-3 text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
                 {t(navGroup.title) || navGroup.title}
               </h3>
-              <div className="mt-2 space-y-1">
-                {navGroup.items.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      key={item.path}
-                      type="button"
-                      onClick={() => {
-                        setIsMobileMenuOpen(false);
-                        navigate(item.path);
-                      }}
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/[0.06]"
-                    >
-                      <Icon className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                      <span>{t(item.name) || item.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              <nav aria-label={t(navGroup.title) || navGroup.title} className="mt-2">
+                <CategoryNav
+                  categories={groupByCategory(navGroup.items, navGroup.categories ?? [])}
+                  storageKey={`onesuit-subnav-cats-${navGroup.moduleId}`}
+                  tone="surface"
+                  onNavigate={closeMobileMenu}
+                />
+              </nav>
             </div>
           )}
         </div>

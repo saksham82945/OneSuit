@@ -1,33 +1,23 @@
 import React, { useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { LifeBuoy, Moon, PanelLeftClose, PanelLeftOpen, Sun, type LucideIcon } from 'lucide-react';
+import { LifeBuoy, Moon, PanelLeftClose, PanelLeftOpen, Sun } from 'lucide-react';
 import { BrandMark } from '@/views/public/PublicLayout';
 import { useBranding } from '@/services/branding';
 import { useTheme } from '@/hooks/useTheme';
 import { cn } from '@/lib/utils';
 import { UserMenu } from './UserMenu';
-
-export interface SuperAdminNavItem {
-  name: string;
-  path: string;
-  icon: LucideIcon;
-  badge?: string;
-  exact?: boolean;
-}
-
-export interface SuperAdminNavSection {
-  title: string;
-  items: SuperAdminNavItem[];
-}
+import { CategoryNav } from './CategoryNav';
+import { isItemActive, type NavCategory } from './navCategories';
 
 const STORAGE_KEY = 'onesuit-sa-nav-collapsed';
 
 /**
  * The super admin's single navbar: every Platform Admin and Settings page in
- * one bar (no second sub-menu). Collapses to icons.
+ * one bar (no second sub-menu), grouped under collapsible categories.
+ * Collapses to icons (then every link shows, with a divider per category).
  */
-export const SuperAdminNavbar: React.FC<{ sections: SuperAdminNavSection[] }> = ({ sections }) => {
+export const SuperAdminNavbar: React.FC<{ categories: NavCategory[] }> = ({ categories }) => {
   const { t } = useTranslation();
   const location = useLocation();
   const { isDark, toggleTheme } = useTheme();
@@ -50,8 +40,7 @@ export const SuperAdminNavbar: React.FC<{ sections: SuperAdminNavSection[] }> = 
       return !c;
     });
 
-  const isActive = (item: SuperAdminNavItem) =>
-    item.exact ? location.pathname === item.path : location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+  const allItems = categories.flatMap((c) => c.items);
 
   const footerButton = cn(
     'w-full flex items-center gap-2.5 rounded-xl py-1.5 text-xs text-white/75 hover:text-white hover:bg-white/[0.08] transition-colors',
@@ -86,50 +75,39 @@ export const SuperAdminNavbar: React.FC<{ sections: SuperAdminNavSection[] }> = 
       </div>
 
       {/* Links */}
-      <nav className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar space-y-4 py-1">
-        {sections.map((section) => (
-          <div key={section.title}>
-            {collapsed ? (
-              <div className="mx-auto mb-1.5 h-px w-8 bg-white/15" />
-            ) : (
-              <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-white/45">{section.title}</p>
-            )}
-            <div className="space-y-0.5">
-              {section.items.map((item) => {
-                const active = isActive(item);
-                const Icon = item.icon;
-                const label = t(item.name) || item.name;
-                return (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    end={item.exact}
-                    title={label}
-                    aria-current={active ? 'page' : undefined}
-                    className={cn(
-                      'group flex items-center gap-2.5 rounded-xl text-xs font-medium transition-all',
-                      collapsed ? 'justify-center p-2' : 'px-3 py-2',
-                      active ? 'bg-white text-spruce-dark font-semibold shadow-sm' : 'text-white/80 hover:text-white hover:bg-white/[0.08]'
-                    )}
-                  >
-                    <Icon className={cn('h-4 w-4 shrink-0', active ? 'text-spruce-dark' : 'text-white/80 group-hover:text-white')} />
-                    {!collapsed && <span className="truncate flex-1">{label}</span>}
-                    {!collapsed && item.badge && (
-                      <span
-                        className={cn(
-                          'text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider',
-                          active ? 'bg-purple-100 text-purple-900' : 'bg-purple-400/25 text-purple-200'
-                        )}
-                      >
-                        {item.badge}
-                      </span>
-                    )}
-                  </NavLink>
-                );
-              })}
-            </div>
+      <nav aria-label="Platform admin" className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar py-1">
+        {collapsed ? (
+          <div className="space-y-1.5">
+            {categories.map((cat, idx) => (
+              <div key={cat.id} className="space-y-0.5">
+                {idx > 0 && <div className="mx-auto mb-1.5 h-px w-8 bg-white/15" />}
+                {cat.items.map((item) => {
+                  const active = isItemActive(item, allItems, location.pathname);
+                  const Icon = item.icon;
+                  const label = t(item.name) || item.name;
+                  return (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      end={item.exact}
+                      title={label}
+                      aria-label={label}
+                      aria-current={active ? 'page' : undefined}
+                      className={cn(
+                        'group flex items-center justify-center rounded-xl p-2 transition-all',
+                        active ? 'bg-white text-spruce-dark shadow-sm' : 'text-white/80 hover:text-white hover:bg-white/[0.08]'
+                      )}
+                    >
+                      <Icon className={cn('h-4 w-4 shrink-0', active ? 'text-spruce-dark' : 'text-white/80 group-hover:text-white')} />
+                    </NavLink>
+                  );
+                })}
+              </div>
+            ))}
           </div>
-        ))}
+        ) : (
+          <CategoryNav categories={categories} storageKey="onesuit-sa-nav-cats" tone="rail" />
+        )}
       </nav>
 
       {/* Footer */}

@@ -1,30 +1,25 @@
 import React from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
-import { PanelLeftClose, ChevronLeft, type LucideIcon } from 'lucide-react';
+import { PanelLeftClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import { useAuthStore } from '@/stores/auth';
 import { useBranding } from '@/services/branding';
 import { getImpersonatedVendorName, isInsideClient } from '@/services/superAdmin';
 import { UserMenu } from './UserMenu';
+import { CategoryNav } from './CategoryNav';
+import { groupByCategory, type CategorizedNavItem, type NavCategoryDef } from './navCategories';
 
-export interface SecondaryNavItem {
-  name: string;
-  path: string;
-  icon: LucideIcon;
-  badge?: string;
-  badgeVariant?: 'new' | 'ai' | 'popular';
-  exact?: boolean;
-}
+export type SecondaryNavItem = CategorizedNavItem;
 
 export interface SecondaryNavGroup {
   moduleId: string;
   title: string;
   subtitle?: string;
   items: SecondaryNavItem[];
+  /** Collapsible headings the items are grouped under (by `item.category`). */
+  categories?: NavCategoryDef[];
 }
 
 interface SecondarySidebarProps {
@@ -41,7 +36,6 @@ export const SecondarySidebar: React.FC<SecondarySidebarProps> = ({
   className,
 }) => {
   const { t } = useTranslation();
-  const location = useLocation();
   const user = useAuthStore((s) => s.user);
   const { platform_name: platformName } = useBranding();
 
@@ -90,67 +84,15 @@ export const SecondarySidebar: React.FC<SecondarySidebarProps> = ({
         )}
       </div>
 
-      {/* Navigation Sub-Items */}
+      {/* Navigation Sub-Items, grouped under collapsible category headings */}
       <ScrollArea className="flex-1 px-2.5 py-1">
-        <div className="space-y-1">
-          {currentGroup.items.map((item) => {
-            const Icon = item.icon;
-            // A prefix match yields to a more specific sibling (e.g. /campaigns
-            // stays unhighlighted on /campaigns/analytics).
-            const matches = (path: string) => location.pathname === path || location.pathname.startsWith(`${path}/`);
-            const isMatch = item.exact
-              ? location.pathname === item.path
-              : matches(item.path) &&
-                !currentGroup.items.some((other) => other.path.length > item.path.length && other.path.startsWith(item.path) && matches(other.path));
-
-            return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                end={item.exact}
-                className={() =>
-                  cn(
-                    'group flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150',
-                    isMatch
-                      ? 'bg-teal-50 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200 font-semibold shadow-sm'
-                      : 'text-gray-700 hover:text-gray-950 hover:bg-gray-100/80 dark:text-gray-300 dark:hover:text-white dark:hover:bg-white/[0.06]'
-                  )
-                }
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Icon
-                    className={cn(
-                      'h-4 w-4 shrink-0 transition-colors',
-                      isMatch
-                        ? 'text-teal-700 dark:text-teal-300'
-                        : 'text-gray-500 group-hover:text-gray-800 dark:text-gray-400 dark:group-hover:text-gray-200'
-                    )}
-                  />
-                  <span className="truncate">{t(item.name) || item.name}</span>
-                </div>
-
-                {item.badge && (
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      'text-[9px] uppercase px-1.5 py-0 font-bold border-0 tracking-wider',
-                      item.badgeVariant === 'new' &&
-                        'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300',
-                      item.badgeVariant === 'ai' &&
-                        'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300',
-                      item.badgeVariant === 'popular' &&
-                        'bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-300',
-                      !item.badgeVariant &&
-                        'bg-gray-100 text-gray-700 dark:bg-white/[0.08] dark:text-gray-300'
-                    )}
-                  >
-                    {item.badge}
-                  </Badge>
-                )}
-              </NavLink>
-            );
-          })}
-        </div>
+        <nav aria-label={t(currentGroup.title) || currentGroup.title}>
+          <CategoryNav
+            categories={groupByCategory(currentGroup.items, currentGroup.categories ?? [])}
+            storageKey={`onesuit-subnav-cats-${currentGroup.moduleId}`}
+            tone="surface"
+          />
+        </nav>
       </ScrollArea>
 
       {/* Downside My Account Bar with Theme Toggle */}
