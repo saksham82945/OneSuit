@@ -78,6 +78,19 @@ func TestApp_Explore_CreatesReadOnlyDemoAccount(t *testing.T) {
 	testutil.AssertErrorResponse(t, blocked, fasthttp.StatusForbidden, "demo workspace")
 }
 
+func TestApp_Explore_RejectsWeakPassword(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	for _, weak := range []string{"abc12", "lettersonly", "12345678"} {
+		req := testutil.NewJSONRequest(t, map[string]any{
+			"full_name": "Weak Pass", "email": testutil.UniqueEmail("weak"), "password": weak,
+		})
+		require.NoError(t, app.Explore(req))
+		testutil.AssertErrorResponse(t, req, fasthttp.StatusBadRequest,
+			"Password must be at least 8 characters and include a letter and a number")
+	}
+}
+
 func TestApp_DemoGuard_OnlyAffectsTheDemoWorkspace(t *testing.T) {
 	t.Parallel()
 	f := newSuperAdminFixture(t)

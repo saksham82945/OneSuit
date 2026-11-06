@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   ArrowRight,
-  Check,
   Compass,
   Eye,
   FileText,
@@ -20,9 +19,10 @@ import { cn } from '@/lib/utils';
 import type { User } from '@/stores/auth';
 import { api } from '@/services/api';
 import { readData } from '@/services/response';
+import { PasswordChecklist } from './SignupFields';
+import { PASSWORD_RULES_MESSAGE, passwordIsValid } from '@/lib/passwordRules';
 import {
   useBranding,
-  MIN_PASSWORD_LENGTH,
   apiErrorMessage,
   apiErrorStatus,
   completeSignIn,
@@ -54,8 +54,7 @@ function validate(form: FormState): FieldErrors {
   if (!form.full_name.trim()) errors.full_name = 'Enter your name';
   if (!form.email.trim()) errors.email = 'Enter your email';
   else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
-  if (form.password.length < MIN_PASSWORD_LENGTH)
-    errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters`;
+  if (!passwordIsValid(form.password)) errors.password = PASSWORD_RULES_MESSAGE;
   return errors;
 }
 
@@ -107,6 +106,7 @@ export const ExploreView: React.FC = () => {
 
   const [form, setForm] = useState<FormState>({ full_name: '', email: '', password: '' });
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [triedSubmit, setTriedSubmit] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [emailTaken, setEmailTaken] = useState<string | null>(null);
   const [closedMessage, setClosedMessage] = useState<string | null>(null);
@@ -136,7 +136,9 @@ export const ExploreView: React.FC = () => {
     setErrors(errs);
     setFormError(null);
     setEmailTaken(null);
+    setTriedSubmit(true);
     if (Object.keys(errs).length > 0) {
+      toast.error(errs.password ? PASSWORD_RULES_MESSAGE : 'Please fix the highlighted fields');
       focusFirstError(errs);
       return;
     }
@@ -255,8 +257,6 @@ export const ExploreView: React.FC = () => {
     );
   }
 
-  const passwordOk = form.password.length >= MIN_PASSWORD_LENGTH;
-
   return (
     <PublicShell headerActions={headerActions}>
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
@@ -340,17 +340,7 @@ export const ExploreView: React.FC = () => {
                 </FormAlert>
               )}
 
-              <Field
-                id="password"
-                label="Password"
-                error={errors.password}
-                hint={
-                  <span className={cn('inline-flex items-center gap-1', passwordOk && 'text-emerald-400 light:text-emerald-600')}>
-                    {passwordOk && <Check className="h-3.5 w-3.5" />}
-                    At least {MIN_PASSWORD_LENGTH} characters
-                  </span>
-                }
-              >
+              <Field id="password" label="Password" error={errors.password}>
                 <PasswordInput
                   id="password"
                   ref={(el) => {
@@ -362,8 +352,9 @@ export const ExploreView: React.FC = () => {
                   autoComplete="new-password"
                   disabled={submitting}
                   invalid={!!errors.password}
-                  aria-describedby={errors.password ? 'password-error' : 'password-hint'}
+                  aria-describedby={errors.password ? 'password-error password-rules' : 'password-rules'}
                 />
+                <PasswordChecklist id="password-rules" password={form.password} showErrors={triedSubmit} />
               </Field>
 
               {formError && <FormAlert>{formError}</FormAlert>}

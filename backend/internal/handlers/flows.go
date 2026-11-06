@@ -101,13 +101,12 @@ func (a *App) CreateFlow(r *fastglue.Request) error {
 	if req.Name == "" {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Name is required", nil, "")
 	}
-	if req.WhatsAppAccount == "" {
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "WhatsApp account is required", nil, "")
-	}
-
-	// Verify account exists and belongs to org
-	if _, err := a.resolveWhatsAppAccount(orgID, req.WhatsAppAccount); err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "WhatsApp account not found", nil, "")
+	// A draft can be built without a connected number (demo / trying it out);
+	// a number is only needed to save it to Meta and publish.
+	if req.WhatsAppAccount != "" {
+		if _, err := a.resolveWhatsAppAccount(orgID, req.WhatsAppAccount); err != nil {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "WhatsApp account not found", nil, "")
+		}
 	}
 
 	// Set defaults
@@ -275,7 +274,7 @@ func (a *App) SaveFlowToMeta(r *fastglue.Request) error {
 	// Get the WhatsApp account
 	account, err := a.resolveWhatsAppAccount(orgID, flow.WhatsAppAccount)
 	if err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "WhatsApp account not found", nil, "")
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Connect a WhatsApp number to send this flow to Meta", nil, "")
 	}
 
 	// Create WhatsApp API client
@@ -387,7 +386,7 @@ func (a *App) PublishFlow(r *fastglue.Request) error {
 	// Get the WhatsApp account
 	account, err := a.resolveWhatsAppAccount(orgID, flow.WhatsAppAccount)
 	if err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "WhatsApp account not found", nil, "")
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Connect a WhatsApp number to send this flow to Meta", nil, "")
 	}
 
 	// Create WhatsApp API client
@@ -456,7 +455,7 @@ func (a *App) DeprecateFlow(r *fastglue.Request) error {
 		// Get the WhatsApp account
 		account, err := a.resolveWhatsAppAccount(orgID, flow.WhatsAppAccount)
 		if err != nil {
-			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "WhatsApp account not found", nil, "")
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Connect a WhatsApp number to send this flow to Meta", nil, "")
 		}
 
 		waClient := whatsapp.New(a.Log)

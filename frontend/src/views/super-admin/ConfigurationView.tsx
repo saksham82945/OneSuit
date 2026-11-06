@@ -198,6 +198,7 @@ export const ConfigurationView: React.FC<{ embedded?: boolean }> = ({ embedded }
         hide_connect_button: Boolean(config.hide_connect_button),
         teams_enabled_admin: config.teams_enabled_admin !== false,
         teams_enabled_super_admin: config.teams_enabled_super_admin !== false,
+        automation_enabled_admin: config.automation_enabled_admin !== false,
         connect_url: (config.connect_url ?? '').trim(),
       };
 
@@ -793,6 +794,12 @@ export const ConfigurationView: React.FC<{ embedded?: boolean }> = ({ embedded }
                     <Switch
                       checked={config.teams_enabled_admin !== false}
                       onCheckedChange={(v) => update('teams_enabled_admin', v)}
+                    />
+                  </Row>
+                  <Row label="Automation for client admins" hint="Show Bot Flows, keyword replies and AI agents in every client workspace. Off hides them and turns their API off.">
+                    <Switch
+                      checked={config.automation_enabled_admin !== false}
+                      onCheckedChange={(v) => update('automation_enabled_admin', v)}
                     />
                   </Row>
                   <Row label="Teams for super admins" hint="Show the Teams section in the super admin menus.">

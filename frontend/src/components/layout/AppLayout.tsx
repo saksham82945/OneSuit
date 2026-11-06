@@ -319,12 +319,11 @@ export const AppLayout: React.FC = () => {
 
     if (activeModuleId === 'flows') {
       const items = [
-        hasPermission('flows.whatsapp', 'read')
-          ? { name: 'nav.flows', path: '/flows', icon: Workflow, badge: 'Popular', badgeVariant: 'popular' as const }
+        hasPermission('flows.chatbot', 'read')
+          ? { name: 'Bot Flows', path: '/chatbot/flows', icon: Workflow, badge: 'Popular', badgeVariant: 'popular' as const }
           : null,
-        // 'nav.overview' (/chatbot) removed per request — flows overview removed from chat support section
         hasPermission('chatbot.keywords', 'read') ? { name: 'nav.keywords', path: '/chatbot/keywords', icon: Key } : null,
-        hasPermission('flows.chatbot', 'read') ? { name: 'nav.flows', path: '/chatbot/flows', icon: Workflow } : null,
+        hasPermission('flows.whatsapp', 'read') ? { name: 'WhatsApp Forms (Meta)', path: '/flows', icon: Workflow } : null,
         hasPermission('transfers', 'read') ? { name: 'nav.transfers', path: '/chatbot/transfers', icon: UserX } : null,
       ].filter(Boolean) as SecondaryNavGroup['items'];
 

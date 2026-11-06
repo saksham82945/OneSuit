@@ -132,7 +132,8 @@ func (a *App) PlanModuleGuard(r *fastglue.Request) *fastglue.Request {
 		return r
 	}
 	orgID, err := a.getOrgID(r)
-	if err != nil || a.orgModules(orgID)[module.Key] {
+	automationOff := (module.Key == "chatbot" || module.Key == "ai_agents") && !a.loadPlatformConfig().AutomationEnabledAdmin
+	if err != nil || (a.orgModules(orgID)[module.Key] && !automationOff) {
 		return r
 	}
 	_ = r.SendErrorEnvelope(fasthttp.StatusForbidden,
@@ -155,6 +156,9 @@ func (a *App) GetPlanModules(r *fastglue.Request) error {
 	// Teams is switched platform-wide by the super admin, separately for
 	// client workspaces and for super admins.
 	cfg := a.loadPlatformConfig()
+	if !superAdmin && !cfg.AutomationEnabledAdmin {
+		mods["chatbot"], mods["ai_agents"] = false, false
+	}
 	mods["teams"] = cfg.TeamsEnabledAdmin
 	if superAdmin {
 		mods["teams"] = cfg.TeamsEnabledSuperAdmin

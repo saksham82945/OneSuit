@@ -57,6 +57,17 @@ describe('LandingPageView', () => {
     expect(screen.getByText('₹1,000')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: /^yearly/i }));
     expect(screen.getByText('₹9,600')).toBeDefined();
+    // The chosen billing cycle is carried to sign-up.
+    expect(screen.getByRole('link', { name: 'Buy Basic Plan' }).getAttribute('href')).toBe('/signup?plan=p2&cycle=yearly');
+  });
+
+  it('shows the product tour with the three bot types', async () => {
+    renderPage();
+    expect(screen.getByText(/one shared inbox for your whole team/i)).toBeDefined();
+    const tabs = screen.getAllByRole('tab').map((t) => t.textContent);
+    expect(tabs).toEqual(['Simple', 'Media', 'Advanced']);
+    fireEvent.click(screen.getByRole('tab', { name: 'Advanced' }));
+    expect(screen.getByRole('tab', { name: 'Advanced' }).getAttribute('aria-selected')).toBe('true');
   });
 
   it('links published pages, social media and WhatsApp', async () => {

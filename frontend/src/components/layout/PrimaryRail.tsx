@@ -95,9 +95,10 @@ export const primaryModules: PrimaryModule[] = [
     id: 'flows',
     label: 'Flows',
     icon: Workflow,
-    path: '/flows',
+    // Opens the bot builder: it works without a connected WhatsApp number.
+    path: '/chatbot/flows',
     matcher: (p) => p.startsWith('/flows') || p.startsWith('/chatbot'),
-    permission: 'flows.whatsapp',
+    permission: 'flows.chatbot',
   },
 
   {

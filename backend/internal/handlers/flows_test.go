@@ -214,7 +214,8 @@ func TestApp_CreateFlow_MissingName(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusBadRequest, testutil.GetResponseStatusCode(req))
 }
 
-func TestApp_CreateFlow_MissingWhatsAppAccount(t *testing.T) {
+// A draft can be created without a connected number (demo / trying it out).
+func TestApp_CreateFlow_WithoutWhatsAppAccountIsDraft(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
@@ -228,7 +229,7 @@ func TestApp_CreateFlow_MissingWhatsAppAccount(t *testing.T) {
 
 	err := app.CreateFlow(req)
 	require.NoError(t, err)
-	assert.Equal(t, fasthttp.StatusBadRequest, testutil.GetResponseStatusCode(req))
+	assert.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req), string(testutil.GetResponseBody(req)))
 }
 
 func TestApp_CreateFlow_AccountNotFound(t *testing.T) {

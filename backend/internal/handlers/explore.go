@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -52,9 +51,8 @@ func (a *App) Explore(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Your name is required", nil, "")
 	case !validEmail(req.Email):
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Please enter a valid email address", nil, "")
-	case len(req.Password) < minPasswordLength:
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest,
-			fmt.Sprintf("Password must be at least %d characters", minPasswordLength), nil, "")
+	case !strongEnoughPassword(req.Password):
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, passwordRulesMessage, nil, "")
 	}
 
 	demoID := a.demoOrgID()

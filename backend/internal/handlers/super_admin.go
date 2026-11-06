@@ -84,22 +84,25 @@ type PlatformConfig struct {
 	// Teams section on/off: for client workspaces (admins) and for super admins.
 	TeamsEnabledAdmin      bool `json:"teams_enabled_admin"`
 	TeamsEnabledSuperAdmin bool `json:"teams_enabled_super_admin"`
+	// Automation (chatbot flows, keyword replies, AI agents) on/off for client workspaces.
+	AutomationEnabledAdmin bool `json:"automation_enabled_admin"`
 	// Read-only in responses; the secret itself is stored encrypted under its own key.
 	HasMetaAppSecret bool `json:"has_meta_app_secret"`
 }
 
 func defaultPlatformConfig() PlatformConfig {
 	return PlatformConfig{
-		PlatformName:          "onesuit",
-		DefaultCurrency:       models.PlatformCurrency,
-		RenewalReminderDays:   7,
-		AllowVendorSignup:     true,
-		MaintenanceMessage:    "We are performing scheduled maintenance. Please try again shortly.",
-		Timezone:              "UTC",
-		ManualSignupEnabled:   true,
-		EmbeddedSignupEnabled: true, // only offered once Meta app keys exist
+		PlatformName:           "onesuit",
+		DefaultCurrency:        models.PlatformCurrency,
+		RenewalReminderDays:    7,
+		AllowVendorSignup:      true,
+		MaintenanceMessage:     "We are performing scheduled maintenance. Please try again shortly.",
+		Timezone:               "UTC",
+		ManualSignupEnabled:    true,
+		EmbeddedSignupEnabled:  true, // only offered once Meta app keys exist
 		TeamsEnabledAdmin:      true,
 		TeamsEnabledSuperAdmin: true,
+		AutomationEnabledAdmin: true,
 	}
 }
 

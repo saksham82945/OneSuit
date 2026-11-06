@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, CheckCircle2, CreditCard, Loader2, Lock, Rocket } from 'lucide-react';
+import { BadgeCheck, Check, CheckCircle2, CreditCard, IndianRupee, Loader2, Lock, MessageCircle, Rocket, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -11,7 +11,6 @@ import { api } from '@/services/api';
 import { readData } from '@/services/response';
 import {
   useBranding,
-  MIN_PASSWORD_LENGTH,
   apiErrorMessage,
   apiErrorStatus,
   completeSignIn,
@@ -39,6 +38,9 @@ import { AuthBackdrop } from '@/views/auth/AuthBackdrop';
 import { checkoutPath, isBillingCycle } from '@/services/payments';
 import type { BillingInterval } from '@/services/superAdmin';
 import { SignupPaymentChoice } from './SignupPaymentChoice';
+import { PasswordChecklist, PhoneInput } from './SignupFields';
+import { PASSWORD_RULES_MESSAGE, passwordIsValid } from '@/lib/passwordRules';
+import { DEFAULT_COUNTRY, phoneError, toE164, type Country } from '@/lib/countries';
 
 type FieldName = 'business_name' | 'full_name' | 'email' | 'phone' | 'password' | 'plan_id';
 type FieldErrors = Partial<Record<FieldName, string>>;
@@ -50,8 +52,6 @@ interface FormState {
   phone: string;
   password: string;
 }
-
-const PHONE_PATTERN = /^[+\d][\d\s()-]{5,}$/;
 
 const emptyForm: FormState = { business_name: '', full_name: '', email: '', phone: '', password: '' };
 
@@ -66,18 +66,59 @@ function fieldForServerMessage(message: string): FieldName | null {
   return null;
 }
 
-function validate(form: FormState): FieldErrors {
+/** Optional phone: only checked when something was typed. */
+function checkPhone(country: Country, phone: string): string | undefined {
+  if (!phone.trim()) return undefined;
+  return phoneError(country, phone) ?? undefined;
+}
+
+function validate(form: FormState, country: Country): FieldErrors {
   const errors: FieldErrors = {};
   if (!form.business_name.trim()) errors.business_name = 'Enter your business name';
   if (!form.full_name.trim()) errors.full_name = 'Enter your name';
   if (!form.email.trim()) errors.email = 'Enter your work email';
   else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
-  if (form.phone.trim() && !PHONE_PATTERN.test(form.phone.trim()))
-    errors.phone = 'Enter a valid phone number, or leave it empty';
-  if (form.password.length < MIN_PASSWORD_LENGTH)
-    errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters`;
+  const phone = checkPhone(country, form.phone);
+  if (phone) errors.phone = phone;
+  if (!passwordIsValid(form.password)) errors.password = PASSWORD_RULES_MESSAGE;
   return errors;
 }
+
+/** Small reassurance strip shown beside the sign-up forms. */
+const TrustList: React.FC = () => (
+  <ul className="auth-enter mt-4 grid gap-2 text-sm" style={{ animationDelay: '260ms' }}>
+    {[
+      { icon: BadgeCheck, text: 'Official WhatsApp Business API' },
+      { icon: ShieldCheck, text: 'Secure payments with Razorpay & UPI' },
+      { icon: IndianRupee, text: 'Simple pricing in ₹, made in India' },
+    ].map(({ icon: Icon, text }) => (
+      <li
+        key={text}
+        className="flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5 text-white/70 backdrop-blur light:border-gray-200 light:bg-white/80 light:text-gray-700"
+      >
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400 light:bg-emerald-50 light:text-emerald-600">
+          <Icon className="h-4 w-4" />
+        </span>
+        {text}
+      </li>
+    ))}
+  </ul>
+);
+
+/** Eyebrow pill + gradient headline used at the top of both forms. */
+const SignupHeading: React.FC<{ eyebrow: React.ReactNode; title: React.ReactNode; children: React.ReactNode }> = ({
+  eyebrow,
+  title,
+  children,
+}) => (
+  <div className="auth-stagger mb-8 max-w-2xl" style={{ '--auth-base-delay': '0ms' } as React.CSSProperties}>
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/[0.08] px-3 py-1 text-xs font-medium text-emerald-300 light:border-emerald-200 light:bg-emerald-50 light:text-emerald-700">
+      {eyebrow}
+    </span>
+    <h1 className="mt-4 text-2xl font-bold tracking-tight text-white sm:text-4xl light:text-gray-900">{title}</h1>
+    <p className="mt-2 text-white/50 light:text-gray-500">{children}</p>
+  </div>
+);
 
 const fieldOrder: FieldName[] = ['business_name', 'full_name', 'email', 'phone', 'password', 'plan_id'];
 
@@ -223,8 +264,10 @@ const NewBusinessSignup: React.FC = () => {
     email: searchParams.get('email') ?? '',
     full_name: searchParams.get('name') ?? '',
   }));
+  const [country, setCountry] = useState<Country>(DEFAULT_COUNTRY);
   const [chosenPlanId, setChosenPlanId] = useState<string | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [triedSubmit, setTriedSubmit] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [emailTaken, setEmailTaken] = useState<string | null>(null);
   const [closedMessage, setClosedMessage] = useState<string | null>(null);
@@ -258,11 +301,14 @@ const NewBusinessSignup: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
-    const errs = validate(form);
+    const errs = validate(form, country);
     setErrors(errs);
     setFormError(null);
     setEmailTaken(null);
+    setTriedSubmit(true);
     if (Object.keys(errs).length > 0) {
+      if (errs.password) toast.error(PASSWORD_RULES_MESSAGE);
+      else toast.error('Please fix the highlighted fields');
       focusFirstError(errs);
       return;
     }
@@ -274,7 +320,7 @@ const NewBusinessSignup: React.FC = () => {
         full_name: form.full_name.trim(),
         email: form.email.trim(),
         password: form.password,
-        ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
+        ...(form.phone.trim() ? { phone: toE164(country, form.phone) } : {}),
         ...(planId ? { plan_id: planId } : {}),
       });
       const { user } = readData<{ user: User }>(res);
@@ -350,21 +396,32 @@ const NewBusinessSignup: React.FC = () => {
     );
   }
 
-  const passwordOk = form.password.length >= MIN_PASSWORD_LENGTH;
-
   return (
     <PublicShell headerActions={headerActions}>
       <div className="auth-motion relative isolate overflow-hidden">
       <AuthBackdrop className="-z-10" />
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
-        <div className="auth-stagger mb-8 max-w-xl" style={{ '--auth-base-delay': '0ms' } as React.CSSProperties}>
-          <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl light:text-gray-900">
-            Create your {platformName} account
-          </h1>
-          <p className="mt-2 text-white/50 light:text-gray-500">
-            Set up a workspace for your business in under a minute, then pay for your plan to get started.
-          </p>
-        </div>
+        <SignupHeading
+          eyebrow={
+            <>
+              <MessageCircle className="h-3.5 w-3.5" />
+              WhatsApp Business, made simple
+            </>
+          }
+          title={
+            <>
+              Create your{' '}
+              <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-500 bg-clip-text text-transparent light:from-emerald-600 light:via-teal-500 light:to-emerald-600">
+                {platformName}
+              </span>{' '}
+              account
+            </>
+          }
+        >
+          {payment.payNow
+            ? 'Set up your workspace in under a minute, then pay securely to unlock your plan.'
+            : 'Set up a workspace for your business in under a minute and start chatting with customers.'}
+        </SignupHeading>
 
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8">
           <form
@@ -441,35 +498,25 @@ const NewBusinessSignup: React.FC = () => {
               )}
 
               <Field id="phone" label="Phone" optional error={errors.phone}>
-                <Input
+                <PhoneInput
                   id="phone"
-                  type="tel"
-                  ref={(el) => {
-                    inputRefs.current.phone = el;
+                  country={country}
+                  onCountry={(c) => {
+                    setCountry(c);
+                    if (errors.phone) setErrors((e) => ({ ...e, phone: undefined }));
                   }}
                   value={form.phone}
-                  onChange={(e) => setField('phone', e.target.value)}
-                  placeholder="+1 555 123 4567"
-                  autoComplete="tel"
-                  inputMode="tel"
+                  onChange={(v) => setField('phone', v)}
+                  inputRef={(el) => {
+                    inputRefs.current.phone = el;
+                  }}
                   disabled={submitting}
-                  aria-invalid={!!errors.phone || undefined}
-                  aria-describedby={errors.phone ? 'phone-error' : undefined}
-                  className={cn(inputClass, errors.phone && errorInputClass)}
+                  invalid={!!errors.phone}
+                  describedBy={errors.phone ? 'phone-error' : undefined}
                 />
               </Field>
 
-              <Field
-                id="password"
-                label="Password"
-                error={errors.password}
-                hint={
-                  <span className={cn('inline-flex items-center gap-1', passwordOk && 'text-emerald-400 light:text-emerald-600')}>
-                    {passwordOk && <Check className="h-3.5 w-3.5" />}
-                    At least {MIN_PASSWORD_LENGTH} characters
-                  </span>
-                }
-              >
+              <Field id="password" label="Password" error={errors.password}>
                 <PasswordInput
                   id="password"
                   ref={(el) => {
@@ -481,8 +528,9 @@ const NewBusinessSignup: React.FC = () => {
                   autoComplete="new-password"
                   disabled={submitting}
                   invalid={!!errors.password}
-                  aria-describedby={errors.password ? 'password-error' : 'password-hint'}
+                  aria-describedby={errors.password ? 'password-error password-rules' : 'password-rules'}
                 />
+                <PasswordChecklist id="password-rules" password={form.password} showErrors={triedSubmit} />
               </Field>
 
               <PlanSelect
@@ -538,6 +586,7 @@ const NewBusinessSignup: React.FC = () => {
 
           <div className="auth-enter lg:sticky lg:top-6" style={{ animationDelay: '120ms' }}>
             <PlanSummary plan={selectedPlan} businessName={form.business_name} />
+            <TrustList />
           </div>
         </div>
       </div>
@@ -556,6 +605,7 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
 
   const [businessName, setBusinessName] = useState('');
   const [phone, setPhone] = useState('');
+  const [country, setCountry] = useState<Country>(DEFAULT_COUNTRY);
   const [chosenPlanId, setChosenPlanId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Partial<Record<UpgradeField, string>>>({});
   const [formError, setFormError] = useState<React.ReactNode>(null);
@@ -583,11 +633,12 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
     if (submitting) return;
     const errs: Partial<Record<UpgradeField, string>> = {};
     if (!businessName.trim()) errs.business_name = 'Enter your business name';
-    if (phone.trim() && !PHONE_PATTERN.test(phone.trim()))
-      errs.phone = 'Enter a valid phone number, or leave it empty';
+    const phoneErr = checkPhone(country, phone);
+    if (phoneErr) errs.phone = phoneErr;
     setErrors(errs);
     setFormError(null);
     if (Object.keys(errs).length > 0) {
+      toast.error('Please fix the highlighted fields');
       focusFirstError(errs);
       return;
     }
@@ -596,7 +647,7 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
     try {
       const res = await api.post('/subscribe', {
         business_name: businessName.trim(),
-        ...(phone.trim() ? { phone: phone.trim() } : {}),
+        ...(phone.trim() ? { phone: toE164(country, phone) } : {}),
         ...(planId ? { plan_id: planId } : {}),
       });
       const { user } = readData<{ user: User }>(res);
@@ -656,25 +707,24 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
       <div className="auth-motion relative isolate overflow-hidden">
       <AuthBackdrop className="-z-10" />
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
-        <div className="auth-stagger mb-8 max-w-xl" style={{ '--auth-base-delay': '0ms' } as React.CSSProperties}>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/[0.08] px-3 py-1 text-xs font-medium text-emerald-300 light:border-emerald-200 light:bg-emerald-50 light:text-emerald-700">
-            <Rocket className="h-3.5 w-3.5" />
-            Upgrade
-          </span>
-          <h1 className="mt-4 text-2xl font-bold tracking-tight text-white sm:text-3xl light:text-gray-900">
-            Upgrade to your own workspace
-          </h1>
-          <p className="mt-2 text-white/50 light:text-gray-500">
-            Set up your business and keep your login
-            {email ? (
-              <>
-                {' '}
-                (<span className="text-white/75 light:text-gray-800">{email}</span>)
-              </>
-            ) : null}
-            . You'll leave the demo and land in a fresh workspace of your own.
-          </p>
-        </div>
+        <SignupHeading
+          eyebrow={
+            <>
+              <Rocket className="h-3.5 w-3.5" />
+              Upgrade
+            </>
+          }
+          title="Upgrade to your own workspace"
+        >
+          Set up your business and keep your login
+          {email ? (
+            <>
+              {' '}
+              (<span className="text-white/75 light:text-gray-800">{email}</span>)
+            </>
+          ) : null}
+          . You'll leave the demo and land in a fresh workspace of your own.
+        </SignupHeading>
 
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8">
           <form
@@ -725,25 +775,25 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
               </Field>
 
               <Field id="phone" label="Phone" optional error={errors.phone}>
-                <Input
+                <PhoneInput
                   id="phone"
-                  type="tel"
-                  ref={(el) => {
-                    inputRefs.current.phone = el;
+                  country={country}
+                  onCountry={(c) => {
+                    setCountry(c);
+                    setErrors((er) => ({ ...er, phone: undefined }));
                   }}
                   value={phone}
-                  onChange={(e) => {
-                    setPhone(e.target.value);
+                  onChange={(v) => {
+                    setPhone(v);
                     setErrors((er) => ({ ...er, phone: undefined }));
                     setFormError(null);
                   }}
-                  placeholder="+1 555 123 4567"
-                  autoComplete="tel"
-                  inputMode="tel"
+                  inputRef={(el) => {
+                    inputRefs.current.phone = el;
+                  }}
                   disabled={submitting || upgradeClosed}
-                  aria-invalid={!!errors.phone || undefined}
-                  aria-describedby={errors.phone ? 'phone-error' : undefined}
-                  className={cn(inputClass, errors.phone && errorInputClass)}
+                  invalid={!!errors.phone}
+                  describedBy={errors.phone ? 'phone-error' : undefined}
                 />
               </Field>
 
@@ -801,6 +851,7 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
 
           <div className="auth-enter lg:sticky lg:top-6" style={{ animationDelay: '120ms' }}>
             <PlanSummary plan={selectedPlan} businessName={businessName} />
+            <TrustList />
           </div>
         </div>
       </div>

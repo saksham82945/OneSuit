@@ -142,6 +142,8 @@ export interface PlatformConfig {
   /** Teams section on/off for client workspaces and for super admins. */
   teams_enabled_admin?: boolean;
   teams_enabled_super_admin?: boolean;
+  /** Automation (bot flows, keyword replies, AI agents) for client admins. */
+  automation_enabled_admin?: boolean;
   /** Hide the "Connect WhatsApp with Facebook" shortcut button for business users. */
   hide_connect_button?: boolean;
   /** Meta hosted WhatsApp onboarding link that button opens (blank = built from the Meta IDs). */

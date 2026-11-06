@@ -122,9 +122,13 @@ func TestApp_Signup_Validation(t *testing.T) {
 	dup["email"] = f.member.Email
 	testutil.AssertErrorResponse(t, signup(t, f.app, dup), fasthttp.StatusConflict, "already exists")
 
-	short := base()
-	short["password"] = "short"
-	testutil.AssertErrorResponse(t, signup(t, f.app, short), fasthttp.StatusBadRequest, "at least 8")
+	// Passwords need 8+ characters with at least one letter and one number.
+	for _, weak := range []string{"short1", "onlyletters", "1234567890", "abc 12"} {
+		bad := base()
+		bad["password"] = weak
+		testutil.AssertErrorResponse(t, signup(t, f.app, bad), fasthttp.StatusBadRequest,
+			"Password must be at least 8 characters and include a letter and a number")
+	}
 
 	noBiz := base()
 	noBiz["business_name"] = " "

@@ -135,16 +135,12 @@ export const FlowsView: React.FC = () => {
       toast.error('Flow name is required');
       return;
     }
-    if (!flowAccount) {
-      toast.error('Connect a WhatsApp account before creating a flow');
-      return;
-    }
 
     try {
       await flowsService.create({
         name: flowName.trim(),
         category: flowCategory,
-        whatsapp_account: flowAccount,
+        whatsapp_account: flowAccount || '',
         json_version: '6.0',
         screens: [
           {
@@ -350,10 +346,10 @@ export const FlowsView: React.FC = () => {
               </div>
 
               <div className="grid gap-1.5">
-                <Label className="text-xs">WhatsApp Account</Label>
+                <Label className="text-xs">WhatsApp Account (optional)</Label>
                 <Select value={flowAccount} onValueChange={setFlowAccount}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Account" />
+                    <SelectValue placeholder={accounts.length ? 'Choose a number (or leave empty for a draft)' : 'No number connected — saved as a draft'} />
                   </SelectTrigger>
                   <SelectContent>
                     {accounts.map((a) => (

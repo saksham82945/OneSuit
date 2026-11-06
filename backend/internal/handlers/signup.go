@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
@@ -25,6 +27,27 @@ import (
 // team members join an organization, and the plan's user limit.
 
 const minPasswordLength = 8
+
+// passwordRulesMessage is returned when a new password is too weak.
+const passwordRulesMessage = "Password must be at least 8 characters and include a letter and a number"
+
+// strongEnoughPassword reports whether a new sign-up password has at least
+// minPasswordLength characters, at least one letter and at least one digit.
+func strongEnoughPassword(pw string) bool {
+	if utf8.RuneCountInString(pw) < minPasswordLength {
+		return false
+	}
+	var letter, digit bool
+	for _, r := range pw {
+		switch {
+		case unicode.IsLetter(r):
+			letter = true
+		case unicode.IsDigit(r):
+			digit = true
+		}
+	}
+	return letter && digit
+}
 
 // ============================================================================
 // Shared helpers
@@ -194,9 +217,8 @@ func (a *App) Signup(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Your name is required", nil, "")
 	case !validEmail(req.Email):
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Please enter a valid email address", nil, "")
-	case len(req.Password) < minPasswordLength:
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest,
-			fmt.Sprintf("Password must be at least %d characters", minPasswordLength), nil, "")
+	case !strongEnoughPassword(req.Password):
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, passwordRulesMessage, nil, "")
 	}
 
 	// Plan: the one chosen, else the platform default, else none.
