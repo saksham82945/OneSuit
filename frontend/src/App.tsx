@@ -53,7 +53,6 @@ import { RolesView } from '@/views/settings/RolesView';
 import { APIKeysView } from '@/views/settings/APIKeysView';
 import { WebhooksView } from '@/views/settings/WebhooksView';
 import { CustomActionsView } from '@/views/settings/CustomActionsView';
-import { SSOSettingsView } from '@/views/settings/SSOSettingsView';
 import { AuditLogsView } from '@/views/settings/AuditLogsView';
 import { ChatbotSettingsView } from '@/views/settings/ChatbotSettingsView';
 import { BillingView } from '@/views/settings/BillingView';
@@ -241,7 +240,6 @@ export const App: React.FC = () => {
             <Route path="settings/api-keys" element={<APIKeysView />} />
             <Route path="settings/webhooks" element={<WebhooksView />} />
             <Route path="settings/custom-actions" element={<CustomActionsView />} />
-            <Route path="settings/sso" element={<SSOSettingsView />} />
             {/* Roles and audit logs: super admin only */}
             <Route element={<SuperAdminRoute />}>
               <Route path="settings/roles" element={<RolesView />} />

@@ -233,7 +233,6 @@ export const navigationSections: NavSection[] = [
           { name: 'nav.apiKeys', path: '/settings/api-keys', icon: Key, permission: 'api_keys' },
           { name: 'nav.webhooks', path: '/settings/webhooks', icon: Webhook, permission: 'webhooks' },
           { name: 'nav.customActions', path: '/settings/custom-actions', icon: Zap, permission: 'custom_actions' },
-          { name: 'nav.sso', path: '/settings/sso', icon: ShieldCheck, permission: 'settings.sso' },
           { name: 'nav.auditLogs', path: '/settings/audit-logs', icon: ScrollText, permission: 'audit_logs' },
           { name: 'nav.billing', path: '/settings/billing', icon: CreditCard },
           { name: 'nav.optIn', path: '/settings/opt-in', icon: Globe },

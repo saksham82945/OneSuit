@@ -147,7 +147,6 @@ function settingsItems(
     hasPermission('api_keys', 'read') ? { name: 'nav.apiKeys', path: '/settings/api-keys', icon: Key, category: 'developer' } : null,
     hasPermission('webhooks', 'read') ? { name: 'nav.webhooks', path: '/settings/webhooks', icon: Webhook, category: 'developer' } : null,
     business && hasPermission('contacts', 'read') ? { name: 'Integrations', path: '/settings/integrations', icon: Cable, badge: 'Leads', badgeVariant: 'new' as const, category: 'developer' } : null,
-    hasPermission('settings.sso', 'read') ? { name: 'nav.sso', path: '/settings/sso', icon: ShieldCheck, category: 'developer' } : null,
     // Logs
     isSuperAdmin ? { name: 'nav.auditLogs', path: '/settings/audit-logs', icon: ScrollText, category: 'logs' } : null,
   ].filter(Boolean) as SecondaryNavGroup['items'];
