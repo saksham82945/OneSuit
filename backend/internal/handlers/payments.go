@@ -603,6 +603,7 @@ func (a *App) SuperAdminUpdatePaymentSettings(r *fastglue.Request) error {
 		return nil
 	}
 	s := a.loadPaymentSettings()
+	before := s
 	if req.RazorpayEnabled != nil {
 		s.RazorpayEnabled = *req.RazorpayEnabled
 	}
@@ -634,6 +635,13 @@ func (a *App) SuperAdminUpdatePaymentSettings(r *fastglue.Request) error {
 	if err := a.savePaymentSettings(s); err != nil {
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Could not save the settings", nil, "")
 	}
+	var secretChanges []map[string]any
+	for field, val := range map[string]*string{"razorpay_key_secret": req.RazorpayKeySecret, "razorpay_webhook_secret": req.RazorpayWebhookSecret} {
+		if val != nil {
+			secretChanges = append(secretChanges, map[string]any{"field": field, "old_value": nil, "new_value": "changed"})
+		}
+	}
+	a.platformAudit(r, "payment_settings", uuid.Nil, models.AuditActionUpdated, before, s, secretChanges...)
 	out := a.loadPaymentSettings()
 	out.WebhookURL = a.razorpayWebhookURL(r)
 	return r.SendEnvelope(out)
@@ -652,18 +660,7 @@ func (a *App) SuperAdminListPayments(r *fastglue.Request) error {
 		return nil
 	}
 	q := r.RequestCtx.QueryArgs()
-	base := a.DB.Table("payments AS p").Joins("LEFT JOIN organizations o ON o.id = p.organization_id").Where("p.deleted_at IS NULL")
-	if v := string(q.Peek("status")); v != "" {
-		base = base.Where("p.status = ?", v)
-	}
-	if v := string(q.Peek("method")); v != "" {
-		base = base.Where("p.method = ?", v)
-	}
-	if v := strings.TrimSpace(string(q.Peek("search"))); v != "" {
-		like := "%" + v + "%"
-		base = base.Where("o.name ILIKE ? OR p.payer_email ILIKE ? OR p.upi_reference ILIKE ? OR p.razorpay_payment_id ILIKE ? OR p.razorpay_order_id ILIKE ? OR p.plan_name ILIKE ?",
-			like, like, like, like, like, like)
-	}
+	base := a.paymentsQuery(string(q.Peek("status")), string(q.Peek("method")), string(q.Peek("search")))
 	page, limit := q.GetUintOrZero("page"), q.GetUintOrZero("limit")
 	if page < 1 {
 		page = 1
@@ -717,6 +714,7 @@ func (a *App) SuperAdminApprovePayment(r *fastglue.Request) error {
 		a.Log.Error("Failed to approve payment", "error", err, "payment_id", id)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Could not approve the payment: "+err.Error(), nil, "")
 	}
+	a.auditPaymentDecision(id, adminID, models.AuditActionApproved, "")
 	return a.sendPayment(r, id)
 }
 
@@ -751,5 +749,6 @@ func (a *App) SuperAdminRejectPayment(r *fastglue.Request) error {
 	if res.RowsAffected == 0 {
 		return r.SendErrorEnvelope(fasthttp.StatusConflict, "Only payments waiting for approval can be rejected", nil, "")
 	}
+	a.auditPaymentDecision(id, adminID, models.AuditActionRejected, reason)
 	return a.sendPayment(r, id)
 }

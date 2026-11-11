@@ -7,6 +7,10 @@ const (
 	AuditActionCreated AuditAction = "created"
 	AuditActionUpdated AuditAction = "updated"
 	AuditActionDeleted AuditAction = "deleted"
+	// Platform actions by a super admin.
+	AuditActionApproved AuditAction = "approved"
+	AuditActionRejected AuditAction = "rejected"
+	AuditActionAccessed AuditAction = "accessed"
 )
 
 // TeamRole represents a user's role within a specific team (not organizational role)

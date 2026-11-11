@@ -15,6 +15,7 @@ import {
   QrCode,
   CreditCard,
   Info,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/services/api';
@@ -221,6 +222,10 @@ const PaymentsList: React.FC = () => {
   const [toReject, setToReject] = useState<Payment | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<{ ids: string[] } | { all: true } | null>(null);
+  const [deleteInvoices, setDeleteInvoices] = useState(true);
+  const [confirmText, setConfirmText] = useState('');
 
   // Debounce the search box.
   useEffect(() => {
@@ -304,6 +309,50 @@ const PaymentsList: React.FC = () => {
       void load(true);
     } catch (err) {
       toast.error(errorMessage(err, 'Could not reject the payment'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Selection is per page and filter set.
+  useEffect(() => setSelected(new Set()), [status, method, search, page]);
+
+  const toggleSelected = (id: string) =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const askDelete = (target: { ids: string[] } | { all: true }) => {
+    setDeleteInvoices(true);
+    setConfirmText('');
+    setToDelete(target);
+  };
+
+  const deleteAll = !!toDelete && 'all' in toDelete;
+  const deleteCount = !toDelete ? 0 : 'all' in toDelete ? data?.total ?? 0 : toDelete.ids.length;
+
+  const runDelete = async () => {
+    if (!toDelete) return;
+    setBusy(true);
+    try {
+      const body =
+        'all' in toDelete
+          ? { all: true, status, method, search, delete_invoices: deleteInvoices }
+          : { ids: toDelete.ids, delete_invoices: deleteInvoices };
+      const res = readData<{ deleted: number; invoices_deleted: number }>(await api.post('/super-admin/payments/delete', body));
+      const n = res?.deleted ?? 0;
+      const inv = res?.invoices_deleted ?? 0;
+      toast.success(`Deleted ${n} payment${n === 1 ? '' : 's'}${inv ? ` and ${inv} invoice${inv === 1 ? '' : 's'}` : ''}`);
+      setToDelete(null);
+      setDetails(null);
+      setSelected(new Set());
+      if ('all' in toDelete) setPage(1);
+      void load();
+    } catch (err) {
+      toast.error(errorMessage(err, 'Could not delete the payments'));
     } finally {
       setBusy(false);
     }
@@ -401,6 +450,27 @@ const PaymentsList: React.FC = () => {
               <Button size="sm" variant="outline" className="h-9" onClick={() => void load()} disabled={loading} aria-label="Refresh">
                 <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
               </Button>
+              {selected.size > 0 ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 border-rose-500/40 text-rose-400 hover:bg-rose-500/10 light:text-rose-600"
+                  onClick={() => askDelete({ ids: [...selected] })}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete selected ({selected.size})
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 text-rose-400 hover:bg-rose-500/10 light:text-rose-600"
+                  disabled={!data?.total}
+                  onClick={() => askDelete({ all: true })}
+                  title={status || method || search ? 'Delete every payment matching these filters' : 'Delete the whole payment history'}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" /> {status || method || search ? 'Delete all shown' : 'Clear history'}
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -422,6 +492,15 @@ const PaymentsList: React.FC = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className={cn('border-b border-white/[0.06] text-left text-[11px] uppercase tracking-wide light:border-gray-100', muted)}>
+                    <th className="w-10 py-2.5 pl-4">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all payments on this page"
+                        className="h-4 w-4 cursor-pointer accent-emerald-600"
+                        checked={payments.length > 0 && payments.every((p) => selected.has(p.id))}
+                        onChange={(e) => setSelected(e.target.checked ? new Set(payments.map((p) => p.id)) : new Set())}
+                      />
+                    </th>
                     <th className="px-4 py-2.5 font-medium">Date</th>
                     <th className="px-4 py-2.5 font-medium">Client</th>
                     <th className="px-4 py-2.5 font-medium">Plan</th>
@@ -439,6 +518,15 @@ const PaymentsList: React.FC = () => {
                       onClick={() => setDetails(p)}
                       className="cursor-pointer hover:bg-white/[0.03] light:hover:bg-gray-50"
                     >
+                      <td className="py-3 pl-4" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select payment from ${p.organization_name || 'client'}`}
+                          className="h-4 w-4 cursor-pointer accent-emerald-600"
+                          checked={selected.has(p.id)}
+                          onChange={() => toggleSelected(p.id)}
+                        />
+                      </td>
                       <td className={cn('whitespace-nowrap px-4 py-3 text-xs', muted)}>{fmtDate(p.submitted_at || p.created_at)}</td>
                       <td className="max-w-[200px] px-4 py-3">
                         <p className="truncate font-medium">{p.organization_name || 'Unknown client'}</p>
@@ -464,7 +552,15 @@ const PaymentsList: React.FC = () => {
               {payments.map((p) => (
                 <li key={p.id} className="space-y-2 p-4" onClick={() => setDetails(p)}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select payment from ${p.organization_name || 'client'}`}
+                      className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-emerald-600"
+                      checked={selected.has(p.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => toggleSelected(p.id)}
+                    />
+                    <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{p.organization_name || 'Unknown client'}</p>
                       <p className={cn('truncate text-xs', muted)}>
                         {p.plan_name || '—'} · {cycleInfo(p.billing_cycle).label}
@@ -558,6 +654,13 @@ const PaymentsList: React.FC = () => {
                   ))}
               </dl>
               <DialogFooter className="gap-2 sm:gap-2">
+                <Button
+                  variant="ghost"
+                  className="text-rose-400 hover:bg-rose-500/10 sm:mr-auto light:text-rose-600"
+                  onClick={() => askDelete({ ids: [details.id] })}
+                >
+                  <Trash2 className="mr-1.5 h-4 w-4" /> Delete
+                </Button>
                 {details.method === 'upi' && details.status === 'pending_verification' ? (
                   <>
                     <Button variant="outline" onClick={() => {
@@ -625,6 +728,64 @@ const PaymentsList: React.FC = () => {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete */}
+      <Dialog open={!!toDelete} onOpenChange={(o) => !o && !busy && setToDelete(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {deleteAll
+                ? status || method || search
+                  ? `Delete all ${deleteCount} matching payments?`
+                  : `Clear the whole payment history (${deleteCount})?`
+                : `Delete ${deleteCount === 1 ? 'this payment' : `${deleteCount} payments`}?`}
+            </DialogTitle>
+            <DialogDescription>
+              The payments disappear from this list, the totals and the client's billing page. Plans they already activated stay active.
+              This can't be undone here.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-white/10 p-3 text-sm light:border-gray-200">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-rose-600"
+              checked={deleteInvoices}
+              onChange={(e) => setDeleteInvoices(e.target.checked)}
+            />
+            <span>
+              Also delete their invoices
+              <span className={cn('block text-xs', muted)}>Removes the paid invoices these payments created from the client's billing history.</span>
+            </span>
+          </label>
+          {deleteAll && (
+            <div className="grid gap-1.5">
+              <Label htmlFor="confirm-delete" className="text-xs">
+                Type <b>delete</b> to confirm
+              </Label>
+              <Input
+                id="confirm-delete"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="delete"
+                autoComplete="off"
+                className={fieldClass}
+              />
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setToDelete(null)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-rose-600 text-white hover:bg-rose-500"
+              onClick={runDelete}
+              disabled={busy || (deleteAll && confirmText.trim().toLowerCase() !== 'delete')}
+            >
+              <Trash2 className="mr-1.5 h-4 w-4" /> {busy ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

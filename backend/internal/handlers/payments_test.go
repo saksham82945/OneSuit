@@ -283,3 +283,36 @@ func TestApp_Payments_ApproveWithDeletedSubscriptionOrClient(t *testing.T) {
 	require.NoError(t, e.f.app.DB.Delete(&models.Organization{}, "id = ?", e.vendor.ID).Error)
 	assert.Equal(t, fasthttp.StatusConflict, e.asSuper(t, e.f.app.SuperAdminApprovePayment, nil, d2["payment_id"].(string)))
 }
+
+func TestApp_Payments_SuperAdminDeletesPayments(t *testing.T) {
+	e := newPayEnv(t)
+	newPayment := func() string {
+		_, d := e.asAdmin(t, e.f.app.CreatePaymentCheckout, map[string]any{"plan_id": e.plan.ID.String(), "method": "upi"}, "")
+		return d["payment_id"].(string)
+	}
+	paid, other, keep := newPayment(), newPayment(), newPayment()
+	require.Equal(t, fasthttp.StatusOK, e.asSuper(t, e.f.app.SuperAdminApprovePayment, nil, paid))
+	require.Len(t, e.invoices(t), 1)
+
+	// Only the super admin deletes; a body with nothing chosen is refused.
+	code, _ := e.asAdmin(t, e.f.app.SuperAdminDeletePayments, map[string]any{"ids": []string{other}}, "")
+	assert.Equal(t, fasthttp.StatusForbidden, code)
+	assert.Equal(t, fasthttp.StatusBadRequest, e.asSuper(t, e.f.app.SuperAdminDeletePayments, map[string]any{}, ""))
+
+	// Chosen payments go, with their invoice when asked; the plan stays active.
+	require.Equal(t, fasthttp.StatusOK, e.asSuper(t, e.f.app.SuperAdminDeletePayments,
+		map[string]any{"ids": []string{paid, other}, "delete_invoices": true}, ""))
+	var left []models.Payment
+	e.f.app.DB.Where("organization_id = ?", e.vendor.ID).Find(&left)
+	require.Len(t, left, 1)
+	assert.Equal(t, keep, left[0].ID.String())
+	assert.Empty(t, e.invoices(t), "the paid payment's invoice was deleted")
+	assert.Equal(t, models.VendorStatusActive, e.subscription(t).Status)
+
+	// "all" with a filter clears every matching payment.
+	require.Equal(t, fasthttp.StatusOK, e.asSuper(t, e.f.app.SuperAdminDeletePayments,
+		map[string]any{"all": true, "search": e.vendor.Name}, ""))
+	var n int64
+	e.f.app.DB.Model(&models.Payment{}).Where("organization_id = ?", e.vendor.ID).Count(&n)
+	assert.Zero(t, n)
+}

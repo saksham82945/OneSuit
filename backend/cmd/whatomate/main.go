@@ -668,6 +668,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/super-admin/payments", app.SuperAdminListPayments)
 	g.POST("/api/super-admin/payments/{id}/approve", app.SuperAdminApprovePayment)
 	g.POST("/api/super-admin/payments/{id}/reject", app.SuperAdminRejectPayment)
+	g.POST("/api/super-admin/payments/delete", app.SuperAdminDeletePayments)
 	g.GET("/api/super-admin/payment-settings", app.SuperAdminGetPaymentSettings)
 	g.PUT("/api/super-admin/payment-settings", app.SuperAdminUpdatePaymentSettings)
 
@@ -876,6 +877,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 
 	// Audit Logs
 	g.GET("/api/audit-logs", app.ListAuditLogs)
+	g.GET("/api/super-admin/audit-logs", app.SuperAdminListAuditLogs)
 	g.GET("/api/audit-logs/{id}", app.GetAuditLog)
 
 	// Canned Responses

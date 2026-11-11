@@ -161,6 +161,7 @@ func (a *App) SuperAdminUpdateConfig(r *fastglue.Request) error {
 	}
 
 	cfg := a.loadPlatformConfig()
+	before := cfg
 	if err := json.Unmarshal(r.RequestCtx.PostBody(), &cfg); err != nil {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Invalid request body", nil, "")
 	}
@@ -238,6 +239,12 @@ func (a *App) SuperAdminUpdateConfig(r *fastglue.Request) error {
 		a.Log.Error("Failed to save platform config", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to save configuration", nil, "")
 	}
+	before.HasMetaAppSecret = false
+	var secretChange []map[string]any
+	if secretReq.ClearMetaAppSecret || (secretReq.MetaAppSecret != nil && strings.TrimSpace(*secretReq.MetaAppSecret) != "") {
+		secretChange = append(secretChange, map[string]any{"field": "meta_app_secret", "old_value": nil, "new_value": "changed"})
+	}
+	a.platformAudit(r, "platform_config", uuid.Nil, models.AuditActionUpdated, before, cfg, secretChange...)
 	cfg.HasMetaAppSecret = a.platformMetaSecret() != ""
 	return r.SendEnvelope(cfg)
 }
@@ -931,6 +938,7 @@ func (a *App) SuperAdminCreatePlan(r *fastglue.Request) error {
 		a.Log.Error("Failed to create plan", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to create plan", nil, "")
 	}
+	a.platformAudit(r, "plan", plan.ID, models.AuditActionCreated, nil, plan)
 	return r.SendEnvelope(plan)
 }
 
@@ -951,6 +959,7 @@ func (a *App) SuperAdminUpdatePlan(r *fastglue.Request) error {
 	if err != nil {
 		return r.SendErrorEnvelope(fasthttp.StatusNotFound, "Plan not found", nil, "")
 	}
+	before := *plan
 	if msg := req.apply(plan); msg != "" {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, msg, nil, "")
 	}
@@ -959,6 +968,7 @@ func (a *App) SuperAdminUpdatePlan(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to update plan", nil, "")
 	}
 	clearOrgModulesCache()
+	a.platformAudit(r, "plan", plan.ID, models.AuditActionUpdated, before, plan)
 	return r.SendEnvelope(plan)
 }
 
@@ -989,6 +999,7 @@ func (a *App) SuperAdminDeletePlan(r *fastglue.Request) error {
 		a.Log.Error("Failed to delete plan", "error", err, "plan_id", id)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to delete plan", nil, "")
 	}
+	a.platformAudit(r, "plan", plan.ID, models.AuditActionDeleted, plan, nil)
 	return r.SendEnvelope(map[string]any{"success": true})
 }
 

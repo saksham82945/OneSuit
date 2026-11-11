@@ -476,6 +476,12 @@ func (a *App) SwitchOrg(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(status, msg, nil, "")
 	}
 
+	// A super admin entering a client's workspace is recorded in that workspace.
+	if user.IsSuperAdmin && req.OrganizationID != user.OrganizationID {
+		a.logAudit(req.OrganizationID, userID, "organization", req.OrganizationID, models.AuditActionAccessed, nil, nil,
+			map[string]any{"field": "entered_as_super_admin", "old_value": nil, "new_value": org.Name})
+	}
+
 	// Set the target org on the user for token generation
 	user.OrganizationID = req.OrganizationID
 
