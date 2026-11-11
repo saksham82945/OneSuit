@@ -394,19 +394,20 @@ export const ClientsView: React.FC = () => {
             </DialogTitle>
             <DialogDescription>
               This removes the client's workspace: its subscription, WhatsApp numbers and team access. All of its users are
-              signed out, and users who don't belong to another workspace lose their login. This can't be undone from the panel.
+              signed out, and users who don't belong to another workspace lose their login. Super admins are kept. This can't be undone from the panel.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-1.5 py-2">
             <Label className="text-xs">
-              Type <strong className="select-all">{deleting?.name}</strong> to confirm
+              Type <strong className="select-all">delete</strong> to confirm
             </Label>
             <Input
               autoFocus
+              placeholder="delete"
               value={deleteConfirm}
               onChange={(e) => setDeleteConfirm(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && deleting && deleteConfirm.trim() === deleting.name.trim() && !deleteBusy) handleDelete();
+                if (e.key === 'Enter' && deleting && deleteConfirm.trim().toLowerCase() === 'delete' && !deleteBusy) handleDelete();
               }}
               className={fieldClass}
             />
@@ -415,7 +416,7 @@ export const ClientsView: React.FC = () => {
             <Button type="button" variant="ghost" disabled={deleteBusy} onClick={() => setDeleting(null)}>Cancel</Button>
             <Button
               type="button"
-              disabled={deleteBusy || !deleting || deleteConfirm.trim() !== deleting.name.trim()}
+              disabled={deleteBusy || !deleting || deleteConfirm.trim().toLowerCase() !== 'delete'}
               onClick={handleDelete}
               className="bg-rose-600 hover:bg-rose-500 text-white"
             >

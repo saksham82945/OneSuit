@@ -6,6 +6,10 @@ import { useAuthStore } from '@/stores/auth';
 import { isInsideClient } from '@/services/superAdmin';
 import { cn } from '@/lib/utils';
 import { useEmbeddedSignup } from '@/views/settings/useEmbeddedSignup';
+import { usePlanModules } from '@/lib/planModules';
+import { requestUpgrade } from '@/lib/pendingPayment';
+
+const CONNECT_NEEDS_PLAN = 'Connecting your WhatsApp number needs a paid plan.';
 
 /** Fired after a number is connected through the popup, so open pages can reload. */
 export const WHATSAPP_CONNECTED_EVENT = 'onesuit:whatsapp-connected';
@@ -79,6 +83,8 @@ export const ConnectWhatsAppButton: React.FC<{ size?: keyof typeof sizes; classN
   label = 'Connect WhatsApp with Facebook',
 }) => {
   const { allowed, visible, url } = useConnectWhatsApp();
+  // Exploring (paid plan not paid yet): ask for the upgrade before Meta's popup.
+  const { pendingPayment } = usePlanModules();
   const { embeddedAvailable, connecting, launch } = useEmbeddedSignup(() => {
     window.dispatchEvent(new Event(WHATSAPP_CONNECTED_EVENT));
   });
@@ -94,7 +100,7 @@ export const ConnectWhatsAppButton: React.FC<{ size?: keyof typeof sizes; classN
     return (
       <button
         type="button"
-        onClick={() => launch()}
+        onClick={() => (pendingPayment ? requestUpgrade(CONNECT_NEEDS_PLAN, { force: true }) : launch())}
         disabled={connecting}
         className={classes}
         title="Opens a Facebook window; the number is added here automatically"
@@ -115,6 +121,11 @@ export const ConnectWhatsAppButton: React.FC<{ size?: keyof typeof sizes; classN
       href={url}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={(e) => {
+        if (!pendingPayment) return;
+        e.preventDefault();
+        requestUpgrade(CONNECT_NEEDS_PLAN, { force: true });
+      }}
       className={cn(
         'inline-flex shrink-0 items-center justify-center whitespace-nowrap bg-[#1877F2] font-medium text-white shadow-sm shadow-blue-500/20 transition-colors hover:bg-[#166fe5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
         sizes[size],

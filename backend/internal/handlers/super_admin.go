@@ -86,6 +86,8 @@ type PlatformConfig struct {
 	TeamsEnabledSuperAdmin bool `json:"teams_enabled_super_admin"`
 	// Automation (chatbot flows, keyword replies, AI agents) on/off for client workspaces.
 	AutomationEnabledAdmin bool `json:"automation_enabled_admin"`
+	// API call and webhook steps in Advanced bots, for client admins.
+	BotAPIWebhookEnabled bool `json:"bot_api_webhook_enabled"`
 	// Read-only in responses; the secret itself is stored encrypted under its own key.
 	HasMetaAppSecret bool `json:"has_meta_app_secret"`
 }
@@ -103,6 +105,7 @@ func defaultPlatformConfig() PlatformConfig {
 		TeamsEnabledAdmin:      true,
 		TeamsEnabledSuperAdmin: true,
 		AutomationEnabledAdmin: true,
+		BotAPIWebhookEnabled:   true,
 	}
 }
 

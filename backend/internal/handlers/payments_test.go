@@ -225,8 +225,9 @@ func TestApp_Payments_RazorpayCheckoutVerifyAndWebhook(t *testing.T) {
 
 func TestApp_PendingPaymentGuard(t *testing.T) {
 	e := newPayEnv(t) // the vendor is pending_payment
-	call := func(path string) int {
+	call := func(method, path string) int {
 		r := testutil.NewGETRequest(t)
+		r.RequestCtx.Request.Header.SetMethod(method)
 		r.RequestCtx.Request.SetRequestURI(path)
 		testutil.SetAuthContext(r, e.vendor.ID, e.admin.ID)
 		if e.f.app.PendingPaymentGuard(r) == nil {
@@ -234,14 +235,35 @@ func TestApp_PendingPaymentGuard(t *testing.T) {
 		}
 		return 0
 	}
-	assert.Equal(t, fasthttp.StatusPaymentRequired, call("/api/contacts"))
-	assert.Equal(t, 0, call("/api/payments/checkout"))
-	assert.Equal(t, 0, call("/api/me"))
-	assert.Equal(t, 0, call("/api/public/plans"))
+	// Explore mode: reads go through, changes need a paid plan.
+	assert.Equal(t, 0, call("GET", "/api/contacts"))
+	assert.Equal(t, 0, call("GET", "/api/whatsapp-accounts"))
+	assert.Equal(t, fasthttp.StatusPaymentRequired, call("POST", "/api/contacts"))
+	assert.Equal(t, fasthttp.StatusPaymentRequired, call("PUT", "/api/contacts/x"))
+	assert.Equal(t, fasthttp.StatusPaymentRequired, call("DELETE", "/api/contacts/x"))
+	assert.Equal(t, fasthttp.StatusPaymentRequired, call("POST", "/api/whatsapp-accounts"))
+	assert.Equal(t, fasthttp.StatusPaymentRequired, call("POST", "/api/messages"), "/api/me must not match /api/messages")
+	assert.Equal(t, fasthttp.StatusPaymentRequired, call("POST", "/api/media"))
+	// Paying, signing out and the user's own account stay open.
+	assert.Equal(t, 0, call("POST", "/api/payments/checkout"))
+	assert.Equal(t, 0, call("POST", "/api/auth/logout"))
+	assert.Equal(t, 0, call("PUT", "/api/me/settings"))
+	assert.Equal(t, 0, call("PUT", "/api/me/password"))
+	assert.Equal(t, 0, call("POST", "/api/support-tickets"))
+	assert.Equal(t, 0, call("GET", "/api/me"))
+	assert.Equal(t, 0, call("GET", "/api/public/plans"))
+
+	// The 402 says what to do.
+	r := testutil.NewGETRequest(t)
+	r.RequestCtx.Request.Header.SetMethod("POST")
+	r.RequestCtx.Request.SetRequestURI("/api/campaigns")
+	testutil.SetAuthContext(r, e.vendor.ID, e.admin.ID)
+	require.Nil(t, e.f.app.PendingPaymentGuard(r))
+	assert.Contains(t, string(r.RequestCtx.Response.Body()), "exploring OneSuit")
 
 	// Paying unlocks everything.
 	_, d := e.asAdmin(t, e.f.app.CreatePaymentCheckout, map[string]any{"plan_id": e.plan.ID.String(), "method": "upi"}, "")
 	_, _ = e.asAdmin(t, e.f.app.SubmitUPIPayment, map[string]any{"reference": "UTR" + uuid.NewString()[:9]}, d["payment_id"].(string))
 	require.Equal(t, fasthttp.StatusOK, e.asSuper(t, e.f.app.SuperAdminApprovePayment, nil, d["payment_id"].(string)))
-	assert.Equal(t, 0, call("/api/contacts"))
+	assert.Equal(t, 0, call("POST", "/api/contacts"))
 }

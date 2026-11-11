@@ -67,8 +67,9 @@ import { useBrandedTitle, useBranding } from '@/services/branding';
 import { BrandMark } from '@/views/public/PublicLayout';
 import { usePlanModules } from '@/lib/planModules';
 import { PlanLockedNotice } from './PlanLockedNotice';
-import { PendingPaymentNotice } from './PendingPaymentNotice';
-import { pathOpenWhilePendingPayment } from '@/lib/pendingPayment';
+import { PendingPaymentBanner } from './PendingPaymentBanner';
+import { UpgradeDialog } from '@/components/billing/UpgradeDialog';
+import { CHECKOUT_PATH } from '@/lib/pendingPayment';
 import { useTheme } from '@/hooks/useTheme';
 import { CreateContactDialog } from '@/components/shared/CreateContactDialog';
 import { CommandPalette } from './CommandPalette';
@@ -423,7 +424,7 @@ export const AppLayout: React.FC = () => {
   // inbox navigation, so its one-link sub-navbar is replaced by the slim strip.
   const hideSubnav = activeModuleId === 'chat';
   const subnavCollapsed = isCollapsed || hideSubnav;
-  const { pathAllowed, railAllowed, pendingPayment } = usePlanModules();
+  const { pathAllowed, railAllowed } = usePlanModules();
   const railModules = visibleRailModules(isSuperAdmin, insideClient, hasPermission).filter((m) => railAllowed(m.id));
   // Hide pages the workspace's plan switches off.
   const navGroup: SecondaryNavGroup | null = currentNavGroup
@@ -433,8 +434,6 @@ export const AppLayout: React.FC = () => {
   const superAdminCategories = groupByCategory(superAdminItems.filter((i) => pathAllowed(i.path)), PLATFORM_CATEGORIES);
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
   const pageLocked = !singleNav && !pathAllowed(location.pathname);
-  // A paid sign-up waits for its first payment: only billing, support and profile stay open.
-  const awaitingPayment = pendingPayment && !isSuperAdmin && !pathOpenWhilePendingPayment(location.pathname);
 
   // Fade the page in on navigation (opacity only: a transform would shift fixed
   // elements inside the page) and start it at the top. Skipped between chats;
@@ -488,9 +487,8 @@ export const AppLayout: React.FC = () => {
     { item: { name: 'Support', path: '/support', icon: LifeBuoy }, group: 'Account' },
     { item: { name: 'My profile', path: '/profile', icon: UserCircle }, group: 'Account' },
   ];
-  // Same plan switches and pending-payment lock as the menus, so hidden pages never show.
-  const pageVisible = (path: string) =>
-    pathAllowed(path) && !(pendingPayment && !isSuperAdmin && !pathOpenWhilePendingPayment(path));
+  // Same plan switches as the menus, so hidden pages never show.
+  const pageVisible = (path: string) => pathAllowed(path);
   const quickActions: (PaletteItem | false)[] = [
     railIds.has('campaigns') && hasPermission('campaigns', 'write') && pageVisible('/campaigns/new') && {
       id: 'action:new-campaign', label: 'New campaign', group: 'Quick actions', icon: Megaphone, path: '/campaigns/new', keywords: 'create broadcast send',
@@ -683,13 +681,15 @@ export const AppLayout: React.FC = () => {
         {/* Global Access Banners */}
         <VendorAccessBanner />
         <ExplorerBanner />
+        <PendingPaymentBanner hidden={isSuperAdmin || location.pathname === CHECKOUT_PATH} />
 
         {/* Page Content Scroll Container */}
         <main ref={mainRef} className="flex-1 min-w-0 overflow-y-auto max-md:overflow-x-hidden bg-[#f8faf9] dark:bg-[#0a0f0e] relative">
-          {awaitingPayment ? <PendingPaymentNotice /> : pageLocked ? <PlanLockedNotice /> : <Outlet />}
+          {pageLocked ? <PlanLockedNotice /> : <Outlet />}
         </main>
       </div>
 
+      <UpgradeDialog />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} items={paletteItems} onSelect={runPaletteItem} />
       <CreateContactDialog
         open={createContactOpen}

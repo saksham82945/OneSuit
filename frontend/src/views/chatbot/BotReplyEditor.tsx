@@ -541,6 +541,24 @@ export const BotReplyEditor: React.FC<BotReplyEditorProps> = ({ open, flowType, 
                       onChange={(e) => patch({ cta: { ...draft.cta, url: e.target.value } })}
                       placeholder="https://example.com"
                     />
+                    <p className="pt-1 text-[11px] font-medium opacity-70">Second link (optional)</p>
+                    <div className="relative">
+                      <Input
+                        value={draft.cta2?.display_text ?? ''}
+                        onChange={(e) => patch({ cta2: { url: draft.cta2?.url ?? '', display_text: e.target.value } })}
+                        placeholder="Second button label"
+                        className="pr-12"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2">
+                        <Counter value={draft.cta2?.display_text ?? ''} max={LIMITS.ctaText} />
+                      </span>
+                    </div>
+                    <Input
+                      value={draft.cta2?.url ?? ''}
+                      onChange={(e) => patch({ cta2: { display_text: draft.cta2?.display_text ?? '', url: e.target.value } })}
+                      placeholder="https://second-link.com"
+                    />
+                    <p className="text-[11px] opacity-60">WhatsApp allows one link button per message, so the second link is sent as a separate message right after.</p>
                   </div>
                 )}
 

@@ -85,7 +85,11 @@ type botReplyConfig struct {
 	Sections    []whatsapp.ListSection
 	CTAText     string
 	CTAURL      string
-	StoreAs     string
+	// A second link button (Advanced bots). WhatsApp allows one link button
+	// per message, so it is sent as its own message right after.
+	CTA2Text string
+	CTA2URL  string
+	StoreAs  string
 }
 
 func mapFromConfig(cfg map[string]any, key string) map[string]any {
@@ -145,6 +149,9 @@ func parseBotReplyConfig(cfg map[string]any) botReplyConfig {
 	cta := mapFromConfig(cfg, "cta")
 	out.CTAText = stringFromConfig(cta, "display_text")
 	out.CTAURL = stringFromConfig(cta, "url")
+	cta2 := mapFromConfig(cfg, "cta2")
+	out.CTA2Text = stringFromConfig(cta2, "display_text")
+	out.CTA2URL = stringFromConfig(cta2, "url")
 	return out
 }
 
@@ -386,6 +393,18 @@ func validateBotReply(c botReplyConfig, flowType, kind, name string, checkLinks 
 		if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
 			return fmt.Errorf("the CTA button of %s needs a URL starting with https://", name)
 		}
+		if strings.TrimSpace(c.CTA2Text) != "" || strings.TrimSpace(c.CTA2URL) != "" {
+			if strings.TrimSpace(c.CTA2Text) == "" {
+				return fmt.Errorf("the second link button of %s needs a label", name)
+			}
+			if runeLen(c.CTA2Text) > whatsapp.MaxCTADisplayText {
+				return fmt.Errorf("the second link button label of %s is longer than %d characters", name, whatsapp.MaxCTADisplayText)
+			}
+			lower2 := strings.ToLower(c.CTA2URL)
+			if !strings.HasPrefix(lower2, "https://") && !strings.HasPrefix(lower2, "http://") {
+				return fmt.Errorf("the second link button of %s needs a URL starting with https://", name)
+			}
+		}
 	}
 	return nil
 }
@@ -615,8 +634,20 @@ func (a *App) sendBotReply(ctx *chatNodeCtx, c botReplyConfig, body string, data
 		req.MediaFilename = file.name
 	}
 
-	_, err := a.SendOutgoingMessage(context.Background(), req, ChatbotSendOptions())
-	return err
+	if _, err := a.SendOutgoingMessage(context.Background(), req, ChatbotSendOptions()); err != nil {
+		return err
+	}
+	// Second link button: its own message, with its label as the text.
+	if c.Interactive == "cta_url" && strings.TrimSpace(c.CTA2Text) != "" && strings.TrimSpace(c.CTA2URL) != "" {
+		label := renderBotText(c.CTA2Text, data)
+		second := whatsapp.InteractiveMessage{Type: "cta_url", Body: label, CTADisplayText: label, CTAURL: renderBotText(c.CTA2URL, data)}
+		_, err := a.SendOutgoingMessage(context.Background(), OutgoingMessageRequest{
+			Account: ctx.account, Contact: ctx.contact, Type: models.MessageTypeInteractive,
+			BodyText: label, Interactive: &second, InteractiveType: "cta_url",
+		}, ChatbotSendOptions())
+		return err
+	}
+	return nil
 }
 
 // sendBotMedia sends the reply's media file as a media message.

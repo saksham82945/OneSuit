@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -159,6 +160,8 @@ func (a *App) GetPlanModules(r *fastglue.Request) error {
 	if !superAdmin && !cfg.AutomationEnabledAdmin {
 		mods["chatbot"], mods["ai_agents"] = false, false
 	}
+	// API call / webhook steps in Advanced bots (super admins always have them).
+	mods["bot_api_webhook"] = superAdmin || cfg.BotAPIWebhookEnabled
 	mods["teams"] = cfg.TeamsEnabledAdmin
 	if superAdmin {
 		mods["teams"] = cfg.TeamsEnabledSuperAdmin
@@ -176,12 +179,28 @@ func (a *App) SuperAdminListPlanModules(r *fastglue.Request) error {
 	return r.SendEnvelope(map[string]any{"modules": PlanModules})
 }
 
-// Pending payment: a workspace that signed up for a paid plan but hasn't paid
-// yet can only reach the payment and account endpoints.
+// Pending payment ("explore mode"): a workspace that signed up for a paid plan
+// but hasn't paid yet can open and read everything, but every change answers
+// 402 until it pays, except the endpoints needed to pay, sign in/out and look
+// after the user's own account.
 
 var pendingPaymentAllowed = []string{
-	"/api/me", "/api/auth/", "/api/public/", "/api/payments", "/api/billing", "/api/plan/modules",
+	"/api/me", "/api/auth", "/api/public", "/api/payments", "/api/billing", "/api/plan/modules",
 	"/api/organizations/current", "/api/support-tickets", "/api/branding", "/api/users/me",
+}
+
+// PendingPaymentMessage is the 402 message an exploring workspace gets on a change.
+const PendingPaymentMessage = "Upgrade your plan to use this — you're exploring OneSuit."
+
+// pendingPaymentPathAllowed matches an allow-list entry exactly or as a parent
+// path ("/api/me" allows "/api/me/settings", not "/api/messages").
+func pendingPaymentPathAllowed(path string) bool {
+	for _, p := range pendingPaymentAllowed {
+		if path == p || strings.HasPrefix(path, p+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // orgPendingPayment reports whether the workspace still owes its first payment.
@@ -191,16 +210,19 @@ func (a *App) orgPendingPayment(orgID uuid.UUID) bool {
 	return status == models.VendorStatusPendingPayment
 }
 
-// PendingPaymentGuard answers 402 for everything else until the workspace pays.
+// PendingPaymentGuard lets an unpaid workspace read everything and answers
+// 402 to its changes (POST/PUT/PATCH/DELETE) outside the allow-list.
 func (a *App) PendingPaymentGuard(r *fastglue.Request) *fastglue.Request {
 	path := string(r.RequestCtx.Path())
-	if !strings.HasPrefix(path, "/api/") || string(r.RequestCtx.Method()) == "OPTIONS" {
+	if !strings.HasPrefix(path, "/api/") {
 		return r
 	}
-	for _, p := range pendingPaymentAllowed {
-		if strings.HasPrefix(path, p) {
-			return r
-		}
+	switch string(r.RequestCtx.Method()) {
+	case "GET", "HEAD", "OPTIONS":
+		return r
+	}
+	if pendingPaymentPathAllowed(path) {
+		return r
 	}
 	userID, ok := r.RequestCtx.UserValue("user_id").(uuid.UUID)
 	if !ok || a.IsSuperAdmin(userID) {
@@ -210,6 +232,21 @@ func (a *App) PendingPaymentGuard(r *fastglue.Request) *fastglue.Request {
 	if err != nil || !a.orgPendingPayment(orgID) {
 		return r
 	}
-	_ = r.SendErrorEnvelope(fasthttp.StatusPaymentRequired, "Complete your payment to start using OneSuit.", nil, "")
+	_ = r.SendErrorEnvelope(fasthttp.StatusPaymentRequired, PendingPaymentMessage, nil, "")
+	return nil
+}
+
+// checkBotAPIWebhookAllowed refuses API call and webhook steps in a bot when
+// the super admin has switched them off for workspaces.
+func (a *App) checkBotAPIWebhookAllowed(r *fastglue.Request, graph map[string]any) error {
+	if graph == nil || a.callerIsSuperAdmin(r) || a.loadPlatformConfig().BotAPIWebhookEnabled {
+		return nil
+	}
+	for _, n := range mapsFromConfig(graph, "nodes") {
+		switch ChatNodeType(stringFromConfig(n, "type")) {
+		case ChatNodeAPICall, ChatNodeWebhook:
+			return errors.New("API call and webhook steps are turned off. Remove them from this bot or contact support")
+		}
+	}
 	return nil
 }

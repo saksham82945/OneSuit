@@ -912,6 +912,9 @@ func (a *App) CreateChatbotFlow(r *fastglue.Request) error {
 	if err := validateChatbotFlowGraph(flowType, req.Graph); err != nil {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, err.Error(), nil, "")
 	}
+	if err := a.checkBotAPIWebhookAllowed(r, req.Graph); err != nil {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, err.Error(), nil, "")
+	}
 
 	flow := models.ChatbotFlow{
 		BaseModel:         models.BaseModel{ID: uuid.New()},
@@ -1058,6 +1061,9 @@ func (a *App) UpdateChatbotFlow(r *fastglue.Request) error {
 	// The stored graph is re-checked too when only the type changes.
 	if req.Graph != nil || req.FlowType != nil {
 		if err := validateChatbotFlowGraph(flow.FlowType, flow.Graph); err != nil {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, err.Error(), nil, "")
+		}
+		if err := a.checkBotAPIWebhookAllowed(r, flow.Graph); err != nil {
 			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, err.Error(), nil, "")
 		}
 	}

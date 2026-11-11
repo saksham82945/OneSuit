@@ -74,6 +74,8 @@ export interface BotReply {
   buttons: ReplyButton[];
   list: { button_text: string; sections: ReplyListSection[] };
   cta: { display_text: string; url: string };
+  /** Optional second link button (Advanced bots), sent as its own message. */
+  cta2?: { display_text: string; url: string };
 }
 
 /** What the "Add New Bot Reply" menu creates. */
@@ -270,6 +272,12 @@ export function validateReply(r: BotReply, flowType: ChatFlowType): string[] {
     if (!r.cta.display_text.trim()) errs.push('CTA button label is required.');
     if (len(r.cta.display_text) > LIMITS.ctaText) errs.push(`CTA button label can be at most ${LIMITS.ctaText} characters.`);
     if (!/^https?:\/\/\S+\.\S+/i.test(r.cta.url.trim())) errs.push('CTA URL must start with https://');
+    const c2 = r.cta2;
+    if (c2 && (c2.display_text.trim() || c2.url.trim())) {
+      if (!c2.display_text.trim()) errs.push('Second link button needs a label.');
+      if (len(c2.display_text) > LIMITS.ctaText) errs.push(`Second link button label can be at most ${LIMITS.ctaText} characters.`);
+      if (!/^https?:\/\/\S+\.\S+/i.test(c2.url.trim())) errs.push('Second link URL must start with https://');
+    }
   }
   return errs;
 }
@@ -303,6 +311,7 @@ export function toBotReply(config: Record<string, unknown> | undefined): BotRepl
     buttons: arr(c.buttons).map((b) => ({ id: s(b.id), title: s(b.title) })),
     list: { button_text: s(list.button_text), sections: sections.length ? sections : [{ title: '', rows: [] }] },
     cta: { display_text: s(cta.display_text), url: s(cta.url) },
+    cta2: { display_text: s(obj(c.cta2).display_text), url: s(obj(c.cta2).url) },
   };
 }
 
@@ -330,7 +339,10 @@ export function fromBotReply(r: BotReply): Record<string, unknown> {
         rows: sec.rows.map((row) => ({ id: row.id, title: row.title, ...(row.description ? { description: row.description } : {}) })),
       })),
     };
-  if (r.interactive === 'cta_url') out.cta = r.cta;
+  if (r.interactive === 'cta_url') {
+    out.cta = r.cta;
+    if (r.cta2 && (r.cta2.display_text.trim() || r.cta2.url.trim())) out.cta2 = r.cta2;
+  }
   return out;
 }
 

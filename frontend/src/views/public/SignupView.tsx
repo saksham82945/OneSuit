@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { User } from '@/stores/auth';
 import { api } from '@/services/api';
@@ -53,7 +52,7 @@ import { CapsLockHint, ConsentCheckbox, StepProgress } from '@/views/auth/AuthFo
 import { useCapsLock } from '@/views/auth/authHooks';
 import { checkoutPath, isBillingCycle } from '@/services/payments';
 import { cycleInfo, cyclePrice, formatPrice, type BillingInterval } from '@/services/superAdmin';
-import { SignupPaymentChoice } from './SignupPaymentChoice';
+import { SignupPaymentChoice, type PaymentMode } from './SignupPaymentChoice';
 import { PasswordChecklist, PhoneInput } from './SignupFields';
 import { PASSWORD_RULES_MESSAGE, passwordIsValid } from '@/lib/passwordRules';
 import { DEFAULT_COUNTRY, phoneError, toE164, type Country } from '@/lib/countries';
@@ -106,11 +105,15 @@ function validateAccount(form: FormState): FieldErrors {
   return errors;
 }
 
-function validateBusiness(form: FormState, country: Country, consent: boolean): FieldErrors {
+/** Plans are never picked for the user; one must be chosen when any exist. */
+const CHOOSE_PLAN = 'Choose a plan';
+
+function validateBusiness(form: FormState, country: Country, consent: boolean, planMissing: boolean): FieldErrors {
   const errors: FieldErrors = {};
   if (!form.business_name.trim()) errors.business_name = 'Enter your business name';
   const phone = checkPhone(country, form.phone);
   if (phone) errors.phone = phone;
+  if (planMissing) errors.plan_id = CHOOSE_PLAN;
   if (!consent) errors.consent = 'Please accept the terms to continue';
   return errors;
 }
@@ -211,7 +214,8 @@ const PlanSummary: React.FC<{
   plan: PublicPlan | null;
   businessName: string;
   cycle?: BillingInterval;
-}> = ({ plan, businessName, cycle }) => (
+  payLater?: boolean;
+}> = ({ plan, businessName, cycle, payLater }) => (
   <aside className={cn(cardClass, 'p-6 sm:p-7')}>
     <p className="text-xs font-medium uppercase tracking-wider text-white/40 light:text-gray-500">
       Your plan
@@ -252,9 +256,12 @@ const PlanSummary: React.FC<{
         )}
       </>
     ) : (
-      <h2 className="mt-3 text-lg font-semibold text-white light:text-gray-900">
-        Your new workspace
-      </h2>
+      <>
+        <h2 className="mt-3 text-lg font-semibold text-white light:text-gray-900">
+          Your new workspace
+        </h2>
+        <p className="mt-1 text-sm text-white/50 light:text-gray-500">Choose a plan to see what's included.</p>
+      </>
     )}
 
     {plan && plan.price > 0 && cycle && <CycleTotal plan={plan} cycle={cycle} />}
@@ -263,9 +270,13 @@ const PlanSummary: React.FC<{
       <div className="mt-4 flex gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-3.5 light:border-emerald-200 light:bg-emerald-50">
         <CreditCard className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400 light:text-emerald-600" />
         <div className="text-sm">
-          <p className="font-medium text-emerald-200 light:text-emerald-800">Pay after creating your account</p>
+          <p className="font-medium text-emerald-200 light:text-emerald-800">
+            {payLater ? 'Explore first, pay when you are ready' : 'Pay after creating your account'}
+          </p>
           <p className="mt-0.5 text-emerald-100/60 light:text-emerald-900/70">
-            Your workspace unlocks as soon as your first payment goes through.
+            {payLater
+              ? 'Look around every page for free. Connecting your number, sending and ads start after your first payment.'
+              : 'Your workspace unlocks as soon as your first payment goes through.'}
           </p>
         </div>
       </div>
@@ -282,57 +293,96 @@ const PlanSummary: React.FC<{
   </aside>
 );
 
-const PlanSelect: React.FC<{
+/** Plans as cards; nothing is picked until the user chooses (or came with ?plan=). */
+const PlanPicker: React.FC<{
   plans: PublicPlan[];
   value: string;
+  recommended?: string;
   error?: string;
   disabled: boolean;
   triggerRef: (el: HTMLButtonElement | null) => void;
   onChange: (planId: string) => void;
-}> = ({ plans, value, error, disabled, triggerRef, onChange }) => {
+}> = ({ plans, value, recommended, error, disabled, triggerRef, onChange }) => {
   if (plans.length === 0) return null;
+  const focusIndex = Math.max(0, plans.findIndex((p) => p.id === value));
   return (
     <Field id="plan" label="Plan" error={error}>
-      <Select value={value} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger id="plan" ref={triggerRef} className={cn('h-10 text-sm', error && errorInputClass)}>
-          <SelectValue placeholder="Choose a plan" />
-        </SelectTrigger>
-        <SelectContent>
-          {plans.map((plan) => (
-            <SelectItem key={plan.id} value={plan.id} className="text-sm">
-              <span className="flex items-center gap-2">
-                <span>{plan.name}</span>
-                <span className="text-white/40 light:text-gray-500">· {formatPriceWithInterval(plan)}</span>
+      <div
+        className="grid gap-2 sm:grid-cols-2"
+        role="radiogroup"
+        aria-label="Plan"
+        aria-invalid={!!error || undefined}
+        aria-describedby={error ? 'plan-error' : undefined}
+      >
+        {plans.map((plan, i) => {
+          const active = plan.id === value;
+          return (
+            <button
+              key={plan.id}
+              ref={i === focusIndex ? triggerRef : undefined}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={disabled}
+              onClick={() => onChange(plan.id)}
+              className={cn(
+                'relative rounded-xl border px-3 py-2.5 text-left transition-colors disabled:opacity-60',
+                active
+                  ? 'border-emerald-500/70 bg-emerald-500/[0.08] light:bg-emerald-50'
+                  : error
+                    ? 'border-red-500/50 hover:border-emerald-500/40 light:border-red-300'
+                    : 'border-white/10 hover:border-emerald-500/40 light:border-gray-200 light:hover:border-emerald-300'
+              )}
+            >
+              {plan.id === recommended && (
+                <span className="absolute -top-2 right-2 rounded-full bg-emerald-600 px-1.5 text-[9px] font-bold uppercase leading-4 tracking-wide text-white">
+                  Recommended
+                </span>
+              )}
+              <span className="flex items-center justify-between gap-2">
+                <span className="truncate text-sm font-semibold text-white light:text-gray-900">{plan.name}</span>
+                {active && <Check className="h-4 w-4 shrink-0 text-emerald-400 light:text-emerald-600" aria-hidden />}
               </span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+              <span className="mt-0.5 block text-xs tabular-nums text-white/50 light:text-gray-500">
+                {formatPriceWithInterval(plan)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </Field>
   );
 };
 
-/** ?plan= if it's a real plan, else the platform default, else the first plan. */
-function useInitialPlanId(info: PublicPlansInfo | null, plans: PublicPlan[]): string {
+/** ?plan= if it's a real plan (coming from the pricing page); otherwise nothing: the user picks. */
+function useInitialPlanId(plans: PublicPlan[]): string {
   const [searchParams] = useSearchParams();
   return useMemo(() => {
     const fromQuery = searchParams.get('plan');
-    if (fromQuery && plans.some((p) => p.id === fromQuery)) return fromQuery;
-    if (info?.default_plan && plans.some((p) => p.id === info.default_plan)) return info.default_plan;
-    return plans[0]?.id ?? '';
-  }, [searchParams, plans, info?.default_plan]);
+    return fromQuery && plans.some((p) => p.id === fromQuery) ? fromQuery : '';
+  }, [searchParams, plans]);
 }
 
-/** A paid plan needs a billing cycle and opens checkout after sign-up; a free plan goes to the dashboard. */
+/** The platform's default plan, shown as "Recommended" (never pre-selected). */
+const recommendedPlan = (info: PublicPlansInfo | null, plans: PublicPlan[]) =>
+  info?.default_plan && plans.some((p) => p.id === info.default_plan) ? info.default_plan : undefined;
+
+/**
+ * A paid plan: "Pay now" opens checkout after sign-up (with the chosen billing
+ * cycle); "Explore first" goes straight into the app, where looking around is
+ * free and anything that runs asks for the payment. A free plan goes to the app.
+ */
 function usePaymentChoice(plan: PublicPlan | null) {
   const [searchParams] = useSearchParams();
   const [cycle, setCycle] = useState<BillingInterval>(() => {
     const c = searchParams.get('cycle');
     return isBillingCycle(c) ? c : 'monthly';
   });
-  const payNow = !!plan && plan.price > 0;
+  const [mode, setMode] = useState<PaymentMode>('now');
+  const paid = !!plan && plan.price > 0;
+  const payNow = paid && mode === 'now';
   const afterSignup = payNow && plan ? checkoutPath(plan.id, cycle) : '/';
-  return { payNow, cycle, setCycle, afterSignup };
+  return { paid, payNow, payLater: paid && mode === 'later', mode, setMode, cycle, setCycle, afterSignup };
 }
 
 export const SignupView: React.FC = () => {
@@ -372,10 +422,11 @@ const NewBusinessSignup: React.FC = () => {
   const plans = useMemo(() => info?.plans ?? [], [info]);
   useDocumentTitle(`Create your account · ${platformName}`);
 
-  const initialPlanId = useInitialPlanId(info, plans);
+  const initialPlanId = useInitialPlanId(plans);
   const planId = chosenPlanId ?? initialPlanId;
   const selectedPlan = plans.find((p) => p.id === planId) ?? null;
   const payment = usePaymentChoice(selectedPlan);
+  const planMissing = plans.length > 0 && !selectedPlan;
 
   const signupClosed = (info && !info.signup_enabled) || closedMessage !== null;
 
@@ -434,7 +485,7 @@ const NewBusinessSignup: React.FC = () => {
       return;
     }
 
-    const errs = { ...validateAccount(form), ...validateBusiness(form, country, consent) };
+    const errs = { ...validateAccount(form), ...validateBusiness(form, country, consent, planMissing) };
     setErrors(errs);
     setFormError(null);
     setEmailTaken(null);
@@ -562,8 +613,8 @@ const NewBusinessSignup: React.FC = () => {
             </>
           }
         >
-          {payment.payNow
-            ? 'Set up your workspace in under a minute, then pay securely to unlock your plan.'
+          {payment.paid
+            ? 'Set up your workspace in under a minute, then pay now or explore everything first and pay later.'
             : 'Set up a workspace for your business in under a minute and start chatting with customers.'}
         </SignupHeading>
 
@@ -735,9 +786,10 @@ const NewBusinessSignup: React.FC = () => {
                   />
                 </Field>
 
-                <PlanSelect
+                <PlanPicker
                   plans={plans}
                   value={planId}
+                  recommended={recommendedPlan(info, plans)}
                   error={errors.plan_id}
                   disabled={submitting}
                   triggerRef={(el) => {
@@ -749,9 +801,11 @@ const NewBusinessSignup: React.FC = () => {
                   }}
                 />
 
-                {payment.payNow && selectedPlan && (
+                {payment.paid && selectedPlan && (
                   <SignupPaymentChoice
                     plan={selectedPlan}
+                    mode={payment.mode}
+                    onMode={payment.setMode}
                     cycle={payment.cycle}
                     onCycle={payment.setCycle}
                     disabled={submitting}
@@ -795,7 +849,9 @@ const NewBusinessSignup: React.FC = () => {
                       ? 'Creating your workspace…'
                       : payment.payNow
                         ? 'Create account & continue to payment'
-                        : 'Create account'}
+                        : payment.payLater
+                          ? 'Create account & start exploring'
+                          : 'Create account'}
                   </Button>
                 </div>
               </div>
@@ -816,7 +872,12 @@ const NewBusinessSignup: React.FC = () => {
             {step === 0 ? (
               <SignupPreview plan={selectedPlan} />
             ) : (
-              <PlanSummary plan={selectedPlan} businessName={form.business_name} cycle={payment.payNow ? payment.cycle : undefined} />
+              <PlanSummary
+                plan={selectedPlan}
+                businessName={form.business_name}
+                cycle={payment.payNow ? payment.cycle : undefined}
+                payLater={payment.payLater}
+              />
             )}
             <TrustList />
           </div>
@@ -849,10 +910,11 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
   const plans = useMemo(() => info?.plans ?? [], [info]);
   useDocumentTitle(`Get your own workspace · ${platformName}`);
 
-  const initialPlanId = useInitialPlanId(info, plans);
+  const initialPlanId = useInitialPlanId(plans);
   const planId = chosenPlanId ?? initialPlanId;
   const selectedPlan = plans.find((p) => p.id === planId) ?? null;
   const payment = usePaymentChoice(selectedPlan);
+  const planMissing = plans.length > 0 && !selectedPlan;
   const upgradeClosed = info ? !info.signup_enabled : false;
 
   const focusFirstError = (errs: Partial<Record<UpgradeField, string>>) => {
@@ -867,6 +929,7 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
     if (!businessName.trim()) errs.business_name = 'Enter your business name';
     const phoneErr = checkPhone(country, phone);
     if (phoneErr) errs.phone = phoneErr;
+    if (planMissing) errs.plan_id = CHOOSE_PLAN;
     setErrors(errs);
     setFormError(null);
     if (Object.keys(errs).length > 0) {
@@ -1029,9 +1092,10 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
                 />
               </Field>
 
-              <PlanSelect
+              <PlanPicker
                 plans={plans}
                 value={planId}
+                recommended={recommendedPlan(info, plans)}
                 error={errors.plan_id}
                 disabled={submitting || upgradeClosed}
                 triggerRef={(el) => {
@@ -1044,9 +1108,11 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
                 }}
               />
 
-              {payment.payNow && selectedPlan && !upgradeClosed && (
+              {payment.paid && selectedPlan && !upgradeClosed && (
                 <SignupPaymentChoice
                   plan={selectedPlan}
+                  mode={payment.mode}
+                  onMode={payment.setMode}
                   cycle={payment.cycle}
                   onCycle={payment.setCycle}
                   disabled={submitting}
@@ -1066,7 +1132,9 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
                   ? 'Creating your workspace…'
                   : payment.payNow
                     ? 'Create workspace & continue to payment'
-                    : 'Create my workspace'}
+                    : payment.payLater
+                      ? 'Create workspace & start exploring'
+                      : 'Create my workspace'}
               </Button>
 
               <p className="text-center text-sm text-white/40 light:text-gray-500">
@@ -1082,7 +1150,12 @@ const UpgradeSignup: React.FC<{ email: string }> = ({ email }) => {
           </form>
 
           <div className="auth-enter lg:sticky lg:top-6" style={{ animationDelay: '120ms' }}>
-            <PlanSummary plan={selectedPlan} businessName={businessName} cycle={payment.payNow && !upgradeClosed ? payment.cycle : undefined} />
+            <PlanSummary
+              plan={selectedPlan}
+              businessName={businessName}
+              cycle={payment.payNow && !upgradeClosed ? payment.cycle : undefined}
+              payLater={payment.payLater}
+            />
             <TrustList />
           </div>
         </div>

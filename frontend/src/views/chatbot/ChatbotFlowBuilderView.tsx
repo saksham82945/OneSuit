@@ -54,6 +54,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { usePlanModules } from '@/lib/planModules';
 import {
   START_NODE_ID,
   canvasToGraph,
@@ -339,6 +340,7 @@ const ClassicInspector: React.FC<{
 // ─── Flow editor ──────────────────────────────────────────────────────────────
 
 const FlowEditor: React.FC<{ id: string }> = ({ id }) => {
+  const planModules = usePlanModules();
   const navigate = useNavigate();
   const [flowName, setFlowName] = useState('');
   const [triggerKeywords, setTriggerKeywords] = useState('');
@@ -416,6 +418,8 @@ const FlowEditor: React.FC<{ id: string }> = ({ id }) => {
     setEditingReplyId(newId);
   };
 
+  // The super admin can switch API call / webhook steps off for workspaces.
+  const apiWebhookAllowed = planModules.isOn('bot_api_webhook');
   const addAdvancedStep = (type: 'apiNode' | 'transferNode') => {
     const newId = `${type === 'apiNode' ? 'webhook' : 'transfer'}-${Date.now().toString(36)}`;
     const node: BuilderNode = {
@@ -634,9 +638,11 @@ const FlowEditor: React.FC<{ id: string }> = ({ id }) => {
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="text-[10px] uppercase tracking-wide opacity-60">Advanced steps</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => addAdvancedStep('apiNode')}>
-                      <Globe className="mr-2 h-3.5 w-3.5 text-amber-400" /> Webhook / API call
-                    </DropdownMenuItem>
+                    {apiWebhookAllowed && (
+                      <DropdownMenuItem onClick={() => addAdvancedStep('apiNode')}>
+                        <Globe className="mr-2 h-3.5 w-3.5 text-amber-400" /> Webhook / API call
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onClick={() => addAdvancedStep('transferNode')}>
                       <UserX className="mr-2 h-3.5 w-3.5 text-rose-400" /> Transfer to agent
                     </DropdownMenuItem>

@@ -16,8 +16,8 @@ const (
 	VendorStatusActive    = "active"
 	VendorStatusTrial     = "trial"
 	VendorStatusSuspended = "suspended"
-	// VendorStatusPendingPayment: signed up, hasn't paid yet. Only the
-	// payment screens work until the first payment activates the plan.
+	// VendorStatusPendingPayment: signed up, hasn't paid yet ("explore
+	// mode"): everything can be read, changes wait for the first payment.
 	VendorStatusPendingPayment = "pending_payment"
 )
 

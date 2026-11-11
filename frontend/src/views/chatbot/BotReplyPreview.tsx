@@ -96,6 +96,13 @@ export const BotReplyPreview: React.FC<{ reply: BotReply; mediaUrl?: string; cla
                 {reply.cta.display_text || 'Visit website'}
               </div>
             )}
+            {interactive === 'cta_url' && reply.cta2?.display_text?.trim() && (
+              <div className="mt-1 border-t border-white/10 py-1.5 text-center text-[13px] text-[#53bdeb] flex items-center justify-center gap-1.5 light:border-gray-200 light:text-[#027eb5]">
+                <ExternalLink className="h-3.5 w-3.5" />
+                {reply.cta2.display_text}
+                <span className="text-[10px] opacity-60">(2nd message)</span>
+              </div>
+            )}
             {interactive === 'list' && (
               <div className="mt-1 border-t border-white/10 py-1.5 text-center text-[13px] text-[#53bdeb] flex items-center justify-center gap-1.5 light:border-gray-200 light:text-[#027eb5]">
                 <List className="h-3.5 w-3.5" />

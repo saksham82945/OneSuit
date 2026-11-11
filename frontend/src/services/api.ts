@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance, type AxiosError, type InternalAxiosRequestConfig } from 'axios'
-import { CHECKOUT_PATH, pathOpenWhilePendingPayment } from '@/lib/pendingPayment'
+import { requestUpgrade } from '@/lib/pendingPayment'
 
 // Get base path from server-injected config or fallback
 const basePath = ((window as Window & { __BASE_PATH__?: string }).__BASE_PATH__ ?? '').replace(/\/$/, '')
@@ -112,15 +112,11 @@ async function refreshAccessToken(): Promise<void> {
   }
 }
 
-// 402: the workspace signed up for a paid plan and hasn't paid yet. Send the user to
-// checkout once per page load (several requests can fail together; no loops, no toasts).
-let sentToCheckout = false
-
-function openCheckoutForPayment() {
-  const path = window.location.pathname.slice(basePath.length) || '/'
-  if (sentToCheckout || pathOpenWhilePendingPayment(path)) return
-  sentToCheckout = true
-  window.location.assign(basePath + CHECKOUT_PATH)
+// 402: the workspace is exploring (signed up for a paid plan, hasn't paid yet) and
+// tried a change. Open the Upgrade dialog (throttled, so a burst of failures shows one).
+function promptUpgrade(error: AxiosError) {
+  const message = (error.response?.data as { message?: unknown } | undefined)?.message
+  requestUpgrade(typeof message === 'string' ? message : undefined)
 }
 
 // Response interceptor for error handling
@@ -130,7 +126,7 @@ api.interceptors.response.use(
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
 
     if (error.response?.status === 402) {
-      openCheckoutForPayment()
+      promptUpgrade(error)
       return Promise.reject(error)
     }
 

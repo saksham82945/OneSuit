@@ -16,7 +16,8 @@ export type PlanModuleKey =
   | 'calling'
   | 'catalogue'
   | 'integrations'
-  | 'teams';
+  | 'teams'
+  | 'bot_api_webhook';
 
 export type PlanModules = Partial<Record<PlanModuleKey, boolean>>;
 

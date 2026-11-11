@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { usePlanModules } from '@/lib/planModules';
+import { requestUpgrade } from '@/lib/pendingPayment';
 import { FacebookIcon, useConnectWhatsApp } from './ConnectWhatsAppButton';
 
 // Manual WhatsApp setup: the client enters their own Facebook App and WhatsApp
@@ -295,13 +297,18 @@ export const ManualWhatsAppSetupButton: React.FC<{
   onConnected?: () => void;
 }> = ({ size = 'sm', className, onConnected }) => {
   const { manualVisible } = useConnectWhatsApp();
+  const { pendingPayment } = usePlanModules();
   const [open, setOpen] = useState(false);
   if (!manualVisible) return null;
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() =>
+          pendingPayment
+            ? requestUpgrade('Connecting your WhatsApp number needs a paid plan.', { force: true })
+            : setOpen(true)
+        }
         className={cn(
           'inline-flex shrink-0 items-center justify-center whitespace-nowrap border border-[#1877F2]/40 bg-white font-medium text-[#1877F2] shadow-sm transition-colors hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 dark:bg-transparent dark:hover:bg-blue-950/40',
           sizes[size],

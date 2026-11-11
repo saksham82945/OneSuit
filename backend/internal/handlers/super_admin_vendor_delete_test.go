@@ -36,15 +36,23 @@ func TestApp_SuperAdminDeleteVendor(t *testing.T) {
 
 	// Non super admins are refused.
 	testutil.AssertErrorResponse(t, deleteReq(client.ID, true), fasthttp.StatusForbidden, "Super admin")
-	// The caller's own organization is refused.
-	testutil.AssertErrorResponse(t, deleteReq(f.org.ID, false), fasthttp.StatusBadRequest, "your own organization")
 	// Unknown ids are 404.
 	testutil.AssertErrorResponse(t, deleteReq(uuid.New(), false), fasthttp.StatusNotFound, "not found")
 
-	// An organization with a super admin in it is refused.
-	guarded := f.createVendor(t, map[string]any{"name": "Guarded client"})
-	testutil.CreateTestUser(t, f.app.DB, guarded.ID, testutil.WithSuperAdmin())
-	testutil.AssertErrorResponse(t, deleteReq(guarded.ID, false), fasthttp.StatusBadRequest, "super admin")
+	// A workspace that is a super admin's home can be deleted: the super
+	// admin is kept and moved to the platform workspace.
+	guarded := f.createVendor(t, map[string]any{"name": "Guarded client " + uuid.NewString()[:6]})
+	otherSuper := testutil.CreateTestUser(t, f.app.DB, guarded.ID, testutil.WithSuperAdmin())
+	require.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(deleteReq(guarded.ID, false)))
+	var movedSuper models.User
+	require.NoError(t, f.app.DB.First(&movedSuper, "id = ?", otherSuper.ID).Error, "super admin is never deleted")
+	assert.True(t, movedSuper.IsActive)
+	assert.NotEqual(t, guarded.ID, movedSuper.OrganizationID)
+	var platform models.Organization
+	require.NoError(t, f.app.DB.First(&platform, "id = ?", movedSuper.OrganizationID).Error)
+	assert.Equal(t, "OneSuit Platform", platform.Name)
+	// The platform workspace itself can't be deleted.
+	testutil.AssertErrorResponse(t, deleteReq(platform.ID, false), fasthttp.StatusBadRequest, "platform workspace")
 
 	// A user who also belongs to another workspace keeps their login.
 	shared := testutil.CreateTestUser(t, f.app.DB, client.ID)

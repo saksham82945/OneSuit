@@ -199,6 +199,7 @@ export const ConfigurationView: React.FC<{ embedded?: boolean }> = ({ embedded }
         teams_enabled_admin: config.teams_enabled_admin !== false,
         teams_enabled_super_admin: config.teams_enabled_super_admin !== false,
         automation_enabled_admin: config.automation_enabled_admin !== false,
+        bot_api_webhook_enabled: config.bot_api_webhook_enabled !== false,
         connect_url: (config.connect_url ?? '').trim(),
       };
 
@@ -800,6 +801,12 @@ export const ConfigurationView: React.FC<{ embedded?: boolean }> = ({ embedded }
                     <Switch
                       checked={config.automation_enabled_admin !== false}
                       onCheckedChange={(v) => update('automation_enabled_admin', v)}
+                    />
+                  </Row>
+                  <Row label="API & webhook steps in Advanced bots" hint="Let client admins add Webhook / API call steps to Advanced bots. Off hides the step and refuses saving bots that use it.">
+                    <Switch
+                      checked={config.bot_api_webhook_enabled !== false}
+                      onCheckedChange={(v) => update('bot_api_webhook_enabled', v)}
                     />
                   </Row>
                   <Row label="Teams for super admins" hint="Show the Teams section in the super admin menus.">

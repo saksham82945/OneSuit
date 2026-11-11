@@ -15,8 +15,8 @@ import (
 // whose only workspace it was. Their sessions stop working because the
 // organization (and, for removed users, the user) no longer loads.
 //
-// It refuses the caller's own organization, the shared demo workspace and any
-// organization that still has a super admin in it.
+// Any client can be deleted except the shared demo workspace. Super admins in
+// it are never deleted: they move to the platform's own workspace.
 func (a *App) SuperAdminDeleteVendor(r *fastglue.Request) error {
 	userID, err := a.requireSuperAdmin(r)
 	if err != nil {
@@ -32,26 +32,26 @@ func (a *App) SuperAdminDeleteVendor(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusNotFound, "Vendor not found", nil, "")
 	}
 
-	ctxOrgID, _ := r.RequestCtx.UserValue("organization_id").(uuid.UUID)
-	var homeOrgID uuid.UUID
-	_ = a.DB.Model(&models.User{}).Select("organization_id").Where("id = ?", userID).Row().Scan(&homeOrgID)
-	if id == ctxOrgID || id == homeOrgID {
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "You can't delete your own organization", nil, "")
-	}
 	if demoID := a.demoOrgID(); demoID != uuid.Nil && id == demoID {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "The demo workspace can't be deleted", nil, "")
 	}
-	var superAdmins int64
+	if org.Name == platformOrgName {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "The platform workspace can't be deleted", nil, "")
+	}
+
+	// Super admins in this workspace are kept: they move to the platform's own
+	// workspace (made on first need) so their login keeps working.
+	var superAdminIDs []uuid.UUID
 	if err := a.DB.Model(&models.User{}).
 		Where("is_super_admin = ? AND (organization_id = ? OR id IN (?))", true, id,
 			a.DB.Model(&models.UserOrganization{}).Select("user_id").Where("organization_id = ?", id)).
-		Count(&superAdmins).Error; err != nil {
+		Pluck("id", &superAdminIDs).Error; err != nil {
 		a.Log.Error("Failed to check vendor super admins", "error", err, "org_id", id)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to delete vendor", nil, "")
 	}
-	if superAdmins > 0 {
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest,
-			"This organization has a super admin in it. Move or remove the super admin first", nil, "")
+	isSuperAdmin := map[uuid.UUID]bool{}
+	for _, sid := range superAdminIDs {
+		isSuperAdmin[sid] = true
 	}
 
 	// Everyone who belongs to the organization, by home org or membership.
@@ -71,6 +71,13 @@ func (a *App) SuperAdminDeleteVendor(r *fastglue.Request) error {
 			return err
 		}
 		for _, uid := range memberIDs {
+			if isSuperAdmin[uid] {
+				keptUsers++
+				if err := a.relocateSuperAdmin(tx, uid, id); err != nil {
+					return err
+				}
+				continue
+			}
 			// Users who belong to another workspace keep their login; move
 			// their home organization there if it was this one.
 			var other models.UserOrganization
@@ -135,4 +142,45 @@ func (a *App) SuperAdminDeleteVendor(r *fastglue.Request) error {
 		"users_removed": removedUsers,
 		"users_kept":    keptUsers,
 	})
+}
+
+// platformOrgName is the workspace super admins live in when theirs is deleted.
+const platformOrgName = "OneSuit Platform"
+
+// relocateSuperAdmin gives a super admin a home outside the workspace being
+// deleted: another workspace they belong to, else the platform workspace.
+func (a *App) relocateSuperAdmin(tx *gorm.DB, userID, deletingOrgID uuid.UUID) error {
+	var other models.UserOrganization
+	err := tx.Where("user_id = ? AND organization_id <> ?", userID, deletingOrgID).
+		Order("is_default DESC, created_at ASC").First(&other).Error
+	if err == nil {
+		return tx.Model(&models.User{}).Where("id = ? AND organization_id = ?", userID, deletingOrgID).
+			Updates(map[string]any{"organization_id": other.OrganizationID, "role_id": other.RoleID}).Error
+	}
+	if err != gorm.ErrRecordNotFound {
+		return err
+	}
+	var platform models.Organization
+	if err := tx.Where("name = ?", platformOrgName).First(&platform).Error; err != nil {
+		if err != gorm.ErrRecordNotFound {
+			return err
+		}
+		org, err := createVendorOrganization(tx, platformOrgName, a.loadPlatformConfig().Timezone)
+		if err != nil {
+			return err
+		}
+		platform = *org
+	}
+	var adminRole models.CustomRole
+	if err := tx.Where("organization_id = ? AND name = ? AND is_system = ?", platform.ID, "admin", true).
+		First(&adminRole).Error; err != nil {
+		return err
+	}
+	if err := tx.Create(&models.UserOrganization{
+		UserID: userID, OrganizationID: platform.ID, RoleID: &adminRole.ID, IsDefault: true,
+	}).Error; err != nil {
+		return err
+	}
+	return tx.Model(&models.User{}).Where("id = ?", userID).
+		Updates(map[string]any{"organization_id": platform.ID, "role_id": adminRole.ID}).Error
 }

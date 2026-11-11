@@ -631,7 +631,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 
 	// Sections switched off in the workspace's plan are blocked
 	g.Before(app.PlanModuleGuard)
-	// Workspaces that haven't made their first payment only reach the payment screens
+	// Workspaces that haven't made their first payment can explore (read) but not change anything
 	g.Before(app.PendingPaymentGuard)
 
 	// Role-based access control middleware
