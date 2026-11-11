@@ -173,9 +173,8 @@ function buildNavGroup(
 
   if (moduleId === 'dashboard') {
     const items = [
+      // Agent Analytics and Meta Insights live in the Analytics section only.
       { name: 'nav.dashboard', path: '/', icon: LayoutDashboard, exact: true },
-      hasPermission('analytics.agents', 'read') ? { name: 'nav.agentAnalytics', path: '/analytics/agents', icon: BarChart3 } : null,
-      hasPermission('analytics', 'read') ? { name: 'nav.metaInsights', path: '/analytics/meta-insights', icon: LineChart } : null,
     ].filter(Boolean) as SecondaryNavGroup['items'];
 
     return {
