@@ -11,6 +11,7 @@ import { LoginView } from '@/views/auth/LoginView';
 // Core Dashboard & Chat
 import { DashboardView } from '@/views/dashboard/DashboardView';
 import { ChatView } from '@/views/chat/ChatView';
+import { ChatHistoryView } from '@/views/chat/history/ChatHistoryView';
 import { ProfileView } from '@/views/profile/ProfileView';
 
 // Messaging
@@ -172,6 +173,7 @@ export const App: React.FC = () => {
 
             {/* Omnichannel Chat */}
             <Route path="chat" element={<ChatView />} />
+            <Route path="chat/history" element={<ChatHistoryView />} />
             <Route path="chat/:contactId" element={<ChatView />} />
 
             {/* Profile */}

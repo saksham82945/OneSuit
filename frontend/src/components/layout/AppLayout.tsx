@@ -55,6 +55,7 @@ import {
   UserPlus,
   FilePlus2,
   SunMoon,
+  History,
 } from 'lucide-react';
 import { PrimaryRail, visibleRailModules } from './PrimaryRail';
 import { UserMenu } from './UserMenu';
@@ -67,8 +68,8 @@ import { useBrandedTitle, useBranding } from '@/services/branding';
 import { BrandMark } from '@/views/public/PublicLayout';
 import { usePlanModules } from '@/lib/planModules';
 import { PlanLockedNotice } from './PlanLockedNotice';
-import { PendingPaymentBanner } from './PendingPaymentBanner';
 import { UpgradeDialog } from '@/components/billing/UpgradeDialog';
+import { PendingPaymentBanner } from './PendingPaymentBanner';
 import { CHECKOUT_PATH } from '@/lib/pendingPayment';
 import { useTheme } from '@/hooks/useTheme';
 import { CreateContactDialog } from '@/components/shared/CreateContactDialog';
@@ -193,7 +194,10 @@ function buildNavGroup(
       moduleId: 'chat',
       title: 'nav.chat',
       subtitle: 'Live Inbox',
-      items: [{ name: 'nav.chat', path: '/chat', icon: MessageSquare }],
+      items: [
+        { name: 'nav.chat', path: '/chat', icon: MessageSquare },
+        { name: 'Chat history', path: '/chat/history', icon: History },
+      ],
     };
   }
 

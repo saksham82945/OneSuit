@@ -77,6 +77,14 @@ type OutgoingMessageRequest struct {
 	FlowToken       string // Unique token for flow response tracking
 	FlowFirstScreen string // First screen name to navigate to
 
+	// Rich messages (see rich_messages.go)
+	Location     *whatsapp.Location       // type "location"
+	ContactCards []whatsapp.ContactCard   // type "contacts"
+	Product      *whatsapp.ProductMessage // interactive "product" / "product_list"
+	// RichData, when set, is stored as the message's InteractiveData so the
+	// chat can render the product cards, poll bars or location request.
+	RichData models.JSONB
+
 	// Reply context
 	ReplyToMessage *models.Message
 }
@@ -195,7 +203,25 @@ func (a *App) SendOutgoingMessage(ctx context.Context, req OutgoingMessageReques
 				return a.WhatsApp.SendDocumentMessage(sendCtx, waAccount, rcpt, mediaID, req.MediaFilename, req.Caption)
 			}
 
+		case models.MessageTypeLocation:
+			if req.Location == nil {
+				return "", fmt.Errorf("location is required")
+			}
+			return a.WhatsApp.SendLocation(sendCtx, waAccount, rcpt, *req.Location)
+
+		case models.MessageTypeContacts:
+			return a.WhatsApp.SendContacts(sendCtx, waAccount, rcpt, req.ContactCards)
+
 		case models.MessageTypeInteractive:
+			if req.Product != nil {
+				if req.Product.IsList() {
+					return a.WhatsApp.SendProductList(sendCtx, waAccount, rcpt, *req.Product)
+				}
+				return a.WhatsApp.SendProduct(sendCtx, waAccount, rcpt, *req.Product)
+			}
+			if req.InteractiveType == "location_request_message" {
+				return a.WhatsApp.SendLocationRequest(sendCtx, waAccount, rcpt, req.BodyText)
+			}
 			if req.Interactive != nil {
 				return a.WhatsApp.SendInteractive(sendCtx, waAccount, rcpt, *req.Interactive)
 			}
@@ -305,9 +331,15 @@ func (a *App) createOutgoingMessage(req OutgoingMessageRequest, opts MessageSend
 		msg.MediaMimeType = req.MediaMimeType
 		msg.MediaFilename = req.MediaFilename
 
+	case models.MessageTypeLocation, models.MessageTypeContacts:
+		msg.Content = richMessageContent(req)
+
 	case models.MessageTypeInteractive:
 		msg.Content = req.BodyText
 		msg.InteractiveData = a.buildInteractiveData(req)
+		if req.RichData != nil {
+			msg.InteractiveData = req.RichData
+		}
 		// A media header (chatbot bot replies) is kept so the chat shows it.
 		if req.MediaURL != "" {
 			msg.MediaURL = req.MediaURL
@@ -630,7 +662,12 @@ func (a *App) getMessagePreview(req OutgoingMessageRequest) string {
 			return "[Document: " + req.MediaFilename + "]"
 		}
 		return "[Document]"
+	case models.MessageTypeLocation, models.MessageTypeContacts:
+		return richMessagePreview(req)
 	case models.MessageTypeInteractive:
+		if req.RichData != nil {
+			return richMessagePreview(req)
+		}
 		return truncateString(req.BodyText, 100)
 	case models.MessageTypeFlow:
 		return truncateString(req.BodyText, 100)

@@ -129,8 +129,19 @@ type IncomingTextMessage struct {
 		Phones []struct {
 			Phone string `json:"phone"`
 			Type  string `json:"type,omitempty"`
+			WaID  string `json:"wa_id,omitempty"`
 		} `json:"phones,omitempty"`
+		Emails []struct {
+			Email string `json:"email"`
+			Type  string `json:"type,omitempty"`
+		} `json:"emails,omitempty"`
+		Org *struct {
+			Company string `json:"company,omitempty"`
+			Title   string `json:"title,omitempty"`
+		} `json:"org,omitempty"`
 	} `json:"contacts,omitempty"`
+	// Order is a cart the customer sent from a catalogue (type "order").
+	Order *IncomingOrder `json:"order,omitempty"`
 }
 
 // processIncomingMessageFull processes incoming WhatsApp messages with chatbot logic
@@ -195,6 +206,11 @@ func (a *App) processIncomingMessageFull(phoneNumberID string, msg IncomingTextM
 
 	// Clear chatbot tracking since client has replied
 	a.ClearContactChatbotTracking(contact.ID)
+
+	// A tap on a quick-poll option is a vote, not input for the chatbot.
+	if a.recordPollVote(account.OrganizationID, contact.ID, buttonID, messageText) {
+		return
+	}
 
 	// Check for active agent transfer - skip chatbot processing if transferred
 	if a.hasActiveAgentTransfer(account.OrganizationID, contact.ID) {
@@ -1555,11 +1571,23 @@ func (a *App) extractMessageContent(ctx context.Context, msg IncomingTextMessage
 				}
 				contactVal["phones"] = phones
 			}
+			if len(c.Emails) > 0 {
+				emails := make([]string, 0, len(c.Emails))
+				for _, e := range c.Emails {
+					emails = append(emails, e.Email)
+				}
+				contactVal["emails"] = emails
+			}
+			if c.Org != nil && c.Org.Company != "" {
+				contactVal["company"] = c.Org.Company
+			}
 			contactsData = append(contactsData, contactVal)
 		}
 		if jsonBytes, err := json.Marshal(contactsData); err == nil {
 			extracted.Text = string(jsonBytes)
 		}
+	} else if msg.Type == "order" && msg.Order != nil {
+		extracted.Text = incomingOrderContent(msg.Order)
 	}
 
 	return extracted

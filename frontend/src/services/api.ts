@@ -112,9 +112,23 @@ async function refreshAccessToken(): Promise<void> {
   }
 }
 
-// 402: the workspace is exploring (signed up for a paid plan, hasn't paid yet) and
-// tried a change. Open the Upgrade dialog (throttled, so a burst of failures shows one).
+// 402: the workspace is exploring (signed up for a paid plan, hasn't paid yet).
+// Ask them to upgrade only when they try to really use OneSuit — connect a
+// WhatsApp number, send a message, start a campaign or run an ad — not for
+// every small change or background request while they look around.
+const UPGRADE_ACTIONS: RegExp[] = [
+  /^\/?messages(\/|$)/, // sending in chat (text, media, templates...)
+  /^\/?contacts\/[^/]+\/(messages|scheduled-messages)$/, // chat composer sends + scheduled messages
+  /^\/?campaigns(\/[^/]+\/(start|retry-failed))?$/, // create / start a campaign
+  /^\/?ads(\/|$)/, // ads manager
+  /^\/?accounts(\/[^/]+\/register)?$/, // add / register a WhatsApp number
+  /^\/?whatsapp-setup(\/|$)/,
+  /^\/?embedded-signup(\/|$)/,
+]
+
 function promptUpgrade(error: AxiosError) {
+  const url = (error.config?.url || '').split('?')[0]
+  if (!UPGRADE_ACTIONS.some((re) => re.test(url))) return
   const message = (error.response?.data as { message?: unknown } | undefined)?.message
   requestUpgrade(typeof message === 'string' ? message : undefined)
 }
@@ -447,6 +461,14 @@ export const chatbotService = {
   /** An uploaded bot-reply media file (by its file name) for previews. */
   getFlowMedia: (file: string) =>
     api.get<Blob>(`/chatbot/flows/media/${encodeURIComponent(file)}`, { responseType: 'blob' }),
+
+  // Bot files (OneSuit bot format): export / import bots of any type
+  /** No params = every bot; `flows` / `keywords` = comma-separated ids ('' = all of that kind). Returns the file itself. */
+  exportBots: (params?: { flows?: string; keywords?: string }) =>
+    api.get<unknown>('/chatbot/export', { params }),
+  /** Sends a bot file; `preview` only reports what would be created. */
+  importBots: (file: unknown, preview: boolean) =>
+    api.post('/chatbot/import', file, { params: preview ? { mode: 'preview' } : undefined }),
 
   // AI Contexts
   listAIContexts: (params?: { search?: string; page?: number; limit?: number }) =>

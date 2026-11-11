@@ -813,7 +813,7 @@ func TestApp_CreateCatalogProduct_DefaultCurrency(t *testing.T) {
 	}
 	err = json.Unmarshal(testutil.GetResponseBody(req), &resp)
 	require.NoError(t, err)
-	assert.Equal(t, "USD", resp.Data.Currency)
+	assert.Equal(t, "INR", resp.Data.Currency)
 }
 
 func TestApp_CreateCatalogProduct_MissingFields(t *testing.T) {

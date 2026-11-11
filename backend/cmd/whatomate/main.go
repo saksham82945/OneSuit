@@ -763,6 +763,18 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.POST("/api/messages/template", app.SendTemplateMessage)
 	g.POST("/api/messages/media", app.SendMediaMessage)
 	g.PUT("/api/messages/{id}/read", app.MarkMessageRead)
+	// Scheduled chat messages (sent by the minute ticker)
+	g.GET("/api/contacts/{id}/scheduled-messages", app.ListScheduledMessages)
+	g.POST("/api/contacts/{id}/scheduled-messages", app.CreateScheduledMessage)
+	g.PUT("/api/scheduled-messages/{id}", app.UpdateScheduledMessage)
+	g.DELETE("/api/scheduled-messages/{id}", app.CancelScheduledMessage)
+
+	// Chat History (date-ranged, read-only)
+	g.GET("/api/history/conversations", app.ListHistoryConversations)
+	g.GET("/api/history/stats", app.GetHistoryStats)
+	g.GET("/api/history/messages", app.ListHistoryMessages)
+	g.GET("/api/history/search", app.SearchHistory)
+	g.GET("/api/history/export", app.ExportHistoryTranscript)
 
 	// Conversation Notes
 	g.GET("/api/contacts/{id}/notes", app.ListConversationNotes)
@@ -824,6 +836,10 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/chatbot/keywords/{id}", app.GetKeywordRule)
 	g.PUT("/api/chatbot/keywords/{id}", app.UpdateKeywordRule)
 	g.DELETE("/api/chatbot/keywords/{id}", app.DeleteKeywordRule)
+
+	// Bot files: export / import bots of any type (OneSuit bot format)
+	g.GET("/api/chatbot/export", app.ExportBots)
+	g.POST("/api/chatbot/import", app.ImportBots)
 
 	// Chatbot Flows
 	g.GET("/api/chatbot/flows", app.ListChatbotFlows)
@@ -1070,10 +1086,23 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/catalogs/{id}", app.GetCatalog)
 	g.DELETE("/api/catalogs/{id}", app.DeleteCatalog)
 	g.POST("/api/catalogs/sync", app.SyncCatalogs)
+	g.GET("/api/catalogs/available", app.ListAvailableCatalogs)
+	g.POST("/api/catalogs/link", app.LinkCatalog)
+	g.GET("/api/catalogs/commerce-settings", app.GetCommerceSettings)
+	g.POST("/api/catalogs/commerce-settings", app.UpdateCommerceSettings)
+	g.GET("/api/catalogs/products/picker", app.ProductPicker)
+	g.POST("/api/catalogs/{id}/connect", app.ConnectCatalog)
+	g.DELETE("/api/catalogs/{id}/connect", app.DisconnectCatalog)
+	g.GET("/api/catalogs/{id}/sets", app.ListProductSets)
+	g.POST("/api/catalogs/{id}/sets", app.CreateProductSet)
+	g.DELETE("/api/catalogs/{id}/sets/{setId}", app.DeleteProductSet)
 
 	// Catalog Products
 	g.GET("/api/catalogs/{id}/products", app.ListCatalogProducts)
 	g.POST("/api/catalogs/{id}/products", app.CreateCatalogProduct)
+	g.POST("/api/catalogs/{id}/products/sync", app.SyncCatalogProducts)
+	g.POST("/api/catalogs/{id}/products/import", app.ImportCatalogProducts)
+	g.POST("/api/catalogs/{id}/products/{productId}/push", app.PushCatalogProduct)
 	g.GET("/api/products/{id}", app.GetCatalogProduct)
 	g.PUT("/api/products/{id}", app.UpdateCatalogProduct)
 	g.DELETE("/api/products/{id}", app.DeleteCatalogProduct)

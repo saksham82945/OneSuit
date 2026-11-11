@@ -42,6 +42,16 @@ import {
   windowTimeLeft,
 } from './chatUtils';
 import { TemplatePickerDialog } from './TemplatePickerDialog';
+import { AttachMenu, type FileKind } from './compose/AttachMenu';
+import { RichBubble } from './compose/RichBubble';
+import { ScheduledStrip } from './compose/ScheduledStrip';
+import { isRichMessage } from './compose/richUtils';
+
+const FILE_ACCEPT: Record<FileKind, string> = {
+  document: 'application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv',
+  media: 'image/*,video/*',
+  audio: 'audio/*',
+};
 
 const EMOJIS = ['😀', '😂', '😊', '😍', '🙏', '👍', '👏', '🎉', '🔥', '❤️', '✅', '👋', '🤝', '😅', '🤔', '😢', '😮', '💯', '🙌', '⭐', '📦', '💰', '📞', '⏰'];
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -163,6 +173,7 @@ export const ConversationPane: React.FC<ConversationPaneProps> = ({
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentPurpose, setPaymentPurpose] = useState('');
+  const [scheduledVersion, setScheduledVersion] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -357,7 +368,8 @@ export const ConversationPane: React.FC<ConversationPaneProps> = ({
             {g.items.map((m) => {
               const out = m.direction === 'outgoing';
               const body = getMessageText(m);
-              const showText = body && !(m.media_url && body === m.media_filename);
+              const rich = isRichMessage(m);
+              const showText = body && !rich && !(m.media_url && body === m.media_filename);
               const replyText = m.reply_to_message ? getMessageText(m.reply_to_message as Message) : '';
               return (
                 <div key={m.id} className={cn('group flex items-end gap-1', out ? 'justify-end' : 'justify-start')}>
@@ -375,6 +387,7 @@ export const ConversationPane: React.FC<ConversationPaneProps> = ({
                       </div>
                     )}
                     <MediaBlock m={m} />
+                    {rich && <RichBubble m={m} />}
                     {showText && <p className="whitespace-pre-wrap break-words">{body}</p>}
                     <div className="-mb-0.5 mt-0.5 flex items-center justify-end gap-1 text-[10px] text-gray-500 dark:text-white/60">
                       <span>{formatTime(m.created_at)}</span>
@@ -394,6 +407,7 @@ export const ConversationPane: React.FC<ConversationPaneProps> = ({
             })}
           </div>
         ))}
+        <ScheduledStrip contact={contact} version={scheduledVersion + messages.length} onChange={() => setScheduledVersion((v) => v + 1)} />
         <div className="h-3" />
       </div>
 
@@ -467,9 +481,26 @@ export const ConversationPane: React.FC<ConversationPaneProps> = ({
         />
         <div className="flex items-end gap-1">
           <div className="flex shrink-0 items-center">
-            <ComposerIcon title="Attach file" disabled={!windowOpen} onClick={() => fileRef.current?.click()}>
-              <Paperclip className="h-[18px] w-[18px]" />
-            </ComposerIcon>
+            <AttachMenu
+              contact={contact}
+              windowOpen={windowOpen}
+              composerText={text}
+              onPickFile={(kind) => {
+                const el = fileRef.current;
+                if (!el) return;
+                el.accept = FILE_ACCEPT[kind];
+                el.click();
+              }}
+              onSent={(m, preview) => {
+                stickToBottom.current = true;
+                if (m) onMessageSent(m, preview);
+                else onReload();
+              }}
+              onScheduled={() => {
+                setScheduledVersion((v) => v + 1);
+                stickToBottom.current = true;
+              }}
+            />
             <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
               <PopoverTrigger asChild>
                 <ComposerIcon title="Emoji" disabled={!windowOpen} className="hidden sm:inline-flex">

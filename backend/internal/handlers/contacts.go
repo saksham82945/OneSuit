@@ -629,6 +629,10 @@ type SendMessageRequest struct {
 
 	// Interactive message fields (for type="interactive")
 	Interactive *InteractiveContent `json:"interactive,omitempty"`
+
+	// Rich message fields (see rich_messages.go)
+	Location *whatsapp.Location    `json:"location,omitempty"` // type="location"
+	Contacts []whatsapp.ContactCard `json:"contacts,omitempty"` // type="contacts"
 }
 
 // InteractiveContent holds interactive message data
@@ -649,6 +653,13 @@ type InteractiveContent struct {
 	FlowID      string `json:"flow_id,omitempty"`
 	FirstScreen string `json:"first_screen,omitempty"`
 	Header      string `json:"header,omitempty"`
+	// product / product_list / poll (see rich_messages.go)
+	Footer            string                    `json:"footer,omitempty"`
+	CatalogID         string                    `json:"catalog_id,omitempty"`
+	ProductRetailerID string                    `json:"product_retailer_id,omitempty"`
+	Sections          []whatsapp.ProductSection `json:"sections,omitempty"`
+	Products          []ProductDisplay          `json:"products,omitempty"` // names/prices/images for the chat bubble
+	Options           []string                  `json:"options,omitempty"`  // poll options
 }
 
 // ButtonContent represents a button in interactive messages
@@ -778,6 +789,11 @@ func (a *App) SendMessage(r *fastglue.Request) error {
 			// TTL matches the button's clickable lifetime.
 			a.MarkPendingStickyCall(context.Background(), orgID, contact.PhoneNumber, userID, req.Interactive.TTLMinutes)
 		}
+	}
+
+	// Location, contact cards, products, polls and location requests.
+	if errMsg := a.applyRichMessage(orgID, &req, &msgReq); errMsg != "" {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, errMsg, nil, "")
 	}
 
 	opts := DefaultSendOptions()

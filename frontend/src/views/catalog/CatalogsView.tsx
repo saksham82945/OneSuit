@@ -1,15 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { SearchInput } from '@/components/shared/SearchInput';
-import { DataTable, type Column } from '@/components/shared/DataTable';
-import { IconButton } from '@/components/shared/IconButton';
-import { DeleteConfirmDialog } from '@/components/shared/DeleteConfirmDialog';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { Skeleton } from '@/components/shared/Skeleton';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -22,58 +18,118 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { ShoppingBag, Plus, Trash2, RefreshCw, ChevronRight, Store, Share2, CheckCircle2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  ChevronRight,
+  Link2,
+  Loader2,
+  Plug,
+  PlugZap,
+  Plus,
+  RefreshCw,
+  ShoppingBag,
+  ShoppingCart,
+  Smartphone,
+  Store,
+  Trash2,
+} from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import { usePlanModules } from '@/lib/planModules';
+import { requestUpgrade } from '@/lib/pendingPayment';
 import {
   catalogService,
   readCatalogs,
+  readCatalog,
+  readCommerceSettings,
   readSyncResult,
   loadAccounts,
   errorMessage,
   describeActionError,
+  handleUpgradeError,
   formatDate,
+  accountLabel,
   accountReadyForCatalogs,
   type Catalog,
+  type CommerceSettings,
   type WhatsAppAccountOption,
   type ActionErrorInfo,
 } from './catalogApi';
 import { ActionErrorBox, WarningBanner, ConnectAccountButton } from './CatalogNotices';
+import { CatalogHelpPanel } from './CatalogHelp';
+import { LinkCatalogDialog } from './LinkCatalogDialog';
 
 type AccountsState = 'loading' | 'ok' | 'forbidden' | 'error';
 
 const fieldClass =
   'bg-white/[0.04] border-white/[0.08] text-white light:bg-white light:border-gray-200 light:text-gray-900';
+const panelClass =
+  'rounded-xl border border-white/[0.08] bg-[#141415] text-white light:border-gray-200 light:bg-white light:text-gray-900';
+const outlineBtn = 'border-white/10 light:border-gray-200';
 
-const MAX_NAME = 255;
+const EXPLORE_MESSAGE = 'Upgrade your plan to change catalogues — you’re exploring OneSuit.';
+
+/* ------------------------------------------------------- WhatsApp profile */
+
+const ProfileToggle: React.FC<{
+  icon: React.ElementType;
+  title: string;
+  description: string;
+  checked: boolean;
+  disabled: boolean;
+  busy: boolean;
+  onChange: (v: boolean) => void;
+}> = ({ icon: Icon, title, description, checked, disabled, busy, onChange }) => (
+  <label
+    className={cn(
+      'flex items-start gap-3 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-3 light:border-gray-200 light:bg-gray-50/60',
+      disabled ? 'opacity-60' : 'cursor-pointer'
+    )}
+  >
+    <Icon className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400 light:text-emerald-600" />
+    <span className="min-w-0 flex-1">
+      <span className="block text-sm font-medium text-white light:text-gray-900">{title}</span>
+      <span className="block text-[11px] leading-snug text-white/50 light:text-gray-500">{description}</span>
+    </span>
+    {busy ? (
+      <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-white/50 light:text-gray-400" />
+    ) : (
+      <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} aria-label={title} />
+    )}
+  </label>
+);
+
+/* -------------------------------------------------------------- the page */
 
 export const CatalogsView: React.FC = () => {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const { pendingPayment } = usePlanModules();
 
   const [catalogs, setCatalogs] = useState<Catalog[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [accounts, setAccounts] = useState<WhatsAppAccountOption[]>([]);
   const [accountsState, setAccountsState] = useState<AccountsState>('loading');
-
-  const [accountFilter, setAccountFilter] = useState('all');
+  const [selected, setSelected] = useState('');
   const [search, setSearch] = useState('');
+
+  const [settings, setSettings] = useState<CommerceSettings | null>(null);
+  const [settingsError, setSettingsError] = useState<ActionErrorInfo | null>(null);
+  const [savingSetting, setSavingSetting] = useState<'visible' | 'cart' | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newAccount, setNewAccount] = useState('');
+  const [newConnect, setNewConnect] = useState(true);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<ActionErrorInfo | null>(null);
 
+  const [linkOpen, setLinkOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [busyCatalog, setBusyCatalog] = useState<string | null>(null);
 
   const [toDelete, setToDelete] = useState<Catalog | null>(null);
+  const [deleteInMeta, setDeleteInMeta] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  const [isCatalogVisible, setIsCatalogVisible] = useState(true);
-  const [fbPageModalOpen, setFbPageModalOpen] = useState(false);
-  const [fbPageId, setFbPageId] = useState('');
-  const [fbConnecting, setFbConnecting] = useState(false);
 
   const fetchCatalogs = useCallback(async () => {
     setLoadError(null);
@@ -103,60 +159,100 @@ export const CatalogsView: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    fetchCatalogs();
-    fetchAccounts();
+    void fetchCatalogs();
+    void fetchAccounts();
   }, [fetchCatalogs, fetchAccounts]);
 
-  // Account choices: the real list when we could read it, otherwise the
-  // account names already referenced by catalogues.
-  const accountOptions = useMemo<WhatsAppAccountOption[]>(() => {
-    if (accountsState === 'ok') return accounts;
-    const names = Array.from(new Set((catalogs ?? []).map((c) => c.whatsapp_account).filter(Boolean)));
-    return names.map((name) => ({ id: name, name }));
-  }, [accountsState, accounts, catalogs]);
-
-  const knownAccountNames = useMemo(() => new Set(accounts.map((a) => a.name)), [accounts]);
+  const accountByName = useMemo(() => new Map(accounts.map((a) => [a.name, a])), [accounts]);
+  // Selected WhatsApp number: the user's choice, else the first one that can talk to Meta.
+  const current =
+    accountByName.get(selected) ?? accounts.find((a) => accountReadyForCatalogs(a)) ?? accounts[0];
+  const currentName = current?.name ?? '';
   const noAccount = accountsState === 'ok' && accounts.length === 0;
-  const canMutate = accountOptions.length > 0;
+  const readOnly = !current;
 
-  // Keep the filter valid if the account list changes.
-  const effectiveFilter =
-    accountFilter !== 'all' && !accountOptions.some((a) => a.name === accountFilter) ? 'all' : accountFilter;
+  const connectedCatalog = useMemo(
+    () => (catalogs ?? []).find((c) => c.is_connected && c.whatsapp_account === currentName),
+    [catalogs, currentName]
+  );
+
+  /* ----------------------------------------------------- commerce settings */
+
+  const fetchSettings = useCallback(async (account: string) => {
+    setSettings(null);
+    setSettingsError(null);
+    if (!account) return;
+    try {
+      setSettings(readCommerceSettings(await catalogService.getCommerceSettings(account)));
+    } catch (err) {
+      setSettingsError(describeActionError(err, 'Couldn’t read the WhatsApp profile settings'));
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchSettings(currentName);
+  }, [currentName, fetchSettings]);
+
+  /** Explore mode and read-only checks before any change. */
+  const canWrite = (): boolean => {
+    if (pendingPayment) {
+      requestUpgrade(EXPLORE_MESSAGE, { force: true });
+      return false;
+    }
+    if (readOnly) {
+      toast.error('Connect a WhatsApp number first', { description: 'Catalogues are connected through a WhatsApp number.' });
+      return false;
+    }
+    return true;
+  };
+
+  const reportError = (err: unknown, fallback: string) => {
+    if (handleUpgradeError(err)) return;
+    const info = describeActionError(err, fallback);
+    toast.error(info.message, { description: info.hint, duration: 8000 });
+  };
+
+  const updateSetting = async (key: 'visible' | 'cart', value: boolean) => {
+    if (!canWrite() || !settings) return;
+    setSavingSetting(key);
+    try {
+      const res = await catalogService.updateCommerceSettings({
+        whatsapp_account: currentName,
+        ...(key === 'visible' ? { is_catalog_visible: value } : { is_cart_enabled: value }),
+      });
+      setSettings(readCommerceSettings(res));
+      toast.success(
+        key === 'visible'
+          ? value
+            ? 'Catalogue now shows on your WhatsApp profile'
+            : 'Catalogue hidden from your WhatsApp profile'
+          : value
+            ? 'Customers can now add products to a cart'
+            : 'Cart turned off'
+      );
+    } catch (err) {
+      reportError(err, 'Failed to update commerce settings');
+    } finally {
+      setSavingSetting(null);
+    }
+  };
+
+  /* ------------------------------------------------------------ actions */
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (catalogs ?? []).filter(
-      (c) =>
-        (effectiveFilter === 'all' || c.whatsapp_account === effectiveFilter) &&
-        (!q || c.name.toLowerCase().includes(q) || c.meta_catalog_id?.toLowerCase().includes(q))
-    );
-  }, [catalogs, search, effectiveFilter]);
-
-  const totalProducts = useMemo(
-    () => (catalogs ?? []).reduce((sum, c) => sum + (c.product_count || 0), 0),
-    [catalogs]
-  );
-
-  /* -------------------------------------------------------------- create */
+    return (catalogs ?? [])
+      .filter((c) => !q || c.name.toLowerCase().includes(q) || c.meta_catalog_id?.toLowerCase().includes(q))
+      .sort((a, b) => Number(!!b.is_connected) - Number(!!a.is_connected) || a.name.localeCompare(b.name));
+  }, [catalogs, search]);
 
   const openCreate = () => {
-    const preferred =
-      effectiveFilter !== 'all'
-        ? effectiveFilter
-        : accountOptions.find((a) => accountReadyForCatalogs(a))?.name ?? accountOptions[0]?.name ?? '';
+    if (!canWrite()) return;
     setNewName('');
-    setNewAccount(preferred);
+    setNewConnect(!connectedCatalog);
     setCreateError(null);
     setCreateOpen(true);
   };
-
-  const selectedAccount = accountOptions.find((a) => a.name === newAccount);
-  const selectedAccountWarning =
-    accountsState === 'ok' && selectedAccount && !accountReadyForCatalogs(selectedAccount)
-      ? !selectedAccount.business_id
-        ? 'This account has no Business ID, which Meta needs to create catalogues. Add it under Settings → Accounts.'
-        : 'This account has no access token, so Meta will reject the request.'
-      : null;
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,228 +261,102 @@ export const CatalogsView: React.FC = () => {
       setCreateError({ message: 'Give the catalogue a name.' });
       return;
     }
-    if (!newAccount) {
-      setCreateError({ message: 'Choose the WhatsApp account that will own this catalogue.' });
-      return;
-    }
     setCreating(true);
     setCreateError(null);
     try {
-      await catalogService.create({ name, whatsapp_account: newAccount });
-      toast.success(`Catalogue “${name}” created`);
+      const created = readCatalog(await catalogService.create({ name, whatsapp_account: currentName, connect: newConnect }));
+      toast.success(`Catalogue “${name}” created`, {
+        description: newConnect && !created?.is_connected ? 'Meta didn’t allow connecting it yet — use Connect on its card.' : undefined,
+      });
       setCreateOpen(false);
-      fetchCatalogs();
+      void fetchCatalogs();
     } catch (err) {
-      setCreateError(describeActionError(err, 'Failed to create catalog'));
+      if (handleUpgradeError(err)) setCreateError({ message: EXPLORE_MESSAGE });
+      else setCreateError(describeActionError(err, 'Failed to create catalog'));
     } finally {
       setCreating(false);
     }
   };
 
-  /* ---------------------------------------------------------------- sync */
-
   const handleSync = async () => {
-    const targets = effectiveFilter !== 'all' ? [effectiveFilter] : accountOptions.map((a) => a.name);
-    if (targets.length === 0) {
-      toast.error('Connect a WhatsApp account before syncing catalogues');
-      return;
-    }
+    if (!canWrite()) return;
     setSyncing(true);
-    let synced = 0;
-    let total = 0;
-    const failures: { account: string; error: ActionErrorInfo }[] = [];
-    for (const account of targets) {
-      try {
-        const result = readSyncResult(await catalogService.sync(account));
-        synced += result.synced ?? 0;
-        total += result.total ?? 0;
-      } catch (err) {
-        failures.push({ account, error: describeActionError(err, 'Failed to fetch catalogs') });
-      }
-    }
-    setSyncing(false);
-
-    const okCount = targets.length - failures.length;
-    if (okCount > 0) {
+    try {
+      const result = readSyncResult(await catalogService.sync(currentName));
       toast.success(
-        total === 0
-          ? `Meta returned no catalogues for ${okCount === 1 ? 'this account' : 'these accounts'}`
-          : `Synced ${synced} of ${total} catalogue${total === 1 ? '' : 's'} from Meta`
+        (result.total ?? 0) === 0
+          ? 'Meta returned no catalogues for this number’s business'
+          : `Synced ${result.synced ?? 0} catalogue${result.total === 1 ? '' : 's'} from Meta`
       );
+      void fetchCatalogs();
+      void fetchSettings(currentName);
+    } catch (err) {
+      reportError(err, 'Failed to fetch catalogs');
+    } finally {
+      setSyncing(false);
     }
-    if (failures.length > 0) {
-      const first = failures[0].error;
-      toast.error(
-        failures.length === 1 && targets.length === 1
-          ? `Sync failed: ${first.message}`
-          : `Sync failed for ${failures.map((f) => f.account).join(', ')}: ${first.message}`,
-        { description: first.hint, duration: 8000 }
-      );
-    }
-    if (okCount > 0) fetchCatalogs();
   };
 
-  /* -------------------------------------------------------------- delete */
+  const toggleConnection = async (c: Catalog) => {
+    if (!canWrite()) return;
+    setBusyCatalog(c.id);
+    try {
+      if (c.is_connected) {
+        await catalogService.disconnect(c.id);
+        toast.success(`“${c.name}” disconnected`, { description: 'It no longer shows on the WhatsApp profile.' });
+      } else {
+        await catalogService.connect(c.id, accountByName.has(c.whatsapp_account) ? undefined : currentName);
+        toast.success(`“${c.name}” connected`, { description: 'Customers can browse it from your WhatsApp profile.' });
+      }
+      void fetchCatalogs();
+    } catch (err) {
+      reportError(err, c.is_connected ? 'Failed to disconnect catalog' : 'Failed to connect catalog');
+    } finally {
+      setBusyCatalog(null);
+    }
+  };
 
   const handleDelete = async () => {
     if (!toDelete) return;
     setDeleting(true);
     try {
-      await catalogService.delete(toDelete.id);
-      toast.success(`Catalogue “${toDelete.name}” deleted`);
+      await catalogService.delete(toDelete.id, { deleteInMeta });
+      toast.success(deleteInMeta ? `“${toDelete.name}” deleted here and in Meta` : `“${toDelete.name}” removed`);
       setToDelete(null);
-      fetchCatalogs();
+      void fetchCatalogs();
     } catch (err) {
-      const info = describeActionError(err, 'Failed to delete catalog');
-      toast.error(info.message, { description: info.hint, duration: 8000 });
+      reportError(err, 'Failed to delete catalog');
     } finally {
       setDeleting(false);
     }
   };
 
-  /* ------------------------------------------------------------- columns */
-
-  const columns: Column<Catalog>[] = [
-    {
-      key: 'name',
-      label: 'Catalogue',
-      render: (c) => (
-        <div className="flex flex-col min-w-0">
-          <Link
-            to={`/catalogs/${c.id}`}
-            className="font-medium text-[13px] text-white hover:text-emerald-400 light:text-gray-900 light:hover:text-emerald-600 truncate"
-          >
-            {c.name}
-          </Link>
-          {c.meta_catalog_id && (
-            <span className="text-[11px] font-mono text-white/40 light:text-gray-500 truncate">
-              Meta ID {c.meta_catalog_id}
-            </span>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: 'whatsapp_account',
-      label: 'WhatsApp account',
-      render: (c) => (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-white/70 light:text-gray-700">{c.whatsapp_account || '—'}</span>
-          {accountsState === 'ok' && c.whatsapp_account && !knownAccountNames.has(c.whatsapp_account) && (
-            <Badge className="border-0 bg-amber-500/15 text-amber-400 text-[10px] light:bg-amber-100 light:text-amber-700">
-              Not connected
-            </Badge>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: 'product_count',
-      label: 'Products',
-      render: (c) => (
-        <span className="text-xs tabular-nums text-white/70 light:text-gray-700">
-          {c.product_count ?? 0}
-        </span>
-      ),
-    },
-    {
-      key: 'is_active',
-      label: 'Status',
-      render: (c) =>
-        c.is_active ? (
-          <Badge className="border-0 bg-emerald-500/15 text-emerald-400 text-[10px] light:bg-emerald-100 light:text-emerald-700">
-            Active
-          </Badge>
-        ) : (
-          <Badge className="border-0 bg-white/[0.08] text-white/60 text-[10px] light:bg-gray-100 light:text-gray-600">
-            Inactive
-          </Badge>
-        ),
-    },
-    {
-      key: 'created_at',
-      label: 'Created',
-      render: (c) => <span className="text-xs text-white/40 light:text-gray-500">{formatDate(c.created_at)}</span>,
-    },
-    {
-      key: 'actions',
-      label: 'Actions',
-      align: 'right',
-      render: (c) => (
-        <div className="flex items-center justify-end gap-1">
-          <IconButton
-            icon={Trash2}
-            label="Delete catalogue"
-            className="hover:text-red-400"
-            onClick={() => setToDelete(c)}
-          />
-          <IconButton icon={ChevronRight} label="Open products" onClick={() => navigate(`/catalogs/${c.id}`)} />
-        </div>
-      ),
-    },
-  ];
-
-  const filtering = search.trim() !== '' || effectiveFilter !== 'all';
-  const emptyAction = filtering ? (
-    <Button
-      size="sm"
-      variant="outline"
-      className="border-white/10 light:border-gray-200"
-      onClick={() => {
-        setSearch('');
-        setAccountFilter('all');
-      }}
-    >
-      Clear filters
-    </Button>
-  ) : noAccount ? (
-    <ConnectAccountButton label="Connect a WhatsApp account" />
-  ) : canMutate ? (
-    <div className="flex flex-wrap justify-center gap-2">
-      <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white" onClick={openCreate}>
-        <Plus className="h-4 w-4 mr-2" /> Create catalogue
-      </Button>
-      <Button size="sm" variant="outline" className="border-white/10 light:border-gray-200" disabled={syncing} onClick={handleSync}>
-        <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} /> Sync from Meta
-      </Button>
-    </div>
-  ) : undefined;
+  const totalProducts = (catalogs ?? []).reduce((sum, c) => sum + (c.product_count || 0), 0);
+  const currentText = accountLabel(current);
 
   return (
     <div className="flex flex-col h-full bg-[#0a0a0b] light:bg-gray-50 overflow-hidden">
       <PageHeader
-        title={t('nav.catalogs', 'Catalogues')}
-        subtitle="Product catalogues shared with customers on WhatsApp, kept in sync with Meta Commerce Manager"
+        title={t('nav.catalogs', 'Catalogue')}
+        subtitle="Show your products on your WhatsApp profile and share them in chats — kept in sync with Meta Commerce Manager"
         icon={ShoppingBag}
         actions={
           <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-white/10 light:border-gray-200"
-              onClick={() => setFbPageModalOpen(true)}
-            >
-              <Share2 className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Connect Facebook Page</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-white/10 light:border-gray-200"
-              disabled={syncing || !canMutate}
-              title={!canMutate ? 'Connect a WhatsApp account first' : 'Fetch catalogues from Meta'}
-              onClick={handleSync}
-            >
-              <RefreshCw className={`h-4 w-4 sm:mr-2 ${syncing ? 'animate-spin' : ''}`} />
+            <Button variant="outline" size="sm" className={outlineBtn} disabled={syncing || readOnly} onClick={handleSync}>
+              <RefreshCw className={cn('h-4 w-4 sm:mr-2', syncing && 'animate-spin')} />
               <span className="hidden sm:inline">{syncing ? 'Syncing…' : 'Sync from Meta'}</span>
             </Button>
             <Button
+              variant="outline"
               size="sm"
-              className="bg-emerald-600 hover:bg-emerald-500 text-white"
-              disabled={!canMutate}
-              title={!canMutate ? 'Connect a WhatsApp account first' : undefined}
-              onClick={openCreate}
+              className={outlineBtn}
+              disabled={readOnly}
+              onClick={() => canWrite() && setLinkOpen(true)}
             >
+              <Link2 className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Link catalogue</span>
+            </Button>
+            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white" disabled={readOnly} onClick={openCreate}>
               <Plus className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">Create catalogue</span>
             </Button>
@@ -395,143 +365,300 @@ export const CatalogsView: React.FC = () => {
       />
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-        {/* WhatsApp Business Profile Commerce Settings Card */}
-        <div className="rounded-2xl border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#141b1a] p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-              <Store className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                  Display Catalogue on WhatsApp Business Profile
-                </h3>
-                <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-0 text-[10px]">
-                  Meta Commerce
-                </Badge>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                When enabled, WhatsApp customers see a storefront button in your chat profile and can browse products directly
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-              {isCatalogVisible ? 'Visible on Profile' : 'Hidden from Profile'}
-            </span>
-            <Switch
-              checked={isCatalogVisible}
-              onCheckedChange={(checked) => {
-                setIsCatalogVisible(checked);
-                toast.success(
-                  checked
-                    ? 'Meta Commerce Settings updated: Catalogue is now visible on WhatsApp Profile'
-                    : 'Meta Commerce Settings updated: Catalogue hidden from WhatsApp Profile'
-                );
-              }}
-            />
-          </div>
-        </div>
-
         {noAccount && (
-          <WarningBanner title="No WhatsApp account connected" action={<ConnectAccountButton />}>
-            Catalogues live in Meta Commerce Manager and belong to a WhatsApp Business account. Connect an
-            account (with its Business ID and access token) to create catalogues or sync the ones you already have.
+          <WarningBanner title="Read-only: no WhatsApp number connected" action={<ConnectAccountButton label="Connect a number" />}>
+            A catalogue is connected through a WhatsApp number (its business account and access token). Connect a number
+            to link, create or edit catalogues — until then this page only shows what’s already here.
           </WarningBanner>
         )}
         {accountsState === 'forbidden' && (
-          <WarningBanner title="You can’t view WhatsApp accounts">
-            Your role can’t read WhatsApp accounts, so only accounts that already have catalogues can be chosen.
+          <WarningBanner title="Read-only: your role can’t see WhatsApp numbers">
+            Ask an admin for access to WhatsApp accounts to connect catalogues.
           </WarningBanner>
         )}
         {accountsState === 'error' && (
           <WarningBanner
-            title="Couldn’t load WhatsApp accounts"
+            title="Couldn’t load your WhatsApp numbers"
             action={
-              <Button size="sm" variant="outline" className="border-white/10 light:border-gray-200" onClick={fetchAccounts}>
+              <Button size="sm" variant="outline" className={outlineBtn} onClick={fetchAccounts}>
                 Retry
               </Button>
             }
           >
-            Creating and syncing catalogues needs an account to be chosen.
+            Connecting and editing catalogues needs a WhatsApp number.
+          </WarningBanner>
+        )}
+        {pendingPayment && !readOnly && (
+          <WarningBanner
+            title="You’re exploring OneSuit"
+            action={
+              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white shrink-0" onClick={() => requestUpgrade(EXPLORE_MESSAGE, { force: true })}>
+                Upgrade
+              </Button>
+            }
+          >
+            Look around freely — connecting catalogues and changing products needs a paid plan.
           </WarningBanner>
         )}
 
-        {loadError ? (
-          <Card className="card-depth border-white/[0.08] bg-[#141415] text-white light:bg-white light:border-gray-200 light:text-gray-900">
-            <ErrorState title="Couldn’t load catalogues" description={loadError} onRetry={fetchCatalogs} />
-          </Card>
-        ) : (
-          <Card className="card-depth border-white/[0.08] bg-[#141415] text-white light:bg-white light:border-gray-200 light:text-gray-900">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <CardTitle className="text-base font-semibold">Your catalogues</CardTitle>
-                  <CardDescription className="text-xs text-white/50 light:text-gray-500">
-                    {catalogs === null
-                      ? 'Loading…'
-                      : `${catalogs.length} catalogue${catalogs.length === 1 ? '' : 's'} · ${totalProducts} product${totalProducts === 1 ? '' : 's'}`}
-                  </CardDescription>
+        {/* WhatsApp number + profile settings */}
+        {current && (
+          <section className={cn(panelClass, 'p-4 sm:p-5')}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-400 light:text-emerald-600">
+                  <Smartphone className="h-5 w-5" />
                 </div>
-                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                  {accountOptions.length > 1 && (
-                    <Select value={effectiveFilter} onValueChange={setAccountFilter}>
-                      <SelectTrigger className="h-9 w-full sm:w-48" aria-label="Filter by WhatsApp account">
-                        <SelectValue placeholder="All accounts" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All accounts</SelectItem>
-                        {accountOptions.map((a) => (
-                          <SelectItem key={a.id || a.name} value={a.name}>
-                            {a.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  <SearchInput
-                    value={search}
-                    onChange={setSearch}
-                    placeholder="Search catalogues…"
-                    className="w-full sm:w-64"
-                  />
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold">WhatsApp profile</h2>
+                  <p className="text-xs text-white/50 light:text-gray-500">
+                    {connectedCatalog ? (
+                      <>
+                        Showing <b className="text-white/80 light:text-gray-800">{connectedCatalog.name}</b> on {currentText}
+                      </>
+                    ) : (
+                      <>No catalogue connected to {currentText} yet — link or create one below.</>
+                    )}
+                  </p>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <DataTable
-                  items={visible}
-                  columns={columns}
-                  isLoading={catalogs === null}
-                  emptyIcon={ShoppingBag}
-                  emptyTitle={filtering ? 'No catalogues match' : 'No catalogues yet'}
-                  emptyDescription={
-                    filtering
-                      ? 'Try a different search or account.'
-                      : noAccount
-                        ? 'Connect a WhatsApp account, then create a catalogue or sync the ones you already have in Meta.'
-                        : 'Create a catalogue, or sync the ones you already have in Meta Commerce Manager.'
-                  }
-                  emptyAction={emptyAction}
-                />
+              {accounts.length > 1 && (
+                <Select value={currentName} onValueChange={setSelected}>
+                  <SelectTrigger className="h-9 w-full sm:w-64" aria-label="WhatsApp number">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id || a.name} value={a.name}>
+                        {accountLabel(a)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            {!accountReadyForCatalogs(current) && (
+              <p className="mt-3 text-[11px] text-amber-400 light:text-amber-700">
+                This number has no {current.business_id ? 'access token' : 'business account ID'}, so Meta will refuse
+                catalogue changes. Fix it under Settings → Accounts.
+              </p>
+            )}
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <ProfileToggle
+                icon={Store}
+                title="Show catalogue on WhatsApp profile"
+                description="Adds the shop button to your business profile and chats so customers can browse products."
+                checked={!!settings?.is_catalog_visible}
+                disabled={!settings || !!savingSetting}
+                busy={savingSetting === 'visible' || (!settings && !settingsError)}
+                onChange={(v) => updateSetting('visible', v)}
+              />
+              <ProfileToggle
+                icon={ShoppingCart}
+                title="Allow cart"
+                description="Customers can add products to a cart and send you the order in the chat."
+                checked={!!settings?.is_cart_enabled}
+                disabled={!settings || !!savingSetting}
+                busy={savingSetting === 'cart' || (!settings && !settingsError)}
+                onChange={(v) => updateSetting('cart', v)}
+              />
+            </div>
+            {settingsError && (
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start">
+                <ActionErrorBox error={settingsError} className="flex-1" />
+                <Button size="sm" variant="outline" className={outlineBtn} onClick={() => fetchSettings(currentName)}>
+                  Retry
+                </Button>
               </div>
-            </CardContent>
-          </Card>
+            )}
+            {settings?.is_catalog_visible && !connectedCatalog && (
+              <p className="mt-3 text-[11px] text-amber-400 light:text-amber-700">
+                The shop button is on, but no catalogue is connected, so customers will see an empty shop.
+              </p>
+            )}
+          </section>
         )}
+
+        {/* Catalogue list */}
+        {loadError ? (
+          <div className={panelClass}>
+            <ErrorState title="Couldn’t load catalogues" description={loadError} onRetry={fetchCatalogs} />
+          </div>
+        ) : (
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-white light:text-gray-900">Your catalogues</h2>
+                <p className="text-xs text-white/50 light:text-gray-500">
+                  {catalogs === null
+                    ? 'Loading…'
+                    : `${catalogs.length} catalogue${catalogs.length === 1 ? '' : 's'} · ${totalProducts} product${totalProducts === 1 ? '' : 's'}`}
+                </p>
+              </div>
+              {(catalogs?.length ?? 0) > 3 && (
+                <SearchInput value={search} onChange={setSearch} placeholder="Search catalogues…" className="w-full sm:w-64" />
+              )}
+            </div>
+
+            {catalogs === null ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {[0, 1, 2].map((i) => (
+                  <Skeleton key={i} className="h-40 rounded-xl" />
+                ))}
+              </div>
+            ) : visible.length === 0 ? (
+              <div className={cn(panelClass, 'flex flex-col items-center px-6 py-10 text-center')}>
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400 light:text-emerald-600">
+                  <ShoppingBag className="h-6 w-6" />
+                </div>
+                <p className="text-sm font-semibold">{search.trim() ? 'No catalogues match' : 'No catalogues yet'}</p>
+                <p className="mt-1 max-w-md text-xs text-white/50 light:text-gray-500">
+                  {search.trim()
+                    ? 'Try a different name or ID.'
+                    : readOnly
+                      ? 'Connect a WhatsApp number, then link your Commerce Manager catalogue or create a new one.'
+                      : 'Link the catalogue you already have in Commerce Manager, pull it in with Sync from Meta, or create a new one.'}
+                </p>
+                {!search.trim() && !readOnly && (
+                  <div className="mt-4 flex flex-wrap justify-center gap-2">
+                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white" onClick={() => canWrite() && setLinkOpen(true)}>
+                      <Link2 className="h-4 w-4 mr-2" /> Link catalogue
+                    </Button>
+                    <Button size="sm" variant="outline" className={outlineBtn} onClick={openCreate}>
+                      <Plus className="h-4 w-4 mr-2" /> Create catalogue
+                    </Button>
+                  </div>
+                )}
+                {noAccount && (
+                  <div className="mt-4">
+                    <ConnectAccountButton label="Connect a WhatsApp number" />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {visible.map((c) => {
+                  const acc = accountByName.get(c.whatsapp_account);
+                  const accountMissing = accountsState === 'ok' && !acc;
+                  return (
+                    <article
+                      key={c.id}
+                      className={cn(
+                        panelClass,
+                        'flex flex-col p-4 transition-colors',
+                        c.is_connected && 'border-emerald-500/40 light:border-emerald-300'
+                      )}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={cn(
+                            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                            c.is_connected
+                              ? 'bg-emerald-500/15 text-emerald-400 light:bg-emerald-100 light:text-emerald-700'
+                              : 'bg-white/[0.06] text-white/50 light:bg-gray-100 light:text-gray-500'
+                          )}
+                        >
+                          <Store className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <Link
+                            to={`/catalogs/${c.id}`}
+                            className="block truncate text-sm font-semibold hover:text-emerald-400 light:hover:text-emerald-700"
+                          >
+                            {c.name}
+                          </Link>
+                          <p className="truncate font-mono text-[11px] text-white/40 light:text-gray-500">ID {c.meta_catalog_id}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
+                        {c.is_connected ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-400 light:bg-emerald-100 light:text-emerald-700">
+                            <PlugZap className="h-3 w-3" /> Connected to {accountLabel(acc, c.whatsapp_account)}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-white/[0.06] px-2 py-0.5 text-white/60 light:bg-gray-100 light:text-gray-600">
+                            <Plug className="h-3 w-3" /> Not connected
+                          </span>
+                        )}
+                        {accountMissing && (
+                          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-400 light:bg-amber-100 light:text-amber-700">
+                            Number not in workspace
+                          </span>
+                        )}
+                        {(c.sync_error_count ?? 0) > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-red-400 light:bg-red-100 light:text-red-700">
+                            <AlertTriangle className="h-3 w-3" /> {c.sync_error_count} not in Meta
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="mt-2 text-xs text-white/50 light:text-gray-500">
+                        {c.product_count ?? 0} product{c.product_count === 1 ? '' : 's'}
+                        {c.last_synced_at ? ` · synced ${formatDate(c.last_synced_at)}` : ''}
+                      </p>
+
+                      <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
+                        <Button asChild size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white">
+                          <Link to={`/catalogs/${c.id}`}>
+                            Products <ChevronRight className="h-4 w-4 ml-1" />
+                          </Link>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className={outlineBtn}
+                          disabled={readOnly || busyCatalog === c.id}
+                          onClick={() => toggleConnection(c)}
+                        >
+                          {busyCatalog === c.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : c.is_connected ? (
+                            'Disconnect'
+                          ) : (
+                            'Connect'
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="ml-auto text-white/50 hover:text-red-400 light:text-gray-500"
+                          aria-label={`Remove ${c.name}`}
+                          onClick={() => {
+                            if (pendingPayment) {
+                              requestUpgrade(EXPLORE_MESSAGE, { force: true });
+                              return;
+                            }
+                            setDeleteInMeta(false);
+                            setToDelete(c);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+        <CatalogHelpPanel key={catalogs?.length === 0 ? 'open' : 'closed'} defaultOpen={catalogs?.length === 0} />
       </div>
 
+      {/* Create */}
       <Dialog open={createOpen} onOpenChange={(open) => !creating && setCreateOpen(open)}>
         <DialogContent className="sm:max-w-[440px]">
           <form onSubmit={handleCreate} noValidate>
             <DialogHeader>
               <DialogTitle>Create catalogue</DialogTitle>
               <DialogDescription>
-                The catalogue is created in Meta Commerce Manager for the chosen WhatsApp account, then listed here.
+                Made in Meta Commerce Manager, in the business that owns {currentText}.
               </DialogDescription>
             </DialogHeader>
-
             <div className="grid gap-4 py-4">
               <div className="grid gap-1.5">
                 <Label htmlFor="catalogName" className="text-xs">Name *</Label>
@@ -539,42 +666,21 @@ export const CatalogsView: React.FC = () => {
                   id="catalogName"
                   autoFocus
                   placeholder="e.g. Summer collection"
-                  maxLength={MAX_NAME}
+                  maxLength={255}
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   className={fieldClass}
                 />
               </div>
-
-              <div className="grid gap-1.5">
-                <Label className="text-xs">WhatsApp account *</Label>
-                <Select
-                  value={newAccount}
-                  onValueChange={(v) => {
-                    setNewAccount(v);
-                    setCreateError(null);
-                  }}
-                >
-                  <SelectTrigger aria-label="WhatsApp account">
-                    <SelectValue placeholder="Choose an account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accountOptions.map((a) => (
-                      <SelectItem key={a.id || a.name} value={a.name}>
-                        {a.name}
-                        {a.phone_number ? ` · ${a.phone_number}` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {selectedAccountWarning && (
-                  <p className="text-[11px] text-amber-400 light:text-amber-700">{selectedAccountWarning}</p>
-                )}
-              </div>
-
+              <label className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.08] px-3 py-2 light:border-gray-200">
+                <span className="text-xs text-white/80 light:text-gray-700">
+                  Connect to {currentText}
+                  {connectedCatalog && <span className="block text-[11px] text-white/40 light:text-gray-500">Replaces “{connectedCatalog.name}”</span>}
+                </span>
+                <Switch checked={newConnect} onCheckedChange={setNewConnect} />
+              </label>
               <ActionErrorBox error={createError} />
             </div>
-
             <DialogFooter className="gap-2 sm:gap-0">
               <Button type="button" variant="outline" disabled={creating} onClick={() => setCreateOpen(false)}>
                 Cancel
@@ -587,77 +693,50 @@ export const CatalogsView: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      <DeleteConfirmDialog
-        open={!!toDelete}
-        onOpenChange={(open) => !open && !deleting && setToDelete(null)}
-        title="Delete catalogue"
-        description={
-          toDelete
-            ? `Delete “${toDelete.name}” and its ${toDelete.product_count ?? 0} product${toDelete.product_count === 1 ? '' : 's'}? It is also deleted from Meta Commerce Manager. This can’t be undone.`
-            : undefined
-        }
-        isSubmitting={deleting}
-        onConfirm={handleDelete}
-      />
+      {current && (
+        <LinkCatalogDialog
+          open={linkOpen}
+          onOpenChange={setLinkOpen}
+          account={currentName}
+          accountText={currentText}
+          onLinked={(c) => {
+            toast.success(`“${c.name}” linked${c.is_connected ? ' and connected' : ''}`);
+            setLinkOpen(false);
+            void fetchCatalogs();
+          }}
+        />
+      )}
 
-      {/* Connect Facebook Page Modal */}
-      <Dialog open={fbPageModalOpen} onOpenChange={setFbPageModalOpen}>
-        <DialogContent className="sm:max-w-md">
+      {/* Delete */}
+      <Dialog open={!!toDelete} onOpenChange={(open) => !open && !deleting && setToDelete(null)}>
+        <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Share2 className="h-5 w-5 text-blue-500" />
-              Connect Facebook Page
-            </DialogTitle>
+            <DialogTitle>Remove catalogue</DialogTitle>
             <DialogDescription>
-              Link your official Facebook Brand Page to your WhatsApp Business Account to synchronize Meta Commerce product catalogues and ad leads.
+              {toDelete &&
+                `Remove “${toDelete.name}” and its ${toDelete.product_count ?? 0} product${toDelete.product_count === 1 ? '' : 's'} from OneSuit?`}
             </DialogDescription>
           </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div>
-              <Label className="text-xs font-semibold">Facebook Page ID / Username</Label>
-              <Input
-                placeholder="e.g. 109283748291048 or @onesuit.official"
-                value={fbPageId}
-                onChange={(e) => setFbPageId(e.target.value)}
-                className="mt-1 h-9 text-xs"
-              />
-            </div>
-
-            <div className="p-3 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200/50 dark:border-blue-900/40 text-[11px] text-blue-700 dark:text-blue-300">
-              <p className="font-semibold flex items-center gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Meta Business Asset Group Sync
-              </p>
-              <p className="mt-1">
-                Connecting your Facebook Page allows click-to-WhatsApp ads to automatically populate customer inquiries in your Live Chat inbox.
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setFbPageModalOpen(false)}>
+          <label className="flex items-start gap-3 rounded-lg border border-red-500/25 bg-red-500/[0.06] px-3 py-2 light:border-red-200 light:bg-red-50">
+            <input
+              type="checkbox"
+              className="mt-0.5 accent-red-600"
+              checked={deleteInMeta}
+              onChange={(e) => setDeleteInMeta(e.target.checked)}
+            />
+            <span className="text-xs text-white/80 light:text-gray-700">
+              Also delete it in Meta Commerce Manager
+              <span className="block text-[11px] text-white/50 light:text-gray-500">
+                Permanently deletes the catalogue and all its products for every app and shop. Can’t be undone.
+              </span>
+            </span>
+          </label>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" disabled={deleting} onClick={() => setToDelete(null)}>
               Cancel
             </Button>
-            <Button
-              size="sm"
-              disabled={fbConnecting}
-              onClick={() => {
-                if (!fbPageId.trim()) {
-                  toast.error('Please enter a valid Facebook Page ID or URL');
-                  return;
-                }
-                setFbConnecting(true);
-                setTimeout(() => {
-                  setFbConnecting(false);
-                  setFbPageModalOpen(false);
-                  setFbPageId('');
-                  toast.success('Facebook Page linked successfully with Meta Commerce Manager');
-                }, 800);
-              }}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-            >
-              {fbConnecting ? 'Connecting Page...' : 'Authenticate with Meta'}
+            <Button variant="destructive" disabled={deleting} onClick={handleDelete}>
+              {deleting ? 'Removing…' : deleteInMeta ? 'Delete everywhere' : 'Remove'}
             </Button>
           </DialogFooter>
         </DialogContent>

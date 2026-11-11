@@ -25,6 +25,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Key, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { BotTransferControl } from './botTransfer/BotTransferControl';
+import { RowSelect } from './botTransfer/RowSelect';
+import { useRowSelection } from './botTransfer/useRowSelection';
 
 type MatchType = 'exact' | 'contains' | 'starts_with' | 'regex';
 
@@ -75,6 +78,8 @@ export const KeywordsView: React.FC = () => {
   const [priority, setPriority] = useState(10);
   const [availableFlows, setAvailableFlows] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedFlowId, setSelectedFlowId] = useState<string>('');
+  // Picked rows, for "Export selected".
+  const selection = useRowSelection();
 
   const fetchRules = useCallback(async () => {
     setIsLoading(true);
@@ -184,6 +189,17 @@ export const KeywordsView: React.FC = () => {
 
   const columns: Column<KeywordRule>[] = [
     {
+      key: 'select',
+      label: '',
+      render: (rule) => (
+        <RowSelect
+          checked={selection.isSelected(rule.id)}
+          onChange={() => selection.toggle(rule.id)}
+          label={`Select ${rule.name || (rule.keywords || []).join(', ')}`}
+        />
+      ),
+    },
+    {
       key: 'keywords',
       label: t('keywords.keywordsColumn') || 'Keywords & Phrases',
       render: (rule) => (
@@ -273,14 +289,17 @@ export const KeywordsView: React.FC = () => {
         iconGradient="bg-gradient-to-br from-blue-500 to-cyan-600 shadow-blue-500/20"
         backLink="/flows"
         actions={
-          <Button
-            size="sm"
-            className="bg-emerald-600 hover:bg-emerald-500 text-white"
-            onClick={() => setCreateDialogOpen(true)}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Keyword Rule
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <BotTransferControl kind="keywords" selectedIds={selection.selected} onImported={fetchRules} />
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white"
+              onClick={() => setCreateDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Keyword Rule
+            </Button>
+          </div>
         }
       />
 

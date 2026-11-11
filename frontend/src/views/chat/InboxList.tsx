@@ -1,5 +1,6 @@
 import React from 'react';
-import { ChevronDown, Search, Tag as TagIcon, X, Loader2, MessageCircle, Check } from 'lucide-react';
+import { ChevronDown, Search, Tag as TagIcon, X, Loader2, MessageCircle, Check, History } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { Tag } from '@/services/api';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -128,6 +129,14 @@ export const InboxList: React.FC<InboxListProps> = ({
               </p>
             </div>
           </div>
+          <Link
+            to="/chat/history"
+            className="ml-auto flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
+            title="Chat history: past conversations by date, search and export"
+          >
+            <History className="h-3.5 w-3.5" />
+            History
+          </Link>
           <label
             className="flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300"
             title="Include contacts you haven't chatted with yet"

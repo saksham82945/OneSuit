@@ -132,6 +132,8 @@ func GetMigrationModels() []MigrationModel {
 		{"Contact", &models.Contact{}},
 		{"Tag", &models.Tag{}},
 		{"Message", &models.Message{}},
+		{"ScheduledMessage", &models.ScheduledMessage{}},
+		{"PollVote", &models.PollVote{}},
 		{"Template", &models.Template{}},
 		{"WhatsAppFlow", &models.WhatsAppFlow{}},
 
@@ -400,6 +402,10 @@ func getIndexes() []string {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_cms_pages_slug ON cms_pages(slug) WHERE deleted_at IS NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_support_tickets_org_status ON support_tickets(organization_id, status, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_support_ticket_replies_ticket ON support_ticket_replies(ticket_id, created_at ASC)`,
+		// Catalogue products: Meta product IDs are empty until a product reaches Meta,
+		// so the old global unique index is replaced by a partial one.
+		`DROP INDEX IF EXISTS idx_catalog_products_meta_product_id`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_products_meta_pid_unique ON catalog_products(meta_product_id) WHERE meta_product_id <> '' AND deleted_at IS NULL`,
 	}
 }
 

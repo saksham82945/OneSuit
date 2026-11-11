@@ -22,6 +22,8 @@ export interface Message {
   error_message?: string;
   reply_to_message?: { id: string; content?: unknown; message_type?: string; direction?: string } | null;
   reactions?: Reaction[];
+  /** Buttons, list, poll, product or location-request data of interactive messages. */
+  interactive_data?: Record<string, unknown> | null;
   created_at: string;
 }
 

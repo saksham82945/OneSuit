@@ -43,6 +43,7 @@ func (p *SLAProcessor) Start(ctx context.Context) {
 		case <-ticker.C:
 			p.processStaleTransfers()
 			p.app.StartDueCampaigns(ctx)
+			p.app.ProcessDueScheduledMessages(ctx)
 		}
 	}
 }

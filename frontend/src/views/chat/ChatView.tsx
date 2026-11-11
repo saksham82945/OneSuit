@@ -239,7 +239,10 @@ export const ChatView: React.FC = () => {
           prev.length === list.length &&
           a?.id === b?.id &&
           a?.status === b?.status &&
-          JSON.stringify(prev.map((m) => m.reactions?.length || 0)) === JSON.stringify(list.map((m) => m.reactions?.length || 0));
+          JSON.stringify(prev.map((m) => m.reactions?.length || 0)) === JSON.stringify(list.map((m) => m.reactions?.length || 0)) &&
+          // Poll votes change a message's data without adding a message.
+          JSON.stringify(prev.map((m) => m.interactive_data?.total_votes ?? m.interactive_data?.last_vote ?? null)) ===
+            JSON.stringify(list.map((m) => m.interactive_data?.total_votes ?? m.interactive_data?.last_vote ?? null));
         return same ? prev : list;
       });
     } catch {

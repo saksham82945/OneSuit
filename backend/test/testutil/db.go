@@ -46,6 +46,9 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 			testDBInitErr = fmt.Errorf("failed to run migrations: %w", err)
 			return
 		}
+		// Catalogue products may have an empty Meta ID (not pushed yet); the
+		// app replaces this old unique index with a partial one.
+		testDB.Exec("DROP INDEX IF EXISTS idx_catalog_products_meta_product_id")
 
 		// Clean up any existing data before tests start
 		cleanupTables(testDB)
@@ -97,6 +100,8 @@ func runMigrations(db *gorm.DB) error {
 		&models.Contact{},
 		&models.Tag{},
 		&models.Message{},
+		&models.ScheduledMessage{},
+		&models.PollVote{},
 		&models.Template{},
 		&models.WhatsAppFlow{},
 		// Chatbot models

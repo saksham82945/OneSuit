@@ -35,7 +35,7 @@ var PlanModules = []PlanModule{
 	{Key: "api_integration", Label: "API integration", Hint: "API keys for the REST API", Paths: []string{"/api/api-keys"}},
 	{Key: "calling", Label: "Calling", Hint: "WhatsApp calls, call logs and IVR",
 		Paths: []string{"/api/calls", "/api/call-logs", "/api/call-transfers", "/api/ivr-flows"}},
-	{Key: "catalogue", Label: "Catalogue", Hint: "Product catalogues", Paths: []string{"/api/catalogs"}},
+	{Key: "catalogue", Label: "Catalogue", Hint: "Product catalogues", Paths: []string{"/api/catalogs", "/api/products"}},
 	{Key: "integrations", Label: "Integrations", Hint: "Third-party integrations", Paths: []string{"/api/integrations"}},
 }
 
@@ -195,6 +195,13 @@ const PendingPaymentMessage = "Upgrade your plan to use this — you're explorin
 // pendingPaymentPathAllowed matches an allow-list entry exactly or as a parent
 // path ("/api/me" allows "/api/me/settings", not "/api/messages").
 func pendingPaymentPathAllowed(path string) bool {
+	// Background requests pages make on their own while someone looks around
+	// (marking chats read, counting a campaign audience, pulling templates or
+	// catalogues from Meta) change nothing that needs a paid plan.
+	if strings.HasSuffix(path, "/read") || strings.HasSuffix(path, "/mark-read") ||
+		path == "/api/campaigns/audience/preview" || path == "/api/templates/sync" || path == "/api/catalogs/sync" {
+		return true
+	}
 	for _, p := range pendingPaymentAllowed {
 		if path == p || strings.HasPrefix(path, p+"/") {
 			return true

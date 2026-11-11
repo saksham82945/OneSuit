@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { chatbotService } from '@/services/api';
-import { readData, readList, readTotal } from '@/services/response';
+import { readList, readTotal } from '@/services/response';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { SearchInput } from '@/components/shared/SearchInput';
 import { DataTable, type Column } from '@/components/shared/DataTable';
@@ -12,18 +12,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Workflow, Plus, Pencil, Trash2, Upload, Download, FileCode, CheckCircle2 } from 'lucide-react';
+import { Workflow, Plus, Pencil, Trash2, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { FlowTypeBadge } from './FlowTypePicker';
 import { asChatFlowType } from './chatbotFlowTypes';
+import { BotTransferControl } from './botTransfer/BotTransferControl';
+import { RowSelect } from './botTransfer/RowSelect';
+import { useRowSelection } from './botTransfer/useRowSelection';
+import { downloadJson } from './botTransfer/botFile';
 
 // Item shape of GET /api/chatbot/flows -> data: { flows: [...], total, page, limit }.
 // The list doesn't include the graph, so there is no step count to show.
@@ -51,20 +47,8 @@ export const ChatbotFlowsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [flowToDelete, setFlowToDelete] = useState<ChatbotFlow | null>(null);
 
-  // JSON Import State
-  const [importOpen, setImportOpen] = useState(false);
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [importPreview, setImportPreview] = useState<{
-    name: string;
-    description?: string;
-    trigger_keywords?: string[];
-    flow_type?: string;
-    graph?: unknown;
-    nodeCount: number;
-  } | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [isImporting, setIsImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Picked rows, for "Export selected".
+  const selection = useRowSelection();
 
   const fetchFlows = useCallback(async () => {
     setIsLoading(true);
@@ -116,90 +100,26 @@ export const ChatbotFlowsView: React.FC = () => {
     }
   };
 
+  // One flow as a OneSuit bot file (old single-flow files still import).
   const handleExportFlow = async (flow: ChatbotFlow) => {
     try {
-      const res = await chatbotService.getFlow(flow.id);
-      const detail = readData<Partial<ChatbotFlow> & { graph?: unknown } | null>(res);
-      const exportData = {
-        $schema: 'https://whatomate.com/schemas/flow-v1.json',
-        version: 1,
-        name: detail?.name || flow.name,
-        description: detail?.description || flow.description || '',
-        trigger_keywords: detail?.trigger_keywords || flow.trigger_keywords || [],
-        flow_type: detail?.flow_type || flow.flow_type || 'advanced',
-        graph: detail?.graph || null,
-        exported_at: new Date().toISOString(),
-      };
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
+      const res = await chatbotService.exportBots({ flows: flow.id });
       const safeName = (flow.name || 'flow').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
-      link.download = `${safeName}.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      downloadJson(res.data, `${safeName}.json`);
       toast.success(`Exported “${flow.name}” to JSON`);
     } catch {
       toast.error('Failed to export flow');
     }
   };
 
-  const handleFileSelect = (file: File) => {
-    setImportFile(file);
-    setImportError(null);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const content = e.target?.result as string;
-        const parsed = JSON.parse(content);
-        if (!parsed || typeof parsed !== 'object') {
-          throw new Error('Invalid JSON format: root must be an object');
-        }
-        const name = parsed.name || file.name.replace(/\.[^/.]+$/, '');
-        const graph = parsed.graph || null;
-        const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
-        setImportPreview({
-          name,
-          description: parsed.description || '',
-          trigger_keywords: Array.isArray(parsed.trigger_keywords) ? parsed.trigger_keywords : [],
-          graph,
-          flow_type: typeof parsed.flow_type === 'string' ? parsed.flow_type : undefined,
-          nodeCount: nodes.length,
-        });
-      } catch (err) {
-        setImportPreview(null);
-        setImportError(err instanceof Error ? err.message : 'Invalid JSON file');
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleConfirmImport = async () => {
-    if (!importPreview) return;
-    setIsImporting(true);
-    try {
-      await chatbotService.createFlow({
-        name: importPreview.name,
-        trigger_keywords: importPreview.trigger_keywords,
-        graph: importPreview.graph,
-        flow_type: importPreview.flow_type,
-        enabled: true,
-      });
-      toast.success(`Flow “${importPreview.name}” imported successfully`);
-      setImportOpen(false);
-      setImportFile(null);
-      setImportPreview(null);
-      fetchFlows();
-    } catch (err) {
-      toast.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to import flow');
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
   const columns: Column<ChatbotFlow>[] = [
+    {
+      key: 'select',
+      label: '',
+      render: (flow) => (
+        <RowSelect checked={selection.isSelected(flow.id)} onChange={() => selection.toggle(flow.id)} label={`Select ${flow.name}`} />
+      ),
+    },
     {
       key: 'name',
       label: t('chatbotFlows.name') || 'Flow Name',
@@ -295,32 +215,8 @@ export const ChatbotFlowsView: React.FC = () => {
         iconGradient="bg-gradient-to-br from-purple-500 to-pink-600 shadow-purple-500/20"
         backLink="/chatbot"
         actions={
-          <div className="flex items-center gap-2">
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept=".json,application/json"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFileSelect(file);
-                e.target.value = '';
-              }}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-white/10 hover:bg-white/[0.04] text-white light:border-gray-200 light:text-gray-700 light:hover:bg-gray-100"
-              onClick={() => {
-                setImportFile(null);
-                setImportPreview(null);
-                setImportError(null);
-                setImportOpen(true);
-              }}
-            >
-              <Upload className="h-4 w-4 mr-1.5 text-emerald-400" />
-              Import Flow (JSON)
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <BotTransferControl kind="flows" selectedIds={selection.selected} onImported={fetchFlows} />
             <Button
               size="sm"
               className="bg-emerald-600 hover:bg-emerald-500 text-white"
@@ -386,113 +282,6 @@ export const ChatbotFlowsView: React.FC = () => {
         onConfirm={handleDelete}
       />
 
-      {/* Import Flow from JSON Dialog */}
-      <Dialog open={importOpen} onOpenChange={setImportOpen}>
-        <DialogContent className="max-w-md bg-[#141415] border-white/10 text-white light:bg-white light:text-gray-900 light:border-gray-200">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileCode className="h-5 w-5 text-emerald-400" />
-              Import Flow from JSON
-            </DialogTitle>
-            <DialogDescription className="text-xs text-white/50 light:text-gray-500">
-              Upload an exported bot configuration or AI-generated flow JSON file.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            {!importFile ? (
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-white/15 hover:border-emerald-500/50 rounded-xl p-6 text-center cursor-pointer transition-all hover:bg-white/[0.02] light:border-gray-300 light:hover:border-emerald-500"
-              >
-                <Upload className="h-8 w-8 text-emerald-400 mx-auto mb-2" />
-                <p className="text-xs font-semibold text-white light:text-gray-800">
-                  Click to select JSON file
-                </p>
-                <p className="text-[11px] text-white/40 light:text-gray-400 mt-1">
-                  Supports exported flow .json or AI-generated schemas
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.04] border border-white/10 light:bg-gray-50 light:border-gray-200">
-                  <div className="flex items-center gap-2.5 overflow-hidden">
-                    <FileCode className="h-5 w-5 text-emerald-400 shrink-0" />
-                    <span className="text-xs font-medium truncate">{importFile.name}</span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs text-white/50 hover:text-white"
-                    onClick={() => {
-                      setImportFile(null);
-                      setImportPreview(null);
-                      setImportError(null);
-                    }}
-                  >
-                    Change
-                  </Button>
-                </div>
-
-                {importError && (
-                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
-                    {importError}
-                  </div>
-                )}
-
-                {importPreview && (
-                  <div className="p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
-                      <CheckCircle2 className="h-4 w-4" /> Valid Flow Definition
-                    </div>
-                    <div className="text-xs space-y-1">
-                      <div>
-                        <span className="text-white/50 light:text-gray-500">Flow Name:</span>{' '}
-                        <span className="font-semibold">{importPreview.name}</span>
-                      </div>
-                      <div>
-                        <span className="text-white/50 light:text-gray-500">Steps / Nodes:</span>{' '}
-                        <Badge variant="outline" className="text-[10px] ml-1">
-                          {importPreview.nodeCount} steps
-                        </Badge>
-                      </div>
-                      {importPreview.trigger_keywords && importPreview.trigger_keywords.length > 0 && (
-                        <div className="flex items-center gap-1 flex-wrap pt-1">
-                          <span className="text-white/50 light:text-gray-500">Keywords:</span>
-                          {importPreview.trigger_keywords.map((kw) => (
-                            <Badge key={kw} variant="secondary" className="text-[10px]">
-                              {kw}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setImportOpen(false)}
-              className="border-white/10 text-xs light:border-gray-200"
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              disabled={!importPreview || isImporting}
-              onClick={handleConfirmImport}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs"
-            >
-              {isImporting ? 'Importing...' : 'Confirm & Import Flow'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
