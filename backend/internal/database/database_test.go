@@ -249,3 +249,26 @@ func TestCreateDefaultAdmin_UsesExistingOrg(t *testing.T) {
 	db.Model(&models.Organization{}).Count(&orgCount)
 	assert.Equal(t, int64(1), orgCount, "should reuse existing organization")
 }
+
+// --- MigrateUserOrganizations ---
+
+// A removed (soft-deleted) membership for the user's home workspace still
+// holds the unique index; the backfill must skip it instead of failing, or
+// the server can't start.
+func TestMigrateUserOrganizations_SkipsRemovedMembership(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	org := testutil.CreateTestOrganization(t, db)
+	user := testutil.CreateTestUser(t, db, org.ID)
+
+	require.NoError(t, db.Unscoped().Where("user_id = ?", user.ID).Delete(&models.UserOrganization{}).Error)
+	removed := models.UserOrganization{UserID: user.ID, OrganizationID: org.ID}
+	require.NoError(t, db.Create(&removed).Error)
+	require.NoError(t, db.Delete(&removed).Error)
+
+	require.NoError(t, database.MigrateUserOrganizations(db))
+	require.NoError(t, database.MigrateUserOrganizations(db), "safe to run twice")
+
+	var n int64
+	db.Unscoped().Model(&models.UserOrganization{}).Where("user_id = ?", user.ID).Count(&n)
+	assert.Equal(t, int64(1), n, "no extra membership row added")
+}

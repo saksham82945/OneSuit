@@ -504,6 +504,9 @@ func createDefaultAdmin(db *gorm.DB, cfg *config.DefaultAdminConfig, superAdmin 
 }
 
 // MigrateUserOrganizations backfills user_organizations from existing users
+// A user may still have a removed (soft-deleted) membership row for their
+// home workspace; the unique index covers removed rows too, so those are
+// skipped rather than stopping the server from starting.
 func MigrateUserOrganizations(db *gorm.DB) error {
 	return db.Exec(`
 		INSERT INTO user_organizations (id, user_id, organization_id, role_id, is_default, created_at, updated_at)
@@ -511,6 +514,7 @@ func MigrateUserOrganizations(db *gorm.DB) error {
 		FROM users u
 		LEFT JOIN user_organizations uo ON uo.user_id = u.id AND uo.organization_id = u.organization_id AND uo.deleted_at IS NULL
 		WHERE uo.id IS NULL AND u.deleted_at IS NULL
+		ON CONFLICT DO NOTHING
 	`).Error
 }
 
