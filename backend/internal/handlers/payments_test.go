@@ -267,3 +267,19 @@ func TestApp_PendingPaymentGuard(t *testing.T) {
 	require.Equal(t, fasthttp.StatusOK, e.asSuper(t, e.f.app.SuperAdminApprovePayment, nil, d["payment_id"].(string)))
 	assert.Equal(t, 0, call("POST", "/api/contacts"))
 }
+
+// A soft-deleted subscription row still holds the workspace's one slot, so
+// approving brings it back instead of adding a second row. A payment for a
+// deleted client is refused with a clear message.
+func TestApp_Payments_ApproveWithDeletedSubscriptionOrClient(t *testing.T) {
+	e := newPayEnv(t)
+	_, data := e.asAdmin(t, e.f.app.CreatePaymentCheckout, map[string]any{"plan_id": e.plan.ID.String(), "method": "upi"}, "")
+	id := data["payment_id"].(string)
+	require.NoError(t, e.f.app.DB.Where("organization_id = ?", e.vendor.ID).Delete(&models.OrganizationSubscription{}).Error)
+	require.Equal(t, fasthttp.StatusOK, e.asSuper(t, e.f.app.SuperAdminApprovePayment, nil, id))
+	assert.Equal(t, models.VendorStatusActive, e.subscription(t).Status)
+
+	_, d2 := e.asAdmin(t, e.f.app.CreatePaymentCheckout, map[string]any{"plan_id": e.plan.ID.String(), "method": "upi"}, "")
+	require.NoError(t, e.f.app.DB.Delete(&models.Organization{}, "id = ?", e.vendor.ID).Error)
+	assert.Equal(t, fasthttp.StatusConflict, e.asSuper(t, e.f.app.SuperAdminApprovePayment, nil, d2["payment_id"].(string)))
+}

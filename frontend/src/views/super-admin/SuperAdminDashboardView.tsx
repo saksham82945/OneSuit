@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { ErrorState } from '@/components/shared/ErrorState';
@@ -12,7 +12,6 @@ import {
   CalendarClock,
   LifeBuoy,
   CreditCard,
-  ArrowRight,
   Sun,
   UserPlus,
   IndianRupee,
@@ -32,6 +31,10 @@ import {
   Smartphone,
   PhoneCall,
   FileText,
+  RefreshCw,
+  BadgeIndianRupee,
+  BarChart3,
+  Activity,
 } from 'lucide-react';
 import {
   superAdminService,
@@ -50,12 +53,16 @@ import {
   SectionTitle,
   StatCard,
   StatGrid,
-  dashCardClass,
   formatCount,
   formatMoney,
   formatShortDate,
 } from '@/components/dashboard';
 import { LoadingBlock, errorMessage } from './shared';
+import { superAdminChartsService, type DashboardPayment, type SuperAdminCharts } from '@/services/superAdminCharts';
+import { PlatformKpis } from './dashboard/PlatformKpis';
+import { PlatformCharts } from './dashboard/PlatformCharts';
+import { RangePicker } from './dashboard/DashboardParts';
+import { bucketLabel, presetRange, type DateRange, type RangePreset } from './dashboard/range';
 import { cn } from '@/lib/utils';
 
 const priorityStyles = {
@@ -82,24 +89,34 @@ const StatusPill: React.FC<{ status: string }> = ({ status }) => (
   </span>
 );
 
-/** "N awaiting payment · N suspended" (plus any legacy trials) for the clients card. */
-const clientsHint = (d: SuperAdminDashboard) => {
-  // The backend counts active, (legacy) trial and suspended; everyone else is awaiting payment.
-  const awaiting = Math.max(0, d.total_vendors - d.active_vendors - d.trial_vendors - d.suspended_vendors);
-  const parts = [`${awaiting} awaiting payment`, `${d.suspended_vendors} suspended`];
-  if (d.trial_vendors > 0) parts.push(`${d.trial_vendors} legacy trial`);
-  return parts.join(' · ');
-};
-
 const reminderHref = (email: string, client: string, plan: string, date: string) =>
   `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(`Your ${plan || 'plan'} renews soon`)}&body=${encodeURIComponent(
     `Hi ${client},\n\nA quick reminder that your ${plan || ''} subscription ends on ${formatShortDate(date)}. Renew to keep your WhatsApp workspace running without interruption.\n\nThanks!`
   )}`;
 
+const PERIOD_LABELS: Record<Exclude<RangePreset, 'custom'>, string> = {
+  '7d': 'Last 7 days',
+  '30d': 'Last 30 days',
+  '90d': 'Last 90 days',
+  '12m': 'Last 12 months',
+};
+
+const methodLabel = (m: string) => (m === 'upi' ? 'UPI' : m === 'razorpay' ? 'Razorpay' : m);
+
 export const SuperAdminDashboardView: React.FC = () => {
   const [data, setData] = useState<SuperAdminDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [solvingId, setSolvingId] = useState<string | null>(null);
+
+  // Period for the KPIs and charts.
+  const [preset, setPreset] = useState<RangePreset>('30d');
+  const [range, setRange] = useState<DateRange>(() => presetRange('30d'));
+  const [charts, setCharts] = useState<SuperAdminCharts | null>(null);
+  const [chartsError, setChartsError] = useState<string | null>(null);
+  const [chartsLoading, setChartsLoading] = useState(false);
+  const [pendingUPI, setPendingUPI] = useState<{ payments: DashboardPayment[]; total: number } | null>(null);
+  const [recentPaid, setRecentPaid] = useState<DashboardPayment[] | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   const markSolved = async (t: SupportTicket) => {
     setSolvingId(t.id);
@@ -114,11 +131,49 @@ export const SuperAdminDashboardView: React.FC = () => {
     }
   };
 
-  const load = () => {
+  const load = useCallback(() => {
     setError(null);
-    superAdminService.dashboard().then(setData).catch((e) => setError(errorMessage(e)));
+    superAdminService
+      .dashboard()
+      .then((d) => {
+        setData(d);
+        setUpdatedAt(new Date());
+      })
+      .catch((e) => setError(errorMessage(e)));
+    superAdminChartsService
+      .payments('pending_verification', 5)
+      .then(setPendingUPI)
+      .catch(() => setPendingUPI(null));
+    superAdminChartsService
+      .payments('paid', 6)
+      .then((r) => setRecentPaid(r.payments ?? []))
+      .catch(() => setRecentPaid(null));
+  }, []);
+  useEffect(load, [load]);
+
+  const chartReq = useRef(0);
+  const loadCharts = useCallback(() => {
+    const id = ++chartReq.current;
+    setChartsLoading(true);
+    setChartsError(null);
+    superAdminChartsService
+      .charts(range.from, range.to)
+      .then((c) => {
+        if (id === chartReq.current) setCharts(c);
+      })
+      .catch((e) => {
+        if (id === chartReq.current) setChartsError(errorMessage(e, 'Could not load charts'));
+      })
+      .finally(() => {
+        if (id === chartReq.current) setChartsLoading(false);
+      });
+  }, [range]);
+  useEffect(loadCharts, [loadCharts]);
+
+  const refresh = () => {
+    load();
+    loadCharts();
   };
-  useEffect(load, []);
 
   const next = data?.next_renewal;
   const maxPlanCount = Math.max(1, ...(data?.plans.map((p) => p.vendor_count) ?? [1]));
@@ -126,7 +181,10 @@ export const SuperAdminDashboardView: React.FC = () => {
   const money = (n: number | undefined) => formatMoney(n ?? 0, currency);
   const expiringPlans = data?.expiring_plans ?? [];
   const recentSubs = data?.recent_subscriptions ?? [];
-  const actionCount = (data?.expiring_soon ?? 0) + (data?.expired_plans ?? 0) + (data?.tickets_new ?? 0) + (data?.pending_topups ?? 0);
+  const pendingCount = pendingUPI?.total ?? charts?.kpis.pending_upi_approvals.value ?? 0;
+  const actionCount = (data?.expiring_soon ?? 0) + (data?.expired_plans ?? 0) + (data?.tickets_new ?? 0) + pendingCount;
+  const periodLabel = preset === 'custom' ? `${bucketLabel(range.from, 'day')} – ${bucketLabel(range.to, 'day')}` : PERIOD_LABELS[preset];
+  const prevLabel = charts ? `${bucketLabel(charts.prev_from, 'day')} – ${bucketLabel(charts.prev_to, 'day')}` : 'the previous period';
 
   return (
     <div className="flex flex-col min-h-full bg-[#f8faf9] dark:bg-[#0a0a0b]">
@@ -144,63 +202,57 @@ export const SuperAdminDashboardView: React.FC = () => {
       ) : !data ? (
         <LoadingBlock />
       ) : (
-        <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto w-full text-gray-900 dark:text-white">
-          {/* 1. Today at a Glance */}
+        <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto w-full min-w-0 text-gray-900 dark:text-white">
+          {/* Period switch */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold">{periodLabel}</h2>
+              <p className="text-xs text-gray-500 dark:text-white/50">
+                {charts ? `Compared with ${prevLabel}` : 'Loading period…'}
+                {updatedAt && ` · Updated ${updatedAt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`}
+              </p>
+            </div>
+            <div className="flex items-start gap-2">
+              <RangePicker
+                preset={preset}
+                range={range}
+                onPreset={(p) => {
+                  setPreset(p);
+                  setRange(presetRange(p));
+                }}
+                onCustom={(r) => {
+                  setPreset('custom');
+                  setRange(r);
+                }}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 shrink-0 border-gray-200 dark:border-white/10"
+                onClick={refresh}
+                disabled={chartsLoading}
+                aria-label="Refresh"
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', chartsLoading && 'animate-spin')} />
+              </Button>
+            </div>
+          </div>
+
+          {/* 1. Key numbers for the period */}
           <section className="space-y-3">
-            <SectionTitle icon={Sun} title="Today at a Glance" tone="amber" />
-            <StatGrid>
-              <StatCard variant="compact" label="New Signups Today" value={formatCount(data.new_signups_today)} icon={UserPlus} tone="blue" to="/super-admin/clients" />
-              <StatCard variant="compact" label="Revenue Today" value={money(data.revenue_today)} icon={IndianRupee} tone="green" hint="New paid subscriptions" />
-              <StatCard variant="compact" label="Messages Today" value={formatCount(data.messages_today)} icon={MessageSquare} tone="purple" />
-              <StatCard variant="compact" label="Payments Today" value={formatCount(data.payments_today)} icon={Receipt} tone="orange" />
-            </StatGrid>
+            <SectionTitle icon={Activity} title="Key Numbers" tone="teal" />
+            {chartsError ? (
+              <ErrorState title="Couldn't load the numbers" description={chartsError} onRetry={loadCharts} />
+            ) : !charts ? (
+              <LoadingBlock />
+            ) : (
+              <div className={cn('transition-opacity', chartsLoading && 'opacity-60')}>
+                <PlatformKpis kpis={charts.kpis} money={money} prevLabel={prevLabel} />
+              </div>
+            )}
           </section>
 
-          {/* 2. Platform Overview */}
-          <section className="space-y-3">
-            <SectionTitle icon={LayoutGrid} title="Platform Overview" tone="teal" />
-            <StatGrid>
-              <StatCard
-                label="Total Clients"
-                value={formatCount(data.total_vendors)}
-                icon={Building2}
-                tone="purple"
-                hint={clientsHint(data)}
-                to="/super-admin/clients"
-              />
-              <StatCard
-                label="Active Clients"
-                value={formatCount(data.active_vendors)}
-                icon={CheckCircle2}
-                tone="green"
-                hint={`${Math.round((data.active_vendors / Math.max(1, data.total_vendors)) * 100)}% of all clients`}
-              />
-              <StatCard label="Total Revenue" value={money(data.total_revenue)} icon={IndianRupee} tone="green" hint="Current billing cycle, paying clients" />
-              <StatCard
-                label="Active Plans"
-                value={formatCount(data.active_plans)}
-                icon={Layers}
-                tone="blue"
-                hint={`${data.plans.filter((p) => p.is_active).length} of ${data.plans.length} plans on sale`}
-                to="/super-admin/plans"
-              />
-              <StatCard label="Workspaces" value={formatCount(data.workspaces)} icon={LayoutGrid} tone="teal" hint={`${formatCount(data.connected_numbers)} WhatsApp numbers`} />
-              <StatCard label="Messages Sent (30d)" value={formatCount(data.messages_sent_30d)} icon={Send} tone="green" />
-              <StatCard label="Messages Received (30d)" value={formatCount(data.messages_received_30d)} icon={Inbox} tone="purple" />
-              <StatCard label="AI Calls (30d)" value={formatCount(data.ai_calls_30d)} icon={Sparkles} tone="blue" hint={`${formatCount(data.calls_30d)} voice calls`} />
-              <StatCard label="Total Campaigns" value={formatCount(data.total_campaigns)} icon={Megaphone} tone="orange" />
-              <StatCard
-                label="Expiring Soon (7d)"
-                value={formatCount(data.expiring_soon)}
-                icon={Hourglass}
-                tone={data.expiring_soon > 0 ? 'amber' : 'slate'}
-                hint={next ? `Next: ${next.name} · ${formatDate(next.renewal_date)}` : 'No upcoming renewals'}
-              />
-              <StatCard label="Expired Plans" value={formatCount(data.expired_plans)} icon={CalendarX} tone={data.expired_plans > 0 ? 'red' : 'slate'} />
-            </StatGrid>
-          </section>
-
-          {/* 3. Action Needed */}
+          {/* 2. Action Needed */}
           <section className="space-y-3">
             <SectionTitle
               icon={AlertTriangle}
@@ -214,7 +266,30 @@ export const SuperAdminDashboardView: React.FC = () => {
                 ) : undefined
               }
             />
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-3">
+              <Panel title="Pending UPI approvals" icon={BadgeIndianRupee} tone="amber" linkLabel="Review" linkTo="/super-admin/payments">
+                {pendingUPI === null ? (
+                  <PanelEmpty>Couldn't load payments.</PanelEmpty>
+                ) : pendingUPI.payments.length === 0 ? (
+                  <PanelEmpty>No UPI payments waiting for approval.</PanelEmpty>
+                ) : (
+                  <>
+                    {pendingUPI.payments.map((p) => (
+                      <PanelRow
+                        key={p.id}
+                        to="/super-admin/payments"
+                        title={p.organization_name || 'Client'}
+                        subtitle={`${p.plan_name || 'Plan'} · UTR ${p.upi_reference || '—'} · ${formatShortDate(p.submitted_at || p.created_at)}`}
+                        right={<span className="text-xs font-semibold tabular-nums">{formatMoney(p.amount, p.currency || currency)}</span>}
+                      />
+                    ))}
+                    {pendingUPI.total > pendingUPI.payments.length && (
+                      <p className="px-2 pt-2 text-[11px] text-gray-400">+{pendingUPI.total - pendingUPI.payments.length} more waiting</p>
+                    )}
+                  </>
+                )}
+              </Panel>
+
               <Panel title="Plans Expiring (7 days)" icon={Hourglass} tone="amber" linkLabel="All clients" linkTo="/super-admin/clients">
                 {expiringPlans.length === 0 ? (
                   <PanelEmpty>No plans expire in the next 7 days.</PanelEmpty>
@@ -243,6 +318,75 @@ export const SuperAdminDashboardView: React.FC = () => {
                           )}
                         </>
                       }
+                    />
+                  ))
+                )}
+                {(data.expired_plans ?? 0) > 0 && (
+                  <p className="px-2 pt-2 text-[11px] text-rose-600 dark:text-rose-300">
+                    {formatCount(data.expired_plans)} plan{data.expired_plans === 1 ? '' : 's'} already expired
+                  </p>
+                )}
+              </Panel>
+
+              <Panel title="Open support tickets" icon={LifeBuoy} tone="red" linkLabel="All tickets" linkTo="/super-admin/tickets">
+                {data.recent_tickets.length === 0 && <PanelEmpty>No open tickets.</PanelEmpty>}
+                <div className="max-h-[320px] overflow-y-auto">
+                  {data.recent_tickets.map((t) => (
+                    <PanelRow
+                      key={t.id}
+                      title={t.subject}
+                      subtitle={`${ticketRef(t.id)} · ${t.vendor_name} · ${formatDate(t.created_at)}`}
+                      right={
+                        <>
+                          <Badge className={cn('border-0 shadow-none text-[11px] capitalize', priorityStyles[t.priority])}>{t.priority}</Badge>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs border-gray-200 dark:border-white/10"
+                            disabled={solvingId !== null}
+                            onClick={() => markSolved(t)}
+                            title="Mark solved"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span className="sr-only">{solvingId === t.id ? 'Saving…' : 'Mark solved'}</span>
+                          </Button>
+                        </>
+                      }
+                    />
+                  ))}
+                </div>
+              </Panel>
+            </div>
+          </section>
+
+          {/* 3. Charts */}
+          <section className="space-y-3">
+            <SectionTitle icon={BarChart3} title="Trends" tone="blue" />
+            {chartsError ? null : !charts ? (
+              <LoadingBlock />
+            ) : (
+              <div className={cn('transition-opacity', chartsLoading && 'opacity-60')}>
+                <PlatformCharts data={charts} money={money} />
+              </div>
+            )}
+          </section>
+
+          {/* 4. Recent activity */}
+          <section className="space-y-3">
+            <SectionTitle icon={Receipt} title="Recent Activity" tone="green" />
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Panel title="Recent payments" icon={IndianRupee} tone="green" linkLabel="All payments" linkTo="/super-admin/payments">
+                {recentPaid === null ? (
+                  <PanelEmpty>Couldn't load payments.</PanelEmpty>
+                ) : recentPaid.length === 0 ? (
+                  <PanelEmpty>No payments received yet.</PanelEmpty>
+                ) : (
+                  recentPaid.map((p) => (
+                    <PanelRow
+                      key={p.id}
+                      title={p.organization_name || 'Client'}
+                      subtitle={`${p.plan_name || 'Plan'} · ${methodLabel(p.method)} · ${formatShortDate(p.paid_at || p.created_at)}`}
+                      right={<span className="text-xs font-semibold tabular-nums">{formatMoney(p.amount, p.currency || currency)}</span>}
                     />
                   ))
                 )}
@@ -279,11 +423,50 @@ export const SuperAdminDashboardView: React.FC = () => {
                 )}
               </Panel>
             </div>
+          </section>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* 5. Today + usage (from the overview endpoint) */}
+          <section className="space-y-3">
+            <SectionTitle icon={Sun} title="Today & Last 30 Days" tone="amber" />
+            <StatGrid>
+              <StatCard variant="compact" label="New Signups Today" value={formatCount(data.new_signups_today)} icon={UserPlus} tone="blue" to="/super-admin/clients" />
+              <StatCard variant="compact" label="Messages Today" value={formatCount(data.messages_today)} icon={MessageSquare} tone="purple" />
+              <StatCard variant="compact" label="Messages Sent (30d)" value={formatCount(data.messages_sent_30d)} icon={Send} tone="green" />
+              <StatCard variant="compact" label="Messages Received (30d)" value={formatCount(data.messages_received_30d)} icon={Inbox} tone="purple" />
+              <StatCard variant="compact" label="AI Calls (30d)" value={formatCount(data.ai_calls_30d)} icon={Sparkles} tone="blue" hint={`${formatCount(data.calls_30d)} voice calls`} />
+              <StatCard variant="compact" label="Total Campaigns" value={formatCount(data.total_campaigns)} icon={Megaphone} tone="orange" />
+              <StatCard
+                variant="compact"
+                label="Active Plans"
+                value={formatCount(data.active_plans)}
+                icon={Layers}
+                tone="blue"
+                to="/super-admin/plans"
+              />
+              <StatCard
+                variant="compact"
+                label="Expiring Soon (7d)"
+                value={formatCount(data.expiring_soon)}
+                icon={CalendarX}
+                tone={data.expiring_soon > 0 ? 'amber' : 'slate'}
+                hint={next ? `Next: ${next.name} · ${formatDate(next.renewal_date)}` : 'No upcoming renewals'}
+              />
+            </StatGrid>
+          </section>
+
+          {/* 6. Shortcuts */}
+          <section className="space-y-3">
+            <SectionTitle icon={LayoutGrid} title="Shortcuts" tone="teal" />
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-3">
+              <QuickLinkTile
+                label="Payments"
+                meta={pendingCount > 0 ? `${formatCount(pendingCount)} to approve` : 'All clear'}
+                to="/super-admin/payments"
+                icon={IndianRupee}
+                tone={pendingCount > 0 ? 'amber' : 'green'}
+              />
               <QuickLinkTile label="Subscriptions" meta="Manage" to="/super-admin/subscriptions" icon={CreditCard} tone="purple" />
               <QuickLinkTile label="Clients" meta={formatCount(data.total_vendors)} to="/super-admin/clients" icon={Building2} tone="blue" />
-              <QuickLinkTile label="Configuration" meta="Config" to="/super-admin/settings" icon={Settings} tone="slate" />
               <QuickLinkTile
                 label="Support Tickets"
                 meta={data.tickets_new > 0 ? `${data.tickets_new} open` : 'All clear'}
@@ -291,14 +474,14 @@ export const SuperAdminDashboardView: React.FC = () => {
                 icon={LifeBuoy}
                 tone={data.tickets_new > 0 ? 'red' : 'green'}
               />
+              <QuickLinkTile label="Configuration" meta="Config" to="/super-admin/settings" icon={Settings} tone="slate" />
               <QuickLinkTile label="Pages" meta="CMS" to="/super-admin/pages" icon={FileText} tone="teal" />
               <QuickLinkTile label="AI Call Setup" meta="Calls" to="/super-admin/ai-call-setup" icon={PhoneCall} tone="orange" />
               <QuickLinkTile label="WhatsApp Numbers" meta={formatCount(data.connected_numbers)} to="/super-admin/clients" icon={Smartphone} tone="green" />
-              <QuickLinkTile label="Tickets Solved" meta={formatCount(data.tickets_solved)} to="/super-admin/tickets" icon={CheckCircle2} tone="green" />
             </div>
           </section>
 
-          {/* Details: renewals & plans (kept from the previous dashboard) */}
+          {/* 7. Renewals & plans */}
           <section className="space-y-3">
             <SectionTitle icon={CalendarClock} title="Renewals & Plans" tone="blue" />
             <div className="grid gap-4 lg:grid-cols-2">
@@ -334,6 +517,7 @@ export const SuperAdminDashboardView: React.FC = () => {
                           <span className="ml-2 text-gray-400">
                             {formatPrice(p.monthly_price ?? p.price)}/mo
                           </span>
+                          {!p.is_active && <span className="ml-2 text-[10px] text-gray-400">(not on sale)</span>}
                         </span>
                         <span className="tabular-nums text-gray-500 dark:text-white/60 shrink-0">{p.vendor_count} clients</span>
                       </div>
@@ -344,45 +528,6 @@ export const SuperAdminDashboardView: React.FC = () => {
                   ))}
                 </div>
               </Panel>
-            </div>
-          </section>
-
-          {/* Open tickets */}
-          <section className="space-y-3">
-            <SectionTitle
-              icon={LifeBuoy}
-              title="New Support Tickets"
-              tone="red"
-              action={
-                <Link to="/super-admin/tickets" className="text-xs font-semibold text-[#0f5c62] dark:text-teal-300 flex items-center gap-1">
-                  All tickets <ArrowRight className="h-3 w-3" />
-                </Link>
-              }
-            />
-            <div className={cn(dashCardClass, 'p-3')}>
-              {data.recent_tickets.length === 0 && <PanelEmpty>No open tickets.</PanelEmpty>}
-              {data.recent_tickets.map((t) => (
-                <PanelRow
-                  key={t.id}
-                  title={t.subject}
-                  subtitle={`${ticketRef(t.id)} · ${t.vendor_name} · ${formatDate(t.created_at)}`}
-                  right={
-                    <>
-                      <Badge className={cn('border-0 shadow-none text-[11px] capitalize', priorityStyles[t.priority])}>{t.priority}</Badge>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-xs border-gray-200 dark:border-white/10"
-                        disabled={solvingId !== null}
-                        onClick={() => markSolved(t)}
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                        <span className="hidden sm:inline">{solvingId === t.id ? 'Saving…' : 'Mark solved'}</span>
-                      </Button>
-                    </>
-                  }
-                />
-              ))}
             </div>
           </section>
         </div>

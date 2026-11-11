@@ -32,8 +32,8 @@ export const VendorAccessBanner: React.FC = () => {
           You're viewing <strong>{getImpersonatedVendorName() || user?.organization_name || 'a client account'}</strong> as Super Admin
         </span>
       </span>
-      <button onClick={handleExit} disabled={leaving} className="shrink-0 rounded-md bg-white/15 px-2.5 py-0.5 font-medium hover:bg-white/25 disabled:opacity-60 light:bg-gray-50 light:hover:bg-gray-100">
-        {leaving ? 'Returning…' : 'Return to Super Admin'}
+      <button onClick={handleExit} disabled={leaving} className="shrink-0 rounded-md bg-white px-2.5 py-0.5 font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-60">
+        {leaving ? 'Returning…' : '← Back to Super Admin'}
       </button>
     </div>
   );

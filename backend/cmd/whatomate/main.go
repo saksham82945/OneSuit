@@ -893,6 +893,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	// Analytics
 	g.GET("/api/analytics/dashboard", app.GetDashboardStats)
 	g.GET("/api/dashboard/overview", app.GetDashboardOverview)
+	g.GET("/api/dashboard/charts", app.GetDashboardCharts)
 	g.GET("/api/analytics/messages", app.GetMessageAnalytics)
 	g.GET("/api/analytics/chatbot", app.GetChatbotAnalytics)
 	g.GET("/api/analytics/agents", app.GetAgentAnalytics)
@@ -931,6 +932,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 
 	// Super Admin panel (every handler checks for super admin)
 	g.GET("/api/super-admin/dashboard", app.SuperAdminDashboard)
+	g.GET("/api/super-admin/dashboard/charts", app.SuperAdminDashboardCharts)
 	g.GET("/api/super-admin/vendors", app.SuperAdminListVendors)
 	g.GET("/api/super-admin/vendors/{id}/invoices", app.SuperAdminListInvoices)
 	g.GET("/api/super-admin/webhooks", app.SuperAdminListWebhooks)

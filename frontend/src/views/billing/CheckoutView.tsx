@@ -8,10 +8,13 @@ import {
   Clock,
   CreditCard,
   Gift,
+  Landmark,
   LifeBuoy,
   Loader2,
+  Lock,
   ShieldCheck,
   Smartphone,
+  Wallet,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -386,15 +389,20 @@ export const CheckoutView: React.FC = () => {
               <>
                 <p className="mb-2 mt-4 text-xs font-semibold text-gray-600 dark:text-gray-300">Pay with</p>
                 <div className="space-y-2" role="radiogroup" aria-label="Payment method">
-                  {options.razorpay_enabled && (
-                    <MethodOption
-                      active={method === 'razorpay'}
-                      onSelect={() => setMethod('razorpay')}
-                      icon={<CreditCard className="h-4 w-4" />}
-                      title="Card / UPI / Net banking"
-                      text="Secure checkout by Razorpay. Your plan activates instantly."
-                    />
-                  )}
+                  <MethodOption
+                    active={method === 'razorpay'}
+                    onSelect={() => setMethod('razorpay')}
+                    disabled={!options.razorpay_enabled}
+                    badge={options.razorpay_enabled ? 'Instant' : 'Coming soon'}
+                    icon={<CreditCard className="h-4 w-4" />}
+                    title="Razorpay"
+                    text={
+                      options.razorpay_enabled
+                        ? 'Pay by card, any UPI app, net banking or wallet. Your plan activates instantly.'
+                        : 'Card, UPI app, net banking and wallet payments are coming soon. Pay to our UPI ID for now.'
+                    }
+                    extra={<RazorpayMethods />}
+                  />
                   {options.upi_enabled && (
                     <MethodOption
                       active={method === 'upi'}
@@ -413,7 +421,12 @@ export const CheckoutView: React.FC = () => {
                   {starting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {method === 'upi' ? 'Continue to UPI' : `Pay ${formatPrice(price.total)}`}
                 </Button>
-                <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+                {method === 'razorpay' && (
+                  <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                    <Lock className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /> Secured by Razorpay · 256-bit encrypted
+                  </p>
+                )}
+                <p className="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
                   <ShieldCheck className="h-3.5 w-3.5" /> Prices in INR, including applicable taxes
                 </p>
               </>
@@ -425,23 +438,47 @@ export const CheckoutView: React.FC = () => {
   );
 };
 
-const MethodOption: React.FC<{ active: boolean; onSelect: () => void; icon: React.ReactNode; title: string; text: string }> = ({
-  active,
-  onSelect,
-  icon,
-  title,
-  text,
-}) => (
+/** The ways to pay inside Razorpay Checkout. */
+const RazorpayMethods: React.FC = () => (
+  <span className="mt-2 flex flex-wrap gap-1.5">
+    {[
+      { icon: CreditCard, label: 'Cards' },
+      { icon: Smartphone, label: 'UPI apps' },
+      { icon: Landmark, label: 'Net banking' },
+      { icon: Wallet, label: 'Wallets' },
+    ].map(({ icon: Icon, label }) => (
+      <span
+        key={label}
+        className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+      >
+        <Icon className="h-3 w-3" /> {label}
+      </span>
+    ))}
+  </span>
+);
+
+const MethodOption: React.FC<{
+  active: boolean;
+  onSelect: () => void;
+  icon: React.ReactNode;
+  title: string;
+  text: string;
+  disabled?: boolean;
+  badge?: string;
+  extra?: React.ReactNode;
+}> = ({ active, onSelect, icon, title, text, disabled, badge, extra }) => (
   <button
     type="button"
     role="radio"
     aria-checked={active}
+    aria-disabled={disabled}
+    disabled={disabled}
     onClick={onSelect}
     className={cn(
-      'flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors',
+      'flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60',
       active
         ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500 dark:bg-emerald-500/10'
-        : 'border-gray-200 hover:border-emerald-300 dark:border-white/10 dark:hover:border-emerald-500/40'
+        : 'border-gray-200 enabled:hover:border-emerald-300 dark:border-white/10 dark:enabled:hover:border-emerald-500/40'
     )}
   >
     <span
@@ -453,8 +490,23 @@ const MethodOption: React.FC<{ active: boolean; onSelect: () => void; icon: Reac
       {icon}
     </span>
     <span className="min-w-0">
-      <span className="block text-sm font-semibold text-gray-900 dark:text-white">{title}</span>
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span className="text-sm font-semibold text-gray-900 dark:text-white">{title}</span>
+        {badge && (
+          <span
+            className={cn(
+              'rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide',
+              disabled
+                ? 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-400'
+                : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+            )}
+          >
+            {badge}
+          </span>
+        )}
+      </span>
       <span className="block break-words text-[11px] text-gray-500 dark:text-gray-400">{text}</span>
+      {extra}
     </span>
   </button>
 );

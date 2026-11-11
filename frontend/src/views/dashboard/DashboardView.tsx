@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
@@ -19,7 +19,10 @@ import {
   TrendingUp,
   TrendingDown,
   BarChart3,
-  Calendar,
+  RefreshCw,
+  Activity,
+  Smartphone,
+  PieChart,
   FileText,
   Megaphone,
   Workflow,
@@ -52,28 +55,15 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { ConnectWhatsAppCard } from '@/components/whatsapp/ConnectWhatsAppCard';
+import { KpiCards } from './charts/KpiCards';
+import { RangePicker } from './charts/RangePicker';
+import { useDashboardCharts } from './charts/useDashboardCharts';
+import { rangeDays, rangeLabel, resolveRange, type DashboardRange } from './charts/range';
+
+// chart.js lives in its own chunk, loaded with the dashboard charts.
+const DashboardChartsGrid = lazy(() => import('./charts/DashboardChartsGrid'));
 
 const LARGE_DISPLAY_TYPES = ['chart', 'table', 'shortcuts'];
-
-const formatDay = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-const getDateRange = (range: string): { from: string; to: string } => {
-  const now = new Date();
-  const today = formatDay(now);
-  const daysAgo = (n: number) => formatDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - n));
-  switch (range) {
-    case 'today':
-      return { from: today, to: today };
-    case '7days':
-      return { from: daysAgo(7), to: today };
-    case '30days':
-      return { from: daysAgo(30), to: today };
-    case 'this_month':
-    default:
-      return { from: formatDay(new Date(now.getFullYear(), now.getMonth(), 1)), to: today };
-  }
-};
 
 const formatRowTime = (iso: string) => {
   const date = new Date(iso);
@@ -90,7 +80,12 @@ export const DashboardView: React.FC = () => {
 
   const [widgets, setWidgets] = useState<DashboardWidget[]>([]);
   const [widgetData, setWidgetData] = useState<Record<string, WidgetData>>({});
-  const [selectedRange, setSelectedRange] = useState('30days');
+  const [range, setRange] = useState<DashboardRange>({ preset: '7d' });
+  const [reloadKey, setReloadKey] = useState(0);
+  const { from, to } = resolveRange(range);
+  const days = rangeDays(from, to);
+  const compareLabel = days === 1 ? 'vs previous day' : `vs previous ${days} days`;
+  const charts = useDashboardCharts(from, to, reloadKey);
   const [isDragMode, setIsDragMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -123,7 +118,6 @@ export const DashboardView: React.FC = () => {
     let cancelled = false;
     setIsLoading(true);
 
-    const { from, to } = getDateRange(selectedRange);
     widgetsService
       .getAllData({ from, to })
       .then((res) => {
@@ -139,7 +133,7 @@ export const DashboardView: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [widgets, selectedRange]);
+  }, [widgets, from, to, reloadKey]);
 
   const getWidgetIcon = (dataSource?: string) => {
     switch (dataSource) {
@@ -239,7 +233,7 @@ export const DashboardView: React.FC = () => {
     <div className="flex flex-col h-full bg-[#f8faf9] text-gray-900 dark:bg-[#0b1110] dark:text-gray-100 overflow-y-auto">
       {/* Header Bar */}
       <header className="border-b border-gray-200/80 bg-white dark:border-white/10 dark:bg-[#141b1a] px-4 sm:px-6 py-4 shrink-0 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-7xl mx-auto w-full">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 max-w-7xl mx-auto w-full">
           <div>
             <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">
               {t('dashboard.title') || 'Dashboard Overview'}
@@ -279,20 +273,18 @@ export const DashboardView: React.FC = () => {
               </Button>
             )}
 
-            {/* Range Selector */}
-            <div className="relative">
-              <select
-                value={selectedRange}
-                onChange={(e) => setSelectedRange(e.target.value)}
-                className="h-8 pl-3 pr-8 text-xs bg-gray-50 dark:bg-white/[0.04] border border-gray-200 dark:border-white/10 rounded-xl text-gray-700 dark:text-gray-200 font-medium appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-600"
-              >
-                <option value="today">Today</option>
-                <option value="7days">Last 7 Days</option>
-                <option value="30days">Last 30 Days</option>
-                <option value="this_month">This Month</option>
-              </select>
-              <Calendar className="absolute right-2.5 top-2.5 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
-            </div>
+            <RangePicker value={range} onChange={setRange} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReloadKey((k) => k + 1)}
+              disabled={charts.loading}
+              aria-label="Refresh dashboard"
+              className="h-8 rounded-xl border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/[0.06]"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5 sm:mr-1', charts.loading && 'animate-spin')} />
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
           </div>
         </div>
       </header>
@@ -301,38 +293,79 @@ export const DashboardView: React.FC = () => {
       <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto w-full">
         <ConnectWhatsAppCard />
 
+        {/* Headline numbers for the selected range, with trend vs the previous period */}
+        <section className="space-y-3">
+          <SectionTitle
+            icon={Activity}
+            title="Performance"
+            tone="green"
+            action={
+              <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                {rangeLabel(range)}
+                {charts.data?.timezone ? ` · ${charts.data.timezone}` : ''}
+              </span>
+            }
+          />
+          {charts.error && !charts.data ? (
+            <div className="rounded-2xl border border-gray-200/80 bg-white p-4 flex items-center justify-between gap-3 dark:border-white/[0.08] dark:bg-[#141b1a]">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Couldn't load your dashboard charts.</p>
+              <button
+                type="button"
+                onClick={() => setReloadKey((k) => k + 1)}
+                className="text-xs font-semibold text-[#0f5c62] dark:text-teal-300 inline-flex items-center gap-1"
+              >
+                <RefreshCw className="h-3 w-3" /> Retry
+              </button>
+            </div>
+          ) : (
+            <KpiCards data={charts.data} loading={charts.loading} compareLabel={compareLabel} />
+          )}
+        </section>
+
+        {/* WhatsApp number health & help */}
+        <section className="space-y-3">
+          <SectionTitle icon={Smartphone} title="WhatsApp Number Health" tone="teal" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Live number status from Meta (number, quality rating, messaging limit) */}
+            <WhatsAppHealthCards />
+
+            <div className="rounded-2xl border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#141b1a] p-4 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  Help & Tutorials
+                </span>
+                <Video className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+              </div>
+              <div className="mt-2">
+                <p className="text-[11px] text-gray-400">Short videos on setting up and using OneSuit.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTutorialsOpen(true)}
+                  className="mt-2 h-7 px-2 text-[10px] font-semibold rounded-lg border-teal-500/30 text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-500/10"
+                >
+                  <Video className="h-3 w-3 mr-1" />
+                  Watch tutorials
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Charts for the selected range */}
+        {charts.data && (
+          <section className="space-y-3">
+            <SectionTitle icon={PieChart} title="Analytics" tone="blue" />
+            <Suspense fallback={<div className="grid grid-cols-1 gap-4 lg:grid-cols-3">{[0, 1, 2].map((i) => <SkeletonCard key={i} />)}</div>}>
+              <DashboardChartsGrid data={charts.data} loading={charts.loading} />
+            </Suspense>
+          </section>
+        )}
+
         {/* Role-aware overview: Today at a Glance / Workspace Overview / Action Needed */}
         <WorkspaceOverviewSections />
 
         <SectionTitle icon={Sparkles} title="Insights & Widgets" tone="purple" />
-
-        {/* WhatsApp number health & help */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Live number status from Meta (number, quality rating, messaging limit) */}
-          <WhatsAppHealthCards />
-
-          {/* 4. Tutorials */}
-          <div className="rounded-2xl border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#141b1a] p-4 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                Help & Tutorials
-              </span>
-              <Video className="h-4 w-4 text-teal-600 dark:text-teal-400" />
-            </div>
-            <div className="mt-2">
-              <p className="text-[11px] text-gray-400">Short videos on setting up and using OneSuit.</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setTutorialsOpen(true)}
-                className="mt-2 h-7 px-2 text-[10px] font-semibold rounded-lg border-teal-500/30 text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-500/10"
-              >
-                <Video className="h-3 w-3 mr-1" />
-                Watch tutorials
-              </Button>
-            </div>
-          </div>
-        </div>
 
         {/* Small Stat Cards Grid */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

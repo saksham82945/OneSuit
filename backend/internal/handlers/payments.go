@@ -413,6 +413,9 @@ func (a *App) sendPayment(r *fastglue.Request, id uuid.UUID) error {
 
 var errPaymentNotPayable = errors.New("payment can't be marked paid in its current state")
 
+// errPaymentOrgDeleted: the client this payment belongs to has been deleted.
+var errPaymentOrgDeleted = errors.New("the client for this payment has been deleted")
+
 // markPaymentPaid marks a payment paid (once), extends the workspace's plan by
 // one billing cycle and issues the invoice. extra holds columns to set too.
 func (a *App) markPaymentPaid(id uuid.UUID, extra map[string]any, verifiedBy *uuid.UUID) error {
@@ -437,9 +440,26 @@ func (a *App) markPaymentPaid(id uuid.UUID, extra map[string]any, verifiedBy *uu
 			months = 1
 		}
 
+		// A deleted client can't be given a paid plan.
+		var orgCount int64
+		if err := tx.Model(&models.Organization{}).Where("id = ?", p.OrganizationID).Count(&orgCount).Error; err != nil {
+			return err
+		}
+		if orgCount == 0 {
+			return errPaymentOrgDeleted
+		}
+
 		// Extend from the current paid period if it's still running on the same plan.
+		// Look at deleted rows too: the workspace can hold only one subscription
+		// row, so an old deleted one is brought back instead of adding another.
 		var sub models.OrganizationSubscription
-		found := tx.Where("organization_id = ?", p.OrganizationID).First(&sub).Error == nil
+		found := tx.Unscoped().Where("organization_id = ?", p.OrganizationID).First(&sub).Error == nil
+		if found && sub.DeletedAt.Valid {
+			if err := tx.Unscoped().Model(&sub).Update("deleted_at", nil).Error; err != nil {
+				return err
+			}
+			sub.Status = ""
+		}
 		start := now
 		if found && sub.Status == models.VendorStatusActive && sub.PlanID != nil && *sub.PlanID == p.PlanID &&
 			sub.RenewalDate != nil && sub.RenewalDate.After(now) {
@@ -539,7 +559,7 @@ func (a *App) RazorpayWebhook(r *fastglue.Request) error {
 	}
 	switch evt.Event {
 	case "payment.captured", "order.paid":
-		if err := a.markPaymentPaid(p.ID, map[string]any{"razorpay_payment_id": pay.ID}, nil); err != nil && !errors.Is(err, errPaymentNotPayable) {
+		if err := a.markPaymentPaid(p.ID, map[string]any{"razorpay_payment_id": pay.ID}, nil); err != nil && !errors.Is(err, errPaymentNotPayable) && !errors.Is(err, errPaymentOrgDeleted) {
 			a.Log.Error("Webhook: failed to activate plan", "error", err, "payment_id", p.ID)
 			return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed", nil, "")
 		}
@@ -691,9 +711,11 @@ func (a *App) SuperAdminApprovePayment(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusNotFound, "Payment not found", nil, "")
 	case errors.Is(err, errPaymentNotPayable):
 		return r.SendErrorEnvelope(fasthttp.StatusConflict, "This payment can't be approved in its current state", nil, "")
+	case errors.Is(err, errPaymentOrgDeleted):
+		return r.SendErrorEnvelope(fasthttp.StatusConflict, "This client has been deleted, so the payment can't be approved. Reject it instead.", nil, "")
 	case err != nil:
 		a.Log.Error("Failed to approve payment", "error", err, "payment_id", id)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Could not approve the payment", nil, "")
+		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Could not approve the payment: "+err.Error(), nil, "")
 	}
 	return a.sendPayment(r, id)
 }

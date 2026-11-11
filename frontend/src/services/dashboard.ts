@@ -85,3 +85,56 @@ export const dashboardService = {
   overview: () =>
     api.get('/dashboard/overview').then((r) => r.data.data as DashboardOverview),
 };
+
+/**
+ * Dashboard charts (GET /api/dashboard/charts?from=&to=).
+ * Sections the caller's role can't read are missing (or null); series are
+ * zero-filled per bucket. KPI values are null when there is nothing to compute.
+ */
+export interface DashboardKPI {
+  current: number | null;
+  previous: number | null;
+}
+
+export type DashboardKPIKey =
+  | 'messages_sent'
+  | 'messages_received'
+  | 'delivery_rate'
+  | 'read_rate'
+  | 'new_contacts'
+  | 'open_conversations'
+  | 'campaign_messages'
+  | 'bot_sessions'
+  | 'avg_first_response_seconds';
+
+export interface DashboardCharts {
+  from: string;
+  to: string;
+  previous_from: string;
+  previous_to: string;
+  timezone: string;
+  granularity: 'hour' | 'day' | 'week';
+  agent_scope: 'all' | 'self' | '';
+  kpis: Partial<Record<DashboardKPIKey, DashboardKPI>>;
+  messages?: { date: string; sent: number; received: number }[];
+  funnel?: { total: number; sent: number; delivered: number; read: number; failed: number; pending: number };
+  hourly?: number[];
+  conversations?: { open_assigned: number; open_unassigned: number; resolved: number; expired: number };
+  campaigns: { id: string; name: string; status: string; sent: number; delivered: number; read: number; failed: number }[] | null;
+  contacts?: { date: string; new: number; total: number }[];
+  agents: { user_id: string; name: string; handled: number; resolved: number; avg_first_response_seconds: number | null }[] | null;
+  bot?: {
+    sessions: number;
+    active: number;
+    completed: number;
+    cancelled: number;
+    timeout: number;
+    top_flows: { id: string; name: string; sessions: number; completed: number }[];
+  };
+  templates: { name: string; sends: number; delivered: number; read: number }[] | null;
+}
+
+export const dashboardChartsService = {
+  get: (params: { from: string; to: string }) =>
+    api.get('/dashboard/charts', { params }).then((r) => r.data.data as DashboardCharts),
+};
