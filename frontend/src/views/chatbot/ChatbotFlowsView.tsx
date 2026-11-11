@@ -20,8 +20,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Workflow, Plus, Pencil, Trash2, Upload, Download, FileCode, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { FlowTypeBadge } from './FlowTypePicker';
@@ -61,7 +59,7 @@ export const ChatbotFlowsView: React.FC = () => {
     description?: string;
     trigger_keywords?: string[];
     flow_type?: string;
-    graph?: any;
+    graph?: unknown;
     nodeCount: number;
   } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -121,7 +119,7 @@ export const ChatbotFlowsView: React.FC = () => {
   const handleExportFlow = async (flow: ChatbotFlow) => {
     try {
       const res = await chatbotService.getFlow(flow.id);
-      const detail = readData<any>(res);
+      const detail = readData<Partial<ChatbotFlow> & { graph?: unknown } | null>(res);
       const exportData = {
         $schema: 'https://whatomate.com/schemas/flow-v1.json',
         version: 1,

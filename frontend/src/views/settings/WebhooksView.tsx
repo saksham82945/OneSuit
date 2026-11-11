@@ -89,7 +89,7 @@ export const WebhooksView: React.FC = () => {
     {
       key: 'status',
       label: 'Health Status',
-      render: (wh) => (
+      render: () => (
         <Badge className="bg-emerald-500/20 text-emerald-400 border-0 text-[10px] flex items-center gap-1">
           <CheckCircle2 className="h-3 w-3" /> HEALTHY
         </Badge>

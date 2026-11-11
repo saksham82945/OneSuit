@@ -19,6 +19,8 @@ import {
 } from './publicApi';
 import { BrandMark, Field, FormAlert, PasswordInput, PublicTopBar, cardClass, errorInputClass, inputClass } from './PublicLayout';
 import { AuthBackdrop } from '@/views/auth/AuthBackdrop';
+import { CapsLockHint } from '@/views/auth/AuthFormBits';
+import { useCapsLock } from '@/views/auth/authHooks';
 
 interface PublicInvite {
   organization_name: string;
@@ -71,6 +73,7 @@ export const JoinView: React.FC = () => {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<{ message: string; action: ErrorAction } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const { capsLock, handlers: capsHandlers } = useCapsLock();
 
   const nameRef = useRef<HTMLInputElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
@@ -201,6 +204,8 @@ export const JoinView: React.FC = () => {
         nameRef.current?.focus();
       } else if (status === 429) {
         setFormError({ message: 'Too many attempts. Please wait a minute and try again.', action: null });
+      } else if (!status) {
+        setFormError({ message: "We couldn't reach the server. Check your connection and try again.", action: null });
       } else {
         setFormError({ message, action: null });
       }
@@ -355,7 +360,13 @@ export const JoinView: React.FC = () => {
                   setErrors((er) => ({ ...er, email: undefined }));
                   setFormError(null);
                 }}
+                onBlur={() => {
+                  if (!lockedEmail && email.trim() && !isValidEmail(email))
+                    setErrors((er) => ({ ...er, email: 'Enter a valid email address' }));
+                }}
                 readOnly={lockedEmail}
+                autoCapitalize="none"
+                spellCheck={false}
                 placeholder="you@company.com"
                 autoComplete={mode === 'new' ? 'email' : 'username'}
                 inputMode="email"
@@ -404,12 +415,16 @@ export const JoinView: React.FC = () => {
                 setErrors((er) => ({ ...er, password: undefined }));
               }}
               placeholder="••••••••"
+              {...capsHandlers}
               autoComplete={mode === 'new' ? 'new-password' : 'current-password'}
               autoFocus={mode === 'existing' && lockedEmail}
               disabled={submitting}
               invalid={!!errors.password}
-              aria-describedby={errors.password ? 'password-error' : 'password-hint'}
+              aria-describedby={
+                [errors.password ? 'password-error' : 'password-hint', capsLock ? 'password-caps' : ''].filter(Boolean).join(' ')
+              }
             />
+            <CapsLockHint id="password-caps" show={capsLock} />
           </Field>
 
           {formError && (

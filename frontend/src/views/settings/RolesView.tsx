@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable, type Column } from '@/components/shared/DataTable';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, Check, Lock } from 'lucide-react';
+import { Shield, Lock } from 'lucide-react';
 
 export interface RoleItem {
   id: string;

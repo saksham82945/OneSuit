@@ -42,6 +42,10 @@ import {
   errorInputClass,
   inputClass,
 } from './PublicLayout';
+import { AuthBackdrop } from '@/views/auth/AuthBackdrop';
+import { ChatMock } from '@/views/auth/AuthShowcase';
+import { CapsLockHint } from '@/views/auth/AuthFormBits';
+import { useCapsLock, useLegalPages } from '@/views/auth/authHooks';
 
 type FieldName = 'full_name' | 'email' | 'password';
 type FieldErrors = Partial<Record<FieldName, string>>;
@@ -111,6 +115,8 @@ export const ExploreView: React.FC = () => {
   const [emailTaken, setEmailTaken] = useState<string | null>(null);
   const [closedMessage, setClosedMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const { capsLock, handlers: capsHandlers } = useCapsLock();
+  const { terms, privacy } = useLegalPages();
   const inputRefs = useRef<Partial<Record<FieldName, HTMLElement | null>>>({});
 
   const branding = useBranding();
@@ -170,6 +176,8 @@ export const ExploreView: React.FC = () => {
         focusFirstError({ [field]: message });
       } else if (status === 429) {
         setFormError('Too many attempts. Please wait a minute and try again.');
+      } else if (!status) {
+        setFormError("We couldn't reach the server. Check your connection and try again.");
       } else if (status === 503) {
         setFormError(`${message} You can still compare plans or sign up.`);
       } else {
@@ -259,6 +267,8 @@ export const ExploreView: React.FC = () => {
 
   return (
     <PublicShell headerActions={headerActions}>
+      <div className="auth-motion relative isolate overflow-hidden">
+      <AuthBackdrop className="-z-10" />
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
         {/* Phones: intro, form, details. Desktop: intro + details left, form right. */}
         <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:grid-rows-[auto_1fr] lg:gap-x-12">
@@ -277,13 +287,15 @@ export const ExploreView: React.FC = () => {
               Look around a demo workspace filled with sample data and see how your team would work before you
               choose a plan.
             </p>
+            <ChatMock className="mt-8 hidden lg:block" />
           </section>
 
           {/* Form */}
           <form
             onSubmit={handleSubmit}
             noValidate
-            className={cn(cardClass, 'p-6 sm:p-8 lg:col-start-2 lg:row-span-2 lg:row-start-1')}
+            aria-label="Open the demo"
+            className={cn(cardClass, 'auth-enter p-6 sm:p-8 shadow-2xl shadow-black/30 light:shadow-emerald-900/5 lg:col-start-2 lg:row-span-2 lg:row-start-1')}
           >
             <h2 className="text-lg font-semibold text-white light:text-gray-900">Open the demo</h2>
             <p className="mt-1 text-sm text-white/50 light:text-gray-500">
@@ -318,9 +330,15 @@ export const ExploreView: React.FC = () => {
                   }}
                   value={form.email}
                   onChange={(e) => setField('email', e.target.value)}
+                  onBlur={() => {
+                    if (form.email.trim() && !isValidEmail(form.email))
+                      setErrors((er) => ({ ...er, email: 'Enter a valid email address' }));
+                  }}
                   placeholder="jane@acme.com"
                   autoComplete="email"
                   inputMode="email"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   disabled={submitting}
                   aria-invalid={!!(errors.email || emailTaken) || undefined}
                   aria-describedby={errors.email ? 'email-error' : undefined}
@@ -348,12 +366,18 @@ export const ExploreView: React.FC = () => {
                   }}
                   value={form.password}
                   onChange={(e) => setField('password', e.target.value)}
+                  {...capsHandlers}
                   placeholder="••••••••"
                   autoComplete="new-password"
                   disabled={submitting}
                   invalid={!!errors.password}
-                  aria-describedby={errors.password ? 'password-error password-rules' : 'password-rules'}
+                  aria-describedby={
+                    [errors.password ? 'password-error' : '', 'password-rules', capsLock ? 'password-caps' : '']
+                      .filter(Boolean)
+                      .join(' ')
+                  }
                 />
+                <CapsLockHint id="password-caps" show={capsLock} />
                 <PasswordChecklist id="password-rules" password={form.password} showErrors={triedSubmit} />
               </Field>
 
@@ -362,7 +386,8 @@ export const ExploreView: React.FC = () => {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="h-11 w-full bg-emerald-600 text-base font-medium text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500"
+                aria-busy={submitting || undefined}
+                className="auth-cta h-11 w-full bg-emerald-600 text-base font-medium text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500"
               >
                 {submitting ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -370,6 +395,24 @@ export const ExploreView: React.FC = () => {
                 {submitting ? 'Opening the demo…' : 'Explore the demo'}
                 {!submitting && <ArrowRight className="ml-2 h-4 w-4" />}
               </Button>
+
+              {(terms || privacy) && (
+                <p className="text-center text-xs text-white/40 light:text-gray-500">
+                  By continuing you agree to our{' '}
+                  {terms && (
+                    <Link to={`/p/${terms.slug}`} target="_blank" rel="noopener" className={textLinkClass}>
+                      Terms
+                    </Link>
+                  )}
+                  {terms && privacy && ' and '}
+                  {privacy && (
+                    <Link to={`/p/${privacy.slug}`} target="_blank" rel="noopener" className={textLinkClass}>
+                      Privacy Policy
+                    </Link>
+                  )}
+                  .
+                </p>
+              )}
 
               <div className="space-y-1.5 border-t border-white/[0.06] pt-5 text-center text-sm text-white/40 light:border-gray-100 light:text-gray-500">
                 {info?.signup_enabled && (
@@ -433,6 +476,7 @@ export const ExploreView: React.FC = () => {
           </section>
 
         </div>
+      </div>
       </div>
     </PublicShell>
   );

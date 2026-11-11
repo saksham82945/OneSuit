@@ -2,8 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { LineChart, CheckCircle2, ShieldAlert, Zap, Globe, MessageSquare } from 'lucide-react';
+import { LineChart, CheckCircle2 } from 'lucide-react';
 
 export const MetaInsightsView: React.FC = () => {
   const { t } = useTranslation();

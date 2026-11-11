@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import { VendorAccessBanner } from './VendorAccessBanner';
 import { isInsideClient } from '@/services/superAdmin';
@@ -50,6 +50,11 @@ import {
   Building2,
   Code2,
   SlidersHorizontal,
+  LifeBuoy,
+  UserCircle,
+  UserPlus,
+  FilePlus2,
+  SunMoon,
 } from 'lucide-react';
 import { PrimaryRail, visibleRailModules } from './PrimaryRail';
 import { UserMenu } from './UserMenu';
@@ -64,6 +69,10 @@ import { usePlanModules } from '@/lib/planModules';
 import { PlanLockedNotice } from './PlanLockedNotice';
 import { PendingPaymentNotice } from './PendingPaymentNotice';
 import { pathOpenWhilePendingPayment } from '@/lib/pendingPayment';
+import { useTheme } from '@/hooks/useTheme';
+import { CreateContactDialog } from '@/components/shared/CreateContactDialog';
+import { CommandPalette } from './CommandPalette';
+import { dedupePaletteItems, type PaletteItem } from './commandPaletteSearch';
 
 /** Category headings of the super admin's navbar (and the Platform Admin sub-menu). */
 const PLATFORM_CATEGORIES: NavCategoryDef[] = [
@@ -142,6 +151,176 @@ function settingsItems(
   ].filter(Boolean) as SecondaryNavGroup['items'];
 }
 
+/**
+ * The sub-menu of one primary-rail module, with permission checks (plan
+ * switches are applied by the caller). Also feeds the command palette.
+ */
+function buildNavGroup(
+  moduleId: string,
+  hasPermission: (resource: string, action: string) => boolean,
+  isSuperAdmin: boolean,
+  insideClient: boolean
+): SecondaryNavGroup | null {
+  if (moduleId === 'super-admin') {
+    return {
+      moduleId: 'super-admin',
+      title: 'nav.sectionSuperAdmin',
+      subtitle: 'Platform Operations',
+      items: PLATFORM_ITEMS,
+      categories: PLATFORM_CATEGORIES,
+    };
+  }
+
+  if (moduleId === 'dashboard') {
+    const items = [
+      { name: 'nav.dashboard', path: '/', icon: LayoutDashboard, exact: true },
+      hasPermission('analytics.agents', 'read') ? { name: 'nav.agentAnalytics', path: '/analytics/agents', icon: BarChart3 } : null,
+      hasPermission('analytics', 'read') ? { name: 'nav.metaInsights', path: '/analytics/meta-insights', icon: LineChart } : null,
+    ].filter(Boolean) as SecondaryNavGroup['items'];
+
+    return {
+      moduleId: 'dashboard',
+      title: 'nav.sectionMain',
+      subtitle: 'Workspace Overview',
+      items,
+    };
+  }
+
+  if (moduleId === 'chat') {
+    // Live Chat's own inbox column (views, labels, search) is its sub-navigation,
+    // so it gets no sub-navbar; see `hideSubnav` below.
+    return {
+      moduleId: 'chat',
+      title: 'nav.chat',
+      subtitle: 'Live Inbox',
+      items: [{ name: 'nav.chat', path: '/chat', icon: MessageSquare }],
+    };
+  }
+
+  if (moduleId === 'contacts') {
+    const items = [
+      hasPermission('contacts', 'read') ? { name: 'nav.contacts', path: '/contacts', icon: Contact } : null,
+      hasPermission('tags', 'read') ? { name: 'nav.tags', path: '/tags', icon: Tags } : null,
+    ].filter(Boolean) as SecondaryNavGroup['items'];
+
+    return {
+      moduleId: 'contacts',
+      title: 'nav.contacts',
+      subtitle: 'Audience & Tags',
+      items,
+    };
+  }
+
+  if (moduleId === 'campaigns') {
+    const items = [
+      { name: 'nav.campaigns', path: '/campaigns', icon: Megaphone },
+      hasPermission('campaigns', 'read') && { name: 'Campaign Analytics', path: '/campaigns/analytics', icon: BarChart3 },
+    ].filter(Boolean) as SecondaryNavGroup['items'];
+
+    return {
+      moduleId: 'campaigns',
+      title: 'nav.campaigns',
+      subtitle: 'Broadcasts & Messaging',
+      items,
+    };
+  }
+
+  if (moduleId === 'ads') {
+    const items: SecondaryNavGroup['items'] = hasPermission('campaigns', 'read')
+      ? [
+          { name: 'Ads Manager', path: '/ads', icon: Radio, exact: true },
+          { name: 'Ads Agent', path: '/ads/agent', icon: Sparkles, badge: 'AI', badgeVariant: 'ai' },
+          { name: 'Leads', path: '/ads/leads', icon: Users },
+          { name: 'Forms', path: '/ads/forms', icon: ClipboardList },
+          { name: 'Audiences', path: '/ads/audiences', icon: UsersRound },
+          { name: 'Events', path: '/ads/events', icon: Activity },
+          { name: 'Setup', path: '/ads/setup', icon: Settings2 },
+        ]
+      : [];
+
+    return {
+      moduleId: 'ads',
+      title: 'Ads Manager',
+      subtitle: 'Facebook & Instagram Ads',
+      items,
+    };
+  }
+
+  if (moduleId === 'templates') {
+    const items = [
+      { name: 'nav.templates', path: '/templates', icon: FileText },
+    ].filter(Boolean) as SecondaryNavGroup['items'];
+
+    return {
+      moduleId: 'templates',
+      title: 'nav.templates',
+      subtitle: 'Meta Cloud API',
+      items,
+    };
+  }
+
+  if (moduleId === 'flows') {
+    const items = [
+      hasPermission('flows.chatbot', 'read')
+        ? { name: 'Bot Flows', path: '/chatbot/flows', icon: Workflow, badge: 'Popular', badgeVariant: 'popular' as const }
+        : null,
+      hasPermission('chatbot.keywords', 'read') ? { name: 'nav.keywords', path: '/chatbot/keywords', icon: Key } : null,
+      hasPermission('flows.whatsapp', 'read') ? { name: 'WhatsApp Forms (Meta)', path: '/flows', icon: Workflow } : null,
+      hasPermission('transfers', 'read') ? { name: 'nav.transfers', path: '/chatbot/transfers', icon: UserX } : null,
+    ].filter(Boolean) as SecondaryNavGroup['items'];
+
+    return {
+      moduleId: 'flows',
+      title: 'nav.flows',
+      subtitle: 'Automation Studio',
+      items,
+    };
+  }
+
+
+  if (moduleId === 'catalogs') {
+    return {
+      moduleId: 'catalogs',
+      title: 'nav.catalogue',
+      subtitle: 'Product Collections',
+      items: [
+        { name: 'nav.catalogue', path: '/catalogs', icon: ShoppingBag },
+      ],
+    };
+  }
+
+  if (moduleId === 'analytics') {
+    const items = [
+      hasPermission('analytics.agents', 'read') ? { name: 'nav.agentAnalytics', path: '/analytics/agents', icon: BarChart3 } : null,
+      hasPermission('analytics', 'read') ? { name: 'nav.metaInsights', path: '/analytics/meta-insights', icon: LineChart } : null,
+    ].filter(Boolean) as SecondaryNavGroup['items'];
+
+    return {
+      moduleId: 'analytics',
+      title: 'nav.sectionAnalytics',
+      subtitle: 'Performance Insights',
+      items,
+    };
+  }
+
+  if (moduleId === 'settings') {
+    // The super admin's own Settings skip the business-only pages (they're
+    // still there while the super admin is inside a client's account).
+    const business = !isSuperAdmin || insideClient;
+    const items = settingsItems(hasPermission, isSuperAdmin, business);
+
+    return {
+      moduleId: 'settings',
+      title: 'nav.settings',
+      subtitle: 'Workspace Settings',
+      items,
+      categories: SETTINGS_CATEGORIES,
+    };
+  }
+
+  return null;
+}
+
 export const AppLayout: React.FC = () => {
   const { t } = useTranslation();
   const location = useLocation();
@@ -217,167 +396,10 @@ export const AppLayout: React.FC = () => {
     return isSuperAdmin ? 'super-admin' : 'dashboard';
   }, [location.pathname, isSuperAdmin]);
 
-  // Construct context-aware secondary nav groups with full permission checking
-  const currentNavGroup: SecondaryNavGroup | null = useMemo(() => {
-    if (activeModuleId === 'super-admin') {
-      return {
-        moduleId: 'super-admin',
-        title: 'nav.sectionSuperAdmin',
-        subtitle: 'Platform Operations',
-        items: PLATFORM_ITEMS,
-        categories: PLATFORM_CATEGORIES,
-      };
-    }
-
-    if (activeModuleId === 'dashboard') {
-      const items = [
-        { name: 'nav.dashboard', path: '/', icon: LayoutDashboard, exact: true },
-        hasPermission('analytics.agents', 'read') ? { name: 'nav.agentAnalytics', path: '/analytics/agents', icon: BarChart3 } : null,
-        hasPermission('analytics', 'read') ? { name: 'nav.metaInsights', path: '/analytics/meta-insights', icon: LineChart } : null,
-      ].filter(Boolean) as SecondaryNavGroup['items'];
-
-      return {
-        moduleId: 'dashboard',
-        title: 'nav.sectionMain',
-        subtitle: 'Workspace Overview',
-        items,
-      };
-    }
-
-    if (activeModuleId === 'chat') {
-      // Live Chat's own inbox column (views, labels, search) is its sub-navigation,
-      // so it gets no sub-navbar; see `hideSubnav` below.
-      return {
-        moduleId: 'chat',
-        title: 'nav.chat',
-        subtitle: 'Live Inbox',
-        items: [{ name: 'nav.chat', path: '/chat', icon: MessageSquare }],
-      };
-    }
-
-    if (activeModuleId === 'contacts') {
-      const items = [
-        hasPermission('contacts', 'read') ? { name: 'nav.contacts', path: '/contacts', icon: Contact } : null,
-        hasPermission('tags', 'read') ? { name: 'nav.tags', path: '/tags', icon: Tags } : null,
-      ].filter(Boolean) as SecondaryNavGroup['items'];
-
-      return {
-        moduleId: 'contacts',
-        title: 'nav.contacts',
-        subtitle: 'Audience & Tags',
-        items,
-      };
-    }
-
-    if (activeModuleId === 'campaigns') {
-      const items = [
-        { name: 'nav.campaigns', path: '/campaigns', icon: Megaphone },
-        hasPermission('campaigns', 'read') && { name: 'Campaign Analytics', path: '/campaigns/analytics', icon: BarChart3 },
-      ].filter(Boolean) as SecondaryNavGroup['items'];
-
-      return {
-        moduleId: 'campaigns',
-        title: 'nav.campaigns',
-        subtitle: 'Broadcasts & Messaging',
-        items,
-      };
-    }
-
-    if (activeModuleId === 'ads') {
-      const items: SecondaryNavGroup['items'] = hasPermission('campaigns', 'read')
-        ? [
-            { name: 'Ads Manager', path: '/ads', icon: Radio, exact: true },
-            { name: 'Ads Agent', path: '/ads/agent', icon: Sparkles, badge: 'AI', badgeVariant: 'ai' },
-            { name: 'Leads', path: '/ads/leads', icon: Users },
-            { name: 'Forms', path: '/ads/forms', icon: ClipboardList },
-            { name: 'Audiences', path: '/ads/audiences', icon: UsersRound },
-            { name: 'Events', path: '/ads/events', icon: Activity },
-            { name: 'Setup', path: '/ads/setup', icon: Settings2 },
-          ]
-        : [];
-
-      return {
-        moduleId: 'ads',
-        title: 'Ads Manager',
-        subtitle: 'Facebook & Instagram Ads',
-        items,
-      };
-    }
-
-    if (activeModuleId === 'templates') {
-      const items = [
-        { name: 'nav.templates', path: '/templates', icon: FileText },
-      ].filter(Boolean) as SecondaryNavGroup['items'];
-
-      return {
-        moduleId: 'templates',
-        title: 'nav.templates',
-        subtitle: 'Meta Cloud API',
-        items,
-      };
-    }
-
-    if (activeModuleId === 'flows') {
-      const items = [
-        hasPermission('flows.chatbot', 'read')
-          ? { name: 'Bot Flows', path: '/chatbot/flows', icon: Workflow, badge: 'Popular', badgeVariant: 'popular' as const }
-          : null,
-        hasPermission('chatbot.keywords', 'read') ? { name: 'nav.keywords', path: '/chatbot/keywords', icon: Key } : null,
-        hasPermission('flows.whatsapp', 'read') ? { name: 'WhatsApp Forms (Meta)', path: '/flows', icon: Workflow } : null,
-        hasPermission('transfers', 'read') ? { name: 'nav.transfers', path: '/chatbot/transfers', icon: UserX } : null,
-      ].filter(Boolean) as SecondaryNavGroup['items'];
-
-      return {
-        moduleId: 'flows',
-        title: 'nav.flows',
-        subtitle: 'Automation Studio',
-        items,
-      };
-    }
-
-
-    if (activeModuleId === 'catalogs') {
-      return {
-        moduleId: 'catalogs',
-        title: 'nav.catalogue',
-        subtitle: 'Product Collections',
-        items: [
-          { name: 'nav.catalogue', path: '/catalogs', icon: ShoppingBag },
-        ],
-      };
-    }
-
-    if (activeModuleId === 'analytics') {
-      const items = [
-        hasPermission('analytics.agents', 'read') ? { name: 'nav.agentAnalytics', path: '/analytics/agents', icon: BarChart3 } : null,
-        hasPermission('analytics', 'read') ? { name: 'nav.metaInsights', path: '/analytics/meta-insights', icon: LineChart } : null,
-      ].filter(Boolean) as SecondaryNavGroup['items'];
-
-      return {
-        moduleId: 'analytics',
-        title: 'nav.sectionAnalytics',
-        subtitle: 'Performance Insights',
-        items,
-      };
-    }
-
-    if (activeModuleId === 'settings') {
-      // The super admin's own Settings skip the business-only pages (they're
-      // still there while the super admin is inside a client's account).
-      const business = !isSuperAdmin || insideClient;
-      const items = settingsItems(hasPermission, isSuperAdmin, business);
-
-      return {
-        moduleId: 'settings',
-        title: 'nav.settings',
-        subtitle: 'Workspace Settings',
-        items,
-        categories: SETTINGS_CATEGORIES,
-      };
-    }
-
-    return null;
-  }, [activeModuleId, hasPermission, isSuperAdmin, insideClient]);
+  const currentNavGroup = useMemo(
+    () => buildNavGroup(activeModuleId, hasPermission, isSuperAdmin, insideClient),
+    [activeModuleId, hasPermission, isSuperAdmin, insideClient]
+  );
 
   // The super admin (outside a client's account) gets one navbar with every
   // Platform Admin and Settings page instead of the rail + sub-menu.
@@ -414,6 +436,92 @@ export const AppLayout: React.FC = () => {
   const pageLocked = !singleNav && !pathAllowed(location.pathname);
   // A paid sign-up waits for its first payment: only billing, support and profile stay open.
   const awaitingPayment = pendingPayment && !isSuperAdmin && !pathOpenWhilePendingPayment(location.pathname);
+
+  // Fade the page in on navigation (opacity only: a transform would shift fixed
+  // elements inside the page) and start it at the top. Skipped between chats;
+  // no fade for reduced motion.
+  const mainRef = useRef<HTMLElement>(null);
+  const prevPath = useRef(location.pathname);
+  useEffect(() => {
+    const from = prevPath.current;
+    const to = location.pathname;
+    prevPath.current = to;
+    if (from === to) return;
+    const inChat = (p: string) => p === '/chat' || p.startsWith('/chat/');
+    if (inChat(from) && inChat(to)) return;
+    const el = mainRef.current;
+    if (!el) return;
+    el.scrollTop = 0;
+    if (typeof el.animate !== 'function') return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    el.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+  }, [location.pathname]);
+
+  // ---- Command palette (Ctrl/Cmd+K): every page this user can open, plus quick actions ----
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [createContactOpen, setCreateContactOpen] = useState(false);
+  const { isDark, toggleTheme } = useTheme();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const label = (name: string) => t(name) || name;
+  const railIds = new Set(railModules.map((m) => m.id));
+  const pageEntries: { item: SecondaryNavGroup['items'][number]; group: string }[] = singleNav
+    ? superAdminItems.map((item) => ({
+        item,
+        group: label(PLATFORM_CATEGORIES.find((c) => c.id === item.category && !c.flat)?.title ?? 'Platform Admin'),
+      }))
+    : railModules.flatMap((m) => {
+        const items = buildNavGroup(m.id, hasPermission, isSuperAdmin, insideClient)?.items ?? [];
+        const list = items.length ? items : [{ name: m.label, path: m.path, icon: m.icon }];
+        return list.map((item) => ({ item, group: m.label }));
+      });
+  const accountPages = [
+    { item: { name: 'Support', path: '/support', icon: LifeBuoy }, group: 'Account' },
+    { item: { name: 'My profile', path: '/profile', icon: UserCircle }, group: 'Account' },
+  ];
+  // Same plan switches and pending-payment lock as the menus, so hidden pages never show.
+  const pageVisible = (path: string) =>
+    pathAllowed(path) && !(pendingPayment && !isSuperAdmin && !pathOpenWhilePendingPayment(path));
+  const quickActions: (PaletteItem | false)[] = [
+    railIds.has('campaigns') && hasPermission('campaigns', 'write') && pageVisible('/campaigns/new') && {
+      id: 'action:new-campaign', label: 'New campaign', group: 'Quick actions', icon: Megaphone, path: '/campaigns/new', keywords: 'create broadcast send',
+    },
+    railIds.has('contacts') && hasPermission('contacts', 'write') && pageVisible('/contacts') && {
+      id: 'action:new-contact', label: 'New contact', group: 'Quick actions', icon: UserPlus, run: () => setCreateContactOpen(true), keywords: 'create add customer',
+    },
+    railIds.has('templates') && hasPermission('templates', 'write') && pageVisible('/templates/new') && {
+      id: 'action:new-template', label: 'New template', group: 'Quick actions', icon: FilePlus2, path: '/templates/new', keywords: 'create message template',
+    },
+    railIds.has('flows') && hasPermission('flows.chatbot', 'write') && pageVisible('/chatbot/flows/new') && {
+      id: 'action:new-bot-flow', label: 'New bot flow', group: 'Quick actions', icon: Workflow, path: '/chatbot/flows/new', keywords: 'create chatbot automation',
+    },
+    {
+      id: 'action:toggle-theme', label: isDark ? 'Switch to light mode' : 'Switch to dark mode', group: 'Quick actions', icon: SunMoon, run: toggleTheme, keywords: 'theme dark light appearance',
+    },
+  ];
+  const paletteItems: PaletteItem[] = [
+    ...quickActions.filter((a): a is PaletteItem => Boolean(a)),
+    ...dedupePaletteItems(
+      [...pageEntries, ...accountPages]
+        .filter(({ item }) => pageVisible(item.path))
+        .map(({ item, group }) => ({ id: item.path, label: label(item.name), group, icon: item.icon, path: item.path }))
+    ),
+  ];
+  const runPaletteItem = (item: PaletteItem) => {
+    setIsMobileMenuOpen(false);
+    if (item.run) item.run();
+    else if (item.path) navigate(item.path);
+  };
 
   return (
     <div className="flex h-screen bg-[#f8faf9] dark:bg-[#0a0f0e] text-gray-900 dark:text-gray-100 overflow-hidden font-sans">
@@ -571,17 +679,24 @@ export const AppLayout: React.FC = () => {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden pt-13 md:pt-0">
         {/* Top Status & Telemetry Bar */}
-        <TopStatusBar />
+        <TopStatusBar onOpenSearch={() => setPaletteOpen(true)} />
 
         {/* Global Access Banners */}
         <VendorAccessBanner />
         <ExplorerBanner />
 
         {/* Page Content Scroll Container */}
-        <main className="flex-1 min-w-0 overflow-y-auto bg-[#f8faf9] dark:bg-[#0a0f0e] relative">
+        <main ref={mainRef} className="flex-1 min-w-0 overflow-y-auto max-md:overflow-x-hidden bg-[#f8faf9] dark:bg-[#0a0f0e] relative">
           {awaitingPayment ? <PendingPaymentNotice /> : pageLocked ? <PlanLockedNotice /> : <Outlet />}
         </main>
       </div>
+
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} items={paletteItems} onSelect={runPaletteItem} />
+      <CreateContactDialog
+        open={createContactOpen}
+        onOpenChange={setCreateContactOpen}
+        onCreated={(c) => navigate(`/contacts/${c.id}`)}
+      />
     </div>
   );
 };

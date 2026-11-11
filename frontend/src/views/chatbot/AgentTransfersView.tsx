@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import { UserX, Save, Clock, Users, ArrowRight } from 'lucide-react';
+import { UserX, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 export const AgentTransfersView: React.FC = () => {

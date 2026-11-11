@@ -5,7 +5,7 @@ import { SearchInput } from '@/components/shared/SearchInput';
 import { DataTable, type Column } from '@/components/shared/DataTable';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ScrollText, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { ScrollText } from 'lucide-react';
 
 export interface AuditLogRecord {
   id: string;

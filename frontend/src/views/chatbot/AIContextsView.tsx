@@ -35,13 +35,19 @@ export interface AIContext {
 }
 
 export const AIContextsView: React.FC = () => {
-  const { t } = useTranslation();
   const { user } = useAuthStore();
 
-  // Guard: only super admins can access this page
+  // Guard: only super admins can access this page. The page's state lives in
+  // a separate component so its hooks always run in the same order.
   if (!user?.is_super_admin) {
     return <Navigate to="/chatbot" replace />;
   }
+
+  return <AIContextsContent />;
+};
+
+const AIContextsContent: React.FC = () => {
+  const { t } = useTranslation();
 
   const [contexts, setContexts] = useState<AIContext[]>([
     {
@@ -125,7 +131,7 @@ export const AIContextsView: React.FC = () => {
     {
       key: 'status',
       label: 'Status',
-      render: (ctx) => (
+      render: () => (
         <Badge className="bg-emerald-500/20 text-emerald-400 border-0 text-[10px] flex items-center gap-1">
           <CheckCircle2 className="h-3 w-3" /> ACTIVE IN PROMPT
         </Badge>

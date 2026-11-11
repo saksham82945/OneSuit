@@ -25,7 +25,15 @@ function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-export const UserMenu: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
+/**
+ * The account menu. `sidebar` (default) shows the avatar, name and a theme
+ * button; `topbar` is just the avatar, opening the same menu downwards.
+ */
+export const UserMenu: React.FC<{ collapsed?: boolean; variant?: 'sidebar' | 'topbar' }> = ({
+  collapsed,
+  variant = 'sidebar',
+}) => {
+  const topbar = variant === 'topbar';
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { user, isAvailable, setAvailability, logout } = useAuthStore();
@@ -69,7 +77,7 @@ export const UserMenu: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
   ];
 
   return (
-    <div className="border-t border-gray-200/80 dark:border-white/[0.08] p-2 bg-transparent select-none">
+    <div className={cn('select-none', !topbar && 'border-t border-gray-200/80 dark:border-white/[0.08] p-2 bg-transparent')}>
       <div className="flex items-center justify-between gap-1.5">
         {/* Account Trigger */}
         <Popover open={open} onOpenChange={setOpen}>
@@ -78,14 +86,16 @@ export const UserMenu: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
               variant="ghost"
               className={cn(
                 'flex items-center justify-start flex-1 min-w-0 h-auto px-2 py-1.5 gap-2.5 rounded-xl hover:bg-gray-100 dark:hover:bg-white/[0.06] transition-colors',
-                collapsed && 'md:justify-center px-1'
+                collapsed && 'md:justify-center px-1',
+                topbar && 'flex-none h-8 w-8 p-0 justify-center rounded-full'
               )}
               aria-label="My Account"
+              title={topbar ? user?.full_name || 'My Account' : undefined}
             >
               <div className="h-8 w-8 rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 text-white font-semibold flex items-center justify-center text-xs shrink-0 ring-2 ring-emerald-500/20 shadow-sm">
                 {getInitials(user?.full_name || 'Admin')}
               </div>
-              {!collapsed && (
+              {!collapsed && !topbar && (
                 <div className="flex flex-col items-start text-left overflow-hidden flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 w-full">
                     <span className="text-[13px] font-semibold truncate text-gray-900 dark:text-gray-100 leading-tight">
@@ -106,8 +116,8 @@ export const UserMenu: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
           </PopoverTrigger>
 
           <PopoverContent
-            side="top"
-            align="start"
+            side={topbar ? 'bottom' : 'top'}
+            align={topbar ? 'end' : 'start'}
             className="w-64 p-2 bg-white dark:bg-[#141b1a] border border-gray-200 dark:border-white/[0.1] text-gray-900 dark:text-gray-100 shadow-2xl rounded-2xl z-50 animate-in fade-in zoom-in-95 duration-150"
           >
             {/* Header info */}
@@ -254,7 +264,7 @@ export const UserMenu: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
         </Popover>
 
         {/* Dedicated Quick Theme Toggle Button in My Account Bar */}
-        {!collapsed && (
+        {!collapsed && !topbar && (
           <Button
             variant="ghost"
             size="icon"
@@ -274,7 +284,7 @@ export const UserMenu: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
       </div>
 
       {/* When collapsed, small theme icon under the avatar */}
-      {collapsed && (
+      {collapsed && !topbar && (
         <div className="flex justify-center mt-1">
           <Button
             variant="ghost"

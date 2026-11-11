@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -61,7 +61,7 @@ export const TagsView: React.FC = () => {
   const [selectedColor, setSelectedColor] = useState('green');
   const [tagToDelete, setTagToDelete] = useState<Tag | null>(null);
 
-  const fetchTags = async () => {
+  const fetchTags = useCallback(async () => {
     setIsLoading(true);
     try {
       const [tagsRes, contactsRes] = await Promise.allSettled([
@@ -89,11 +89,11 @@ export const TagsView: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [searchQuery]);
 
   useEffect(() => {
     fetchTags();
-  }, [searchQuery]);
+  }, [fetchTags]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();

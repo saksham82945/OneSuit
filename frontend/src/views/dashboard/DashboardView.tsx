@@ -7,6 +7,9 @@ import { readList } from '@/services/response';
 import { Button } from '@/components/ui/button';
 import { SectionTitle } from '@/components/dashboard';
 import { WorkspaceOverviewSections } from './WorkspaceOverviewSections';
+import { WhatsAppHealthCards } from './WhatsAppHealthCards';
+import { EmptyState } from '@/components/shared/EmptyState';
+import { SkeletonCard, SkeletonList } from '@/components/shared/Skeleton';
 import {
   Plus,
   GripVertical,
@@ -37,11 +40,9 @@ import {
   Globe,
   Play,
   Video,
-  CheckCircle2,
   Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -239,7 +240,7 @@ export const DashboardView: React.FC = () => {
   return (
     <div className="flex flex-col h-full bg-[#f8faf9] text-gray-900 dark:bg-[#0b1110] dark:text-gray-100 overflow-y-auto">
       {/* Header Bar */}
-      <header className="border-b border-gray-200/80 bg-white dark:bg-[#141b1a] px-6 py-4 shrink-0 shadow-xs">
+      <header className="border-b border-gray-200/80 bg-white dark:border-white/10 dark:bg-[#141b1a] px-4 sm:px-6 py-4 shrink-0 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-7xl mx-auto w-full">
           <div>
             <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">
@@ -256,7 +257,7 @@ export const DashboardView: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 rounded-xl border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                className="h-8 rounded-xl border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/[0.06]"
               >
                 <Plus className="h-3.5 w-3.5 mr-1 text-gray-500" />
                 {t('dashboard.addWidget') || 'Add Widget'}
@@ -271,8 +272,8 @@ export const DashboardView: React.FC = () => {
                 className={cn(
                   'h-8 rounded-xl border-gray-200 text-xs font-semibold transition-all',
                   isDragMode
-                    ? 'bg-teal-50 border-teal-300 text-teal-800'
-                    : 'text-gray-700 hover:bg-gray-50'
+                    ? 'bg-teal-50 border-teal-300 text-teal-800 dark:bg-teal-500/15 dark:border-teal-500/40 dark:text-teal-200'
+                    : 'text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/[0.06]'
                 )}
               >
                 <GripVertical className="h-3.5 w-3.5 mr-1" />
@@ -307,70 +308,10 @@ export const DashboardView: React.FC = () => {
 
         <SectionTitle icon={Sparkles} title="Insights & Widgets" tone="purple" />
 
-        {/* Meta WhatsApp Platform Telemetry & Health Grid */}
+        {/* WhatsApp number health & help */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* 1. Meta WhatsApp API Status */}
-          <div className="rounded-2xl border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#141b1a] p-4 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                Meta WhatsApp API
-              </span>
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-              </span>
-            </div>
-            <div className="mt-2">
-              <div className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                Operational
-              </div>
-              <p className="text-[11px] text-gray-400 mt-0.5">
-                Ping: 94 ms · Uptime: 99.98%
-              </p>
-            </div>
-          </div>
-
-          {/* 2. Quality Rating */}
-          <div className="rounded-2xl border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#141b1a] p-4 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                WABA Quality Rating
-              </span>
-              <ShieldCheck className="h-4 w-4 text-emerald-500" />
-            </div>
-            <div className="mt-2">
-              <div className="flex items-center gap-2">
-                <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[11px] font-bold">
-                  HIGH QUALITY
-                </Badge>
-              </div>
-              <p className="text-[11px] text-gray-400 mt-1">
-                0 flagged templates · Green health tier
-              </p>
-            </div>
-          </div>
-
-          {/* 3. 24h Message Limit Tier */}
-          <div className="rounded-2xl border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#141b1a] p-4 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                Daily Message Quota
-              </span>
-              <span className="text-[10px] font-semibold text-teal-600 dark:text-teal-400">Tier 3 (100k/day)</span>
-            </div>
-            <div className="mt-2">
-              <div className="text-xs font-bold text-gray-900 dark:text-white">
-                14,280 <span className="text-[11px] font-normal text-gray-400">/ 100,000 sent</span>
-              </div>
-              <div className="w-full bg-gray-100 dark:bg-white/10 rounded-full h-1.5 mt-2 overflow-hidden">
-                <div className="bg-gradient-to-r from-teal-500 to-emerald-500 h-1.5 rounded-full" style={{ width: '14.3%' }} />
-              </div>
-              <p className="text-[10px] text-gray-400 mt-1">
-                14.3% consumed · Resets at midnight UTC
-              </p>
-            </div>
-          </div>
+          {/* Live number status from Meta (number, quality rating, messaging limit) */}
+          <WhatsAppHealthCards />
 
           {/* 4. Tutorials */}
           <div className="rounded-2xl border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#141b1a] p-4 shadow-sm flex flex-col justify-between">
@@ -386,7 +327,7 @@ export const DashboardView: React.FC = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => setTutorialsOpen(true)}
-                className="mt-2 h-7 px-2 text-[10px] font-semibold rounded-lg border-teal-500/30 text-teal-700 dark:text-teal-300 hover:bg-teal-50"
+                className="mt-2 h-7 px-2 text-[10px] font-semibold rounded-lg border-teal-500/30 text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-500/10"
               >
                 <Video className="h-3 w-3 mr-1" />
                 Watch tutorials
@@ -397,7 +338,9 @@ export const DashboardView: React.FC = () => {
 
         {/* Small Stat Cards Grid */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {statWidgets.map((widget) => {
+          {isLoading && statWidgets.length > 0 && Object.keys(widgetData).length === 0
+            ? statWidgets.map((w) => <SkeletonCard key={w.id} />)
+            : statWidgets.map((widget) => {
             const data = widgetData[widget.id];
             const Icon = getWidgetIcon(widget.data_source);
             const colors = getWidgetColor(widget.data_source);
@@ -444,7 +387,7 @@ export const DashboardView: React.FC = () => {
         {/* Large Widgets: Recent Messages & Quick Actions */}
         <div className="grid gap-6 md:grid-cols-12">
           {/* Recent Messages (Table Widget) */}
-          <div className="md:col-span-6 rounded-2xl border border-gray-200/90 bg-white dark:bg-[#141b1a] dark:border-[#1e2a28] shadow-sm p-6 flex flex-col justify-between">
+          <div className="md:col-span-6 min-w-0 rounded-2xl border border-gray-200/90 bg-white dark:bg-[#141b1a] dark:border-[#1e2a28] shadow-sm p-4 sm:p-6 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-white/[0.06]">
                 <div>
@@ -461,15 +404,20 @@ export const DashboardView: React.FC = () => {
               </div>
 
               <div className="divide-y divide-gray-100 dark:divide-white/[0.04] pt-2">
+                {isLoading && tableRows.length === 0 && <SkeletonList rows={4} className="py-3" />}
                 {!isLoading && tableRows.length === 0 && (
-                  <p className="py-8 text-center text-xs text-gray-400">
-                    No recent message activity
-                  </p>
+                  <EmptyState
+                    size="compact"
+                    icon={MessageSquare}
+                    title="No recent messages"
+                    description="Conversations with your customers will show up here."
+                    action={hasPermission('chat', 'read') ? { label: 'Open Live Chat', href: '/chat' } : undefined}
+                  />
                 )}
                 {tableRows.map((row) => (
                   <div key={row.id} className="py-3 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 overflow-hidden">
-                      <div className="h-9 w-9 rounded-full bg-teal-50 text-teal-700 font-bold flex items-center justify-center shrink-0 border border-teal-200/60 text-xs">
+                      <div className="h-9 w-9 rounded-full bg-teal-50 text-teal-700 font-bold flex items-center justify-center shrink-0 border border-teal-200/60 text-xs dark:bg-teal-500/15 dark:text-teal-300 dark:border-teal-500/30">
                         {row.label?.[0]?.toUpperCase() || 'C'}
                       </div>
                       <div className="overflow-hidden">
@@ -480,7 +428,7 @@ export const DashboardView: React.FC = () => {
                     <div className="text-right shrink-0">
                       <span className="text-[10px] text-gray-400 block">{formatRowTime(row.created_at)}</span>
                       {row.status && (
-                        <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/60">
+                        <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/60 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30">
                           {row.status}
                         </span>
                       )}
@@ -492,7 +440,7 @@ export const DashboardView: React.FC = () => {
           </div>
 
           {/* Quick Actions (Shortcuts Widget) */}
-          <div className="md:col-span-6 rounded-2xl border border-gray-200/90 bg-white dark:bg-[#141b1a] dark:border-[#1e2a28] shadow-sm p-6">
+          <div className="md:col-span-6 min-w-0 rounded-2xl border border-gray-200/90 bg-white dark:bg-[#141b1a] dark:border-[#1e2a28] shadow-sm p-4 sm:p-6">
             <div className="pb-4 border-b border-gray-100 dark:border-white/[0.06]">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white">
                 {shortcutsWidget?.name || 'Quick Actions'}
@@ -502,14 +450,14 @@ export const DashboardView: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-4">
+            <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3 pt-4">
               {shortcuts.map((sc) => {
                 const Icon = sc.icon;
                 return (
                   <Link
                     key={sc.to}
                     to={sc.to}
-                    className="p-3.5 rounded-2xl border border-gray-200/80 bg-gray-50/50 hover:bg-teal-50/50 dark:bg-white/[0.02] dark:hover:bg-white/[0.06] transition-all flex items-center gap-3 group"
+                    className="p-3.5 rounded-2xl border border-gray-200/80 bg-gray-50/50 hover:bg-teal-50/50 hover:border-teal-200 dark:border-white/10 dark:bg-white/[0.02] dark:hover:bg-white/[0.06] dark:hover:border-teal-500/30 transition-all flex items-center gap-3 group min-w-0"
                   >
                     <div className={cn('h-10 w-10 rounded-xl bg-gradient-to-br flex items-center justify-center text-white shrink-0 shadow-sm', sc.gradient)}>
                       <Icon className="h-5 w-5" />

@@ -15,7 +15,6 @@ import {
   MessageSquare,
   Sparkles,
   ExternalLink,
-  Smartphone,
   Eye,
   FileSpreadsheet,
 } from 'lucide-react';

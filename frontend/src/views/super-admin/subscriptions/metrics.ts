@@ -32,12 +32,12 @@ export const expiresWithin = (c: Vendor, days: number, now = Date.now()) => {
 export const matchesFilters = (c: Vendor, f: SubscriptionFilters, now = Date.now()) => {
   const q = f.search.trim().toLowerCase();
   if (q && ![c.name, c.owner_name, c.owner_email, c.plan_name, c.phone].join(' ').toLowerCase().includes(q)) return false;
-  if (f.state !== 'all' && subscriptionState(c) !== f.state) return false;
+  if (f.state !== 'all' && subscriptionState(c, now) !== f.state) return false;
   if (f.planId !== 'all' && (f.planId === 'none' ? !!c.plan_id : c.plan_id !== f.planId)) return false;
   if (f.cycle !== 'all' && (c.billing_cycle ?? 'monthly') !== f.cycle) return false;
   if (f.expiry === '7' && !expiresWithin(c, 7, now)) return false;
   if (f.expiry === '30' && !expiresWithin(c, 30, now)) return false;
-  if (f.expiry === 'expired' && subscriptionState(c) !== 'expired') return false;
+  if (f.expiry === 'expired' && subscriptionState(c, now) !== 'expired') return false;
   if (f.expiry === 'none' && c.renewal_date) return false;
   return true;
 };
@@ -61,7 +61,7 @@ export interface SubscriptionSummary {
 export const summarize = (clients: Vendor[], now = Date.now()): SubscriptionSummary => {
   const s: SubscriptionSummary = { active: 0, pendingPayment: 0, trial: 0, suspended: 0, expired: 0, expiring7: 0, expiring30: 0, mrr: 0, payingClients: 0 };
   for (const c of clients) {
-    const state = subscriptionState(c);
+    const state = subscriptionState(c, now);
     if (state === 'active') s.active++;
     else if (state === 'pending_payment') s.pendingPayment++;
     else if (state === 'trial') s.trial++;

@@ -3,8 +3,6 @@ import {
   Phone,
   Search,
   PhoneCall,
-  PhoneForwarded,
-  Workflow,
   ChevronDown,
   RefreshCw,
   CheckCircle2,

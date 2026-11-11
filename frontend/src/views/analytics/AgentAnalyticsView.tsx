@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { BarChart3, Clock, CheckCircle2, MessageSquare, Star, Users } from 'lucide-react';
+import { BarChart3, Star } from 'lucide-react';
 
 export const AgentAnalyticsView: React.FC = () => {
   const { t } = useTranslation();

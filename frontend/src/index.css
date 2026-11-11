@@ -172,6 +172,47 @@
   background: hsl(var(--muted-foreground) / 0.5);
 }
 
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox: thin scrollbars in the same tone (Chromium keeps the styles above). */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+}
+
+/* Hide a scrollbar but keep the area scrollable (top bar, rails). */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Keyboard focus: a visible ring on anything that doesn't style its own. */
+:where(a, button, summary, [role='button'], [role='tab'], [role='menuitem'], [role='switch'], [tabindex]:not([tabindex='-1'])):focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+/* The navigation rails turn outlines off on their buttons; give keyboard users one back. */
+.primary-rail :is(a, button):focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: -2px;
+}
+.secondary-sidebar :is(a, button):focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+}
+
+/* Text selection in the brand colour. */
+::selection {
+  background: rgba(20, 184, 166, 0.25);
+}
+
 /* Glass effect utility classes */
 .glass {
   background: var(--glass-bg);
@@ -648,9 +689,9 @@
 .skeleton-shimmer {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.04) 75%
+    rgba(255, 255, 255, 0.05) 25%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
@@ -659,9 +700,9 @@
 .light .skeleton-shimmer {
   background: linear-gradient(
     90deg,
-    rgba(0, 0, 0, 0.04) 25%,
-    rgba(0, 0, 0, 0.08) 50%,
-    rgba(0, 0, 0, 0.04) 75%
+    rgba(15, 40, 38, 0.06) 25%,
+    rgba(15, 40, 38, 0.11) 50%,
+    rgba(15, 40, 38, 0.06) 75%
   );
   background-size: 200% 100%;
 }
@@ -865,4 +906,25 @@
 @media (prefers-reduced-motion: reduce) {
   .site-reveal { opacity: 1; transform: none; transition: none; }
   .site-hero-gradient, .site-float { animation: none; }
+}
+
+/* Reduced motion: no shimmer or enter/exit animations in the app shell. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer,
+  .animate-in,
+  .animate-out,
+  .animate-ping,
+  .badge-pulse {
+    animation: none !important;
+  }
+}
+
+/* Phones: wide tables scroll inside themselves instead of pushing the page sideways
+   (tables from components/ui/table already sit in an overflow-auto wrapper). */
+@media (max-width: 767px) {
+  main :not(.overflow-auto):not(.overflow-x-auto) > table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }

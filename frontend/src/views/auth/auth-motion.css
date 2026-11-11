@@ -237,6 +237,97 @@
   outline-offset: 2px;
 }
 
+/* ---------- Showcase chat mock ---------- */
+
+.auth-chat-msg {
+  position: relative;
+  max-width: 82%;
+  width: fit-content;
+  border-radius: 0.75rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  box-shadow: 0 1px 1px rgb(0 0 0 / 0.12);
+}
+.auth-chat-in {
+  background: rgb(255 255 255 / 0.08);
+  color: rgb(255 255 255 / 0.85);
+  border-top-left-radius: 0.2rem;
+}
+.auth-chat-out {
+  margin-left: auto;
+  background: rgb(5 150 105 / 0.55);
+  color: #fff;
+  border-top-right-radius: 0.2rem;
+}
+.light .auth-chat-in {
+  background: #fff;
+  color: rgb(17 24 39);
+}
+.light .auth-chat-out {
+  background: #d9fdd3;
+  color: rgb(17 24 39);
+}
+.auth-chat-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.2rem;
+  margin-top: 0.15rem;
+  font-size: 0.62rem;
+  opacity: 0.7;
+  color: rgb(167 243 208);
+}
+.light .auth-chat-meta {
+  color: rgb(14 116 144);
+}
+.auth-chat-typing {
+  display: flex;
+  width: fit-content;
+  gap: 0.25rem;
+  border-radius: 0.75rem;
+  border-top-left-radius: 0.2rem;
+  padding: 0.6rem 0.7rem;
+  background: rgb(255 255 255 / 0.08);
+}
+.light .auth-chat-typing {
+  background: #fff;
+}
+.auth-chat-typing span {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 9999px;
+  background: rgb(52 211 153);
+  animation: auth-typing 1.2s ease-in-out infinite;
+}
+.auth-chat-typing span:nth-child(2) { animation-delay: 0.15s; }
+.auth-chat-typing span:nth-child(3) { animation-delay: 0.3s; }
+
+/* Messages pop in one by one, rest, then clear and replay. */
+.auth-chat-msg,
+.auth-chat-typing {
+  animation: auth-chat-pop 12s cubic-bezier(0.16, 1, 0.3, 1) infinite both;
+  animation-delay: calc(var(--chat-i, 0) * 1.3s + 0.4s);
+}
+@keyframes auth-chat-pop {
+  0% { opacity: 0; transform: translate3d(0, 8px, 0) scale(0.96); }
+  5%, 80% { opacity: 1; transform: none; }
+  88%, 100% { opacity: 0; transform: translate3d(0, -4px, 0); }
+}
+@keyframes auth-typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
+/* ---------- Step progress ---------- */
+
+.auth-motion .auth-step-panel {
+  animation: auth-rise 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.auth-motion .auth-progress-fill {
+  transition: width 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* ---------- Reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -244,8 +335,15 @@
   .auth-motion .auth-enter,
   .auth-motion .auth-stagger > *,
   .auth-motion .auth-halo::before,
-  .auth-motion .auth-shake {
+  .auth-motion .auth-shake,
+  .auth-chat-msg,
+  .auth-chat-typing,
+  .auth-chat-typing span,
+  .auth-motion .auth-step-panel {
     animation: none !important;
+  }
+  .auth-motion .auth-progress-fill {
+    transition: none !important;
   }
   .auth-motion .auth-cta,
   .auth-motion .auth-cta::after,

@@ -39,7 +39,7 @@ export interface DataTableProps<T> {
   className?: string;
 }
 
-export function DataTable<T extends Record<string, any>>({
+export function DataTable<T extends object>({
   items,
   columns,
   isLoading,
@@ -47,7 +47,7 @@ export function DataTable<T extends Record<string, any>>({
   emptyTitle,
   emptyDescription,
   emptyAction,
-  rowKey = (_item, idx) => _item.id || `row-${idx}`,
+  rowKey = (_item, idx) => ((_item as { id?: string }).id) || `row-${idx}`,
   sortKey,
   sortDirection = 'desc',
   onSort,
@@ -157,7 +157,7 @@ export function DataTable<T extends Record<string, any>>({
                         col.align === 'center' && 'text-center'
                       )}
                     >
-                      {col.render ? col.render(item, idx) : item[col.key]}
+                      {col.render ? col.render(item, idx) : ((item as Record<string, unknown>)[col.key] as React.ReactNode)}
                     </TableCell>
                   ))}
                 </TableRow>

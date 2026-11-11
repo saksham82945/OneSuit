@@ -209,7 +209,7 @@ export const KeywordsView: React.FC = () => {
       key: 'response_type',
       label: t('keywords.response') || 'Response Action',
       render: (rule) => {
-        const flowName = (rule.response_content as any)?.flow_name;
+        const flowName = (rule.response_content as { flow_name?: string } | null)?.flow_name;
         return (
           <div className="flex flex-col gap-0.5">
             <Badge

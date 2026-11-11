@@ -2,7 +2,7 @@ import axios, { type AxiosInstance, type AxiosError, type InternalAxiosRequestCo
 import { CHECKOUT_PATH, pathOpenWhilePendingPayment } from '@/lib/pendingPayment'
 
 // Get base path from server-injected config or fallback
-const basePath = ((window as any).__BASE_PATH__ ?? '').replace(/\/$/, '')
+const basePath = ((window as Window & { __BASE_PATH__?: string }).__BASE_PATH__ ?? '').replace(/\/$/, '')
 // Same-origin by default: on Vercel, vercel.json forwards /api to the backend, so the
 // login cookies (SameSite=Lax) and the CSRF cookie stay on the site's own domain.
 const API_BASE_URL = import.meta.env.VITE_API_URL || `${basePath}/api`
@@ -50,8 +50,8 @@ api.interceptors.request.use(
     if (method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH') {
       const csrfToken = getCookie('whm_csrf')
       if (csrfToken) {
-        if (config.headers && typeof (config.headers as any).set === 'function') {
-          (config.headers as any).set('X-CSRF-Token', csrfToken)
+        if (config.headers && typeof config.headers.set === 'function') {
+          config.headers.set('X-CSRF-Token', csrfToken)
         } else {
           config.headers['X-CSRF-Token'] = csrfToken
         }
@@ -60,8 +60,8 @@ api.interceptors.request.use(
     // Add organization override header for org switching
     const selectedOrgId = localStorage.getItem('selected_organization_id')
     if (selectedOrgId) {
-      if (config.headers && typeof (config.headers as any).set === 'function') {
-        (config.headers as any).set('X-Organization-ID', selectedOrgId)
+      if (config.headers && typeof config.headers.set === 'function') {
+        config.headers.set('X-Organization-ID', selectedOrgId)
       } else {
         config.headers['X-Organization-ID'] = selectedOrgId
       }
@@ -213,7 +213,7 @@ export const usersService = {
 
 export const apiKeysService = {
   list: (params?: { search?: string; page?: number; limit?: number }) =>
-    api.get<{ api_keys: any[]; total?: number }>('/api-keys', { params }),
+    api.get<{ api_keys: unknown[]; total?: number }>('/api-keys', { params }),
   get: (id: string) => api.get(`/api-keys/${id}`),
   create: (data: { name: string; expires_at?: string }) =>
     api.post('/api-keys', data),
@@ -224,8 +224,8 @@ export const apiKeysService = {
 
 export const accountsService = {
   list: () => api.get('/accounts'),
-  create: (data: any) => api.post('/accounts', data),
-  update: (id: string, data: any) => api.put(`/accounts/${id}`, data),
+  create: (data: object) => api.post('/accounts', data),
+  update: (id: string, data: object) => api.put(`/accounts/${id}`, data),
   delete: (id: string) => api.delete(`/accounts/${id}`),
   getEmbeddedConfig: () => api.get('/embedded-signup/config'),
   exchangeToken: (data: { code: string; phone_id?: string; waba_id?: string; name?: string }) =>
@@ -237,8 +237,8 @@ export const contactsService = {
   list: (params?: { search?: string; page?: number; limit?: number; tags?: string }) =>
     api.get('/contacts', { params }),
   get: (id: string) => api.get(`/contacts/${id}`),
-  create: (data: any) => api.post('/contacts', data),
-  update: (id: string, data: any) => api.put(`/contacts/${id}`, data),
+  create: (data: object) => api.post('/contacts', data),
+  update: (id: string, data: object) => api.put(`/contacts/${id}`, data),
   delete: (id: string) => api.delete(`/contacts/${id}`),
   assign: (id: string, userId: string | null) =>
     api.put(`/contacts/${id}/assign`, { user_id: userId }),
@@ -314,7 +314,7 @@ export const messagesService = {
     contactId: string,
     data: {
       type: string
-      content: any
+      content: unknown
       reply_to_message_id?: string
       whatsapp_account?: string
       // Interactive payload. Mirrors backend InteractiveContent.
@@ -364,10 +364,10 @@ export const messagesService = {
 
 export const templatesService = {
   list: (params?: { status?: string; category?: string; account?: string; search?: string; page?: number; limit?: number }) =>
-    api.get<{ templates: any[]; total?: number }>('/templates', { params }),
+    api.get<{ templates: unknown[]; total?: number }>('/templates', { params }),
   get: (id: string) => api.get(`/templates/${id}`),
-  create: (data: any) => api.post('/templates', data),
-  update: (id: string, data: any) => api.put(`/templates/${id}`, data),
+  create: (data: object) => api.post('/templates', data),
+  update: (id: string, data: object) => api.put(`/templates/${id}`, data),
   delete: (id: string) => api.delete(`/templates/${id}`),
   uploadMedia: (accountName: string, file: File) => {
     const formData = new FormData()
@@ -381,9 +381,9 @@ export const templatesService = {
 
 export const flowsService = {
   list: (params?: { account?: string; search?: string; page?: number; limit?: number }) =>
-    api.get<{ flows: any[]; total?: number }>('/flows', { params }),
-  create: (data: any) => api.post('/flows', data),
-  update: (id: string, data: any) => api.put(`/flows/${id}`, data),
+    api.get<{ flows: unknown[]; total?: number }>('/flows', { params }),
+  create: (data: object) => api.post('/flows', data),
+  update: (id: string, data: object) => api.put(`/flows/${id}`, data),
   delete: (id: string) => api.delete(`/flows/${id}`),
   saveToMeta: (id: string) => api.post(`/flows/${id}/save-to-meta`),
   publish: (id: string) => api.post(`/flows/${id}/publish`),
@@ -395,8 +395,8 @@ export const campaignsService = {
   list: (params?: { status?: string; whatsapp_account?: string; from?: string; to?: string; search?: string; page?: number; limit?: number }) =>
     api.get('/campaigns', { params }),
   get: (id: string) => api.get(`/campaigns/${id}`),
-  create: (data: any) => api.post('/campaigns', data),
-  update: (id: string, data: any) => api.put(`/campaigns/${id}`, data),
+  create: (data: object) => api.post('/campaigns', data),
+  update: (id: string, data: object) => api.put(`/campaigns/${id}`, data),
   delete: (id: string) => api.delete(`/campaigns/${id}`),
   start: (id: string) => api.post(`/campaigns/${id}/start`),
   pause: (id: string) => api.post(`/campaigns/${id}/pause`),
@@ -406,7 +406,7 @@ export const campaignsService = {
   // Without page/limit the backend returns every recipient; with them it pages (status/search filter either way).
   getRecipients: (id: string, params?: { status?: string; search?: string; page?: number; limit?: number }) =>
     api.get(`/campaigns/${id}/recipients`, { params }),
-  addRecipients: (id: string, recipients: Array<{ phone_number: string; recipient_name?: string; template_params?: Record<string, any> }>) =>
+  addRecipients: (id: string, recipients: Array<{ phone_number: string; recipient_name?: string; template_params?: Record<string, unknown> }>) =>
     api.post(`/campaigns/${id}/recipients/import`, { recipients }),
   deleteRecipient: (campaignId: string, recipientId: string) =>
     api.delete(`/campaigns/${campaignId}/recipients/${recipientId}`),
@@ -425,22 +425,22 @@ export const campaignsService = {
 export const chatbotService = {
   // Settings
   getSettings: () => api.get('/chatbot/settings'),
-  updateSettings: (data: any) => api.put('/chatbot/settings', data),
+  updateSettings: (data: object) => api.put('/chatbot/settings', data),
 
   // Keywords
   listKeywords: (params?: { search?: string; page?: number; limit?: number }) =>
-    api.get<{ rules: any[]; total?: number }>('/chatbot/keywords', { params }),
+    api.get<{ rules: unknown[]; total?: number }>('/chatbot/keywords', { params }),
   getKeyword: (id: string) => api.get(`/chatbot/keywords/${id}`),
-  createKeyword: (data: any) => api.post('/chatbot/keywords', data),
-  updateKeyword: (id: string, data: any) => api.put(`/chatbot/keywords/${id}`, data),
+  createKeyword: (data: object) => api.post('/chatbot/keywords', data),
+  updateKeyword: (id: string, data: object) => api.put(`/chatbot/keywords/${id}`, data),
   deleteKeyword: (id: string) => api.delete(`/chatbot/keywords/${id}`),
 
   // Flows
   listFlows: (params?: { search?: string; page?: number; limit?: number }) =>
-    api.get<{ flows: any[]; total?: number }>('/chatbot/flows', { params }),
+    api.get<{ flows: unknown[]; total?: number }>('/chatbot/flows', { params }),
   getFlow: (id: string) => api.get(`/chatbot/flows/${id}`),
-  createFlow: (data: any) => api.post('/chatbot/flows', data),
-  updateFlow: (id: string, data: any) => api.put(`/chatbot/flows/${id}`, data),
+  createFlow: (data: object) => api.post('/chatbot/flows', data),
+  updateFlow: (id: string, data: object) => api.put(`/chatbot/flows/${id}`, data),
   deleteFlow: (id: string) => api.delete(`/chatbot/flows/${id}`),
   /** Stores a bot-reply media file; returns { media_path, file, filename, mime_type, media_type, size }. */
   uploadFlowMedia: (file: File) => {
@@ -454,10 +454,10 @@ export const chatbotService = {
 
   // AI Contexts
   listAIContexts: (params?: { search?: string; page?: number; limit?: number }) =>
-    api.get<{ contexts: any[]; total?: number }>('/chatbot/ai-contexts', { params }),
+    api.get<{ contexts: unknown[]; total?: number }>('/chatbot/ai-contexts', { params }),
   getAIContext: (id: string) => api.get(`/chatbot/ai-contexts/${id}`),
-  createAIContext: (data: any) => api.post('/chatbot/ai-contexts', data),
-  updateAIContext: (id: string, data: any) => api.put(`/chatbot/ai-contexts/${id}`, data),
+  createAIContext: (data: object) => api.post('/chatbot/ai-contexts', data),
+  updateAIContext: (id: string, data: object) => api.put(`/chatbot/ai-contexts/${id}`, data),
   deleteAIContext: (id: string) => api.delete(`/chatbot/ai-contexts/${id}`),
 
   // Agent Transfers
@@ -675,7 +675,7 @@ export interface DashboardWidget {
   grid_y: number
   grid_w: number
   grid_h: number
-  config: Record<string, any>
+  config: Record<string, unknown>
   is_shared: boolean
   is_default: boolean
   is_owner: boolean
@@ -734,7 +734,7 @@ export const widgetsService = {
     show_change?: boolean
     color?: string
     size?: string
-    config?: Record<string, any>
+    config?: Record<string, unknown>
     is_shared?: boolean
   }) => api.post<DashboardWidget>('/widgets', data),
   update: (id: string, data: Partial<{
@@ -750,7 +750,7 @@ export const widgetsService = {
     show_change: boolean
     color: string
     size: string
-    config: Record<string, any>
+    config: Record<string, unknown>
     is_shared: boolean
   }>) => api.put<DashboardWidget>(`/widgets/${id}`, data),
   delete: (id: string) => api.delete(`/widgets/${id}`),
@@ -939,8 +939,8 @@ export const teamsService = {
 // Audit Logs
 export interface AuditLogChange {
   field: string
-  old_value: any
-  new_value: any
+  old_value: unknown
+  new_value: unknown
 }
 
 export interface AuditLogEntry {
@@ -1021,7 +1021,7 @@ export interface ActionResult {
     message: string
     type: 'success' | 'error' | 'info' | 'warning'
   }
-  data?: Record<string, any>
+  data?: Record<string, unknown>
 }
 
 export const customActionsService = {
@@ -1032,7 +1032,7 @@ export const customActionsService = {
     name: string
     icon?: string
     action_type: 'webhook' | 'url' | 'javascript'
-    config: Record<string, any>
+    config: Record<string, unknown>
     is_active?: boolean
     display_order?: number
   }) => api.post<CustomAction>('/custom-actions', data),
@@ -1040,7 +1040,7 @@ export const customActionsService = {
     name?: string
     icon?: string
     action_type?: 'webhook' | 'url' | 'javascript'
-    config?: Record<string, any>
+    config?: Record<string, unknown>
     is_active?: boolean
     display_order?: number
   }) => api.put<CustomAction>(`/custom-actions/${id}`, data),
@@ -1137,7 +1137,7 @@ export interface CallLog {
   status: 'ringing' | 'answered' | 'completed' | 'missed' | 'rejected' | 'failed' | 'initiating' | 'accepted' | 'transferring'
   duration: number
   ivr_flow_id?: string
-  ivr_path?: Record<string, any>
+  ivr_path?: Record<string, unknown>
   agent_id?: string
   started_at?: string
   answered_at?: string
@@ -1174,7 +1174,7 @@ export interface IVRNode {
   type: IVRNodeType
   label: string
   position: IVRNodePosition
-  config: Record<string, any>
+  config: Record<string, unknown>
 }
 
 export interface IVREdge {
@@ -1215,7 +1215,7 @@ export interface ChatNode {
   type: ChatNodeType
   label: string
   position: IVRNodePosition
-  config: Record<string, any>
+  config: Record<string, unknown>
 }
 
 export interface ChatEdge {
@@ -1263,7 +1263,7 @@ export interface CallTransfer {
   completed_at?: string
   hold_duration: number
   talk_duration: number
-  ivr_path?: Record<string, any>
+  ivr_path?: Record<string, unknown>
   contact?: {
     id: string
     phone_number: string

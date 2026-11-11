@@ -392,10 +392,13 @@ export const subscriptionStateLabels: Record<SubscriptionState, string> = {
  * Active: paid plan running. Pending payment: signed up, first payment not made.
  * Trial: legacy free trial. Idle: no plan. Expired: renewal date passed.
  */
-export const subscriptionState = (v: Pick<Vendor, 'status' | 'plan_id' | 'renewal_date'>): SubscriptionState => {
+export const subscriptionState = (
+  v: Pick<Vendor, 'status' | 'plan_id' | 'renewal_date'>,
+  now = Date.now()
+): SubscriptionState => {
   if (v.status === 'suspended') return 'suspended';
   if (v.status === 'pending_payment') return 'pending_payment';
-  if (v.renewal_date && new Date(v.renewal_date).getTime() < Date.now()) return 'expired';
+  if (v.renewal_date && new Date(v.renewal_date).getTime() < now) return 'expired';
   if (v.status === 'trial') return 'trial';
   if (!v.plan_id) return 'idle';
   return 'active';

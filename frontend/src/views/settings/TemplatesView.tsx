@@ -9,7 +9,7 @@ import { IconButton } from '@/components/shared/IconButton';
 import { DeleteConfirmDialog } from '@/components/shared/DeleteConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { FileText, Plus, RefreshCw, Pencil, Trash2, MessageSquare, Image, Video, FileCheck, Sparkles } from 'lucide-react';
+import { FileText, Plus, RefreshCw, Pencil, Trash2, MessageSquare, Image, Video, FileCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
 export interface Template {
