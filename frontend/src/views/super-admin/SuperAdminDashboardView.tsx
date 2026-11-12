@@ -238,7 +238,7 @@ export const SuperAdminDashboardView: React.FC = () => {
             </div>
           </div>
 
-          {/* 1. Key numbers for the period */}
+          {/* 1. Key numbers */}
           <section className="space-y-3">
             <SectionTitle icon={Activity} title="Key Numbers" tone="teal" />
             {chartsError ? (
@@ -252,7 +252,63 @@ export const SuperAdminDashboardView: React.FC = () => {
             )}
           </section>
 
-          {/* 2. Action Needed */}
+          {/* 2. Today & last 30 days */}
+          <section className="space-y-3">
+            <SectionTitle icon={Sun} title="Today & Last 30 Days" tone="amber" />
+            <StatGrid>
+              <StatCard variant="compact" label="New Signups Today" value={formatCount(data.new_signups_today)} icon={UserPlus} tone="blue" to="/super-admin/clients" />
+              <StatCard variant="compact" label="Messages Today" value={formatCount(data.messages_today)} icon={MessageSquare} tone="purple" />
+              <StatCard variant="compact" label="Messages Sent (30d)" value={formatCount(data.messages_sent_30d)} icon={Send} tone="green" />
+              <StatCard variant="compact" label="Messages Received (30d)" value={formatCount(data.messages_received_30d)} icon={Inbox} tone="purple" />
+              <StatCard variant="compact" label="AI Calls (30d)" value={formatCount(data.ai_calls_30d)} icon={Sparkles} tone="blue" hint={`${formatCount(data.calls_30d)} voice calls`} />
+              <StatCard variant="compact" label="Total Campaigns" value={formatCount(data.total_campaigns)} icon={Megaphone} tone="orange" />
+              <StatCard
+                variant="compact"
+                label="Active Plans"
+                value={formatCount(data.active_plans)}
+                icon={Layers}
+                tone="blue"
+                to="/super-admin/plans"
+              />
+              <StatCard
+                variant="compact"
+                label="Expiring Soon (7d)"
+                value={formatCount(data.expiring_soon)}
+                icon={CalendarX}
+                tone={data.expiring_soon > 0 ? 'amber' : 'slate'}
+                hint={next ? `Next: ${next.name} · ${formatDate(next.renewal_date)}` : 'No upcoming renewals'}
+              />
+            </StatGrid>
+          </section>
+
+          {/* 3. Shortcuts */}
+          <section className="space-y-3">
+            <SectionTitle icon={LayoutGrid} title="Shortcuts" tone="teal" />
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-3">
+              <QuickLinkTile
+                label="Payments"
+                meta={pendingCount > 0 ? `${formatCount(pendingCount)} to approve` : 'All clear'}
+                to="/super-admin/payments"
+                icon={IndianRupee}
+                tone={pendingCount > 0 ? 'amber' : 'green'}
+              />
+              <QuickLinkTile label="Subscriptions" meta="Manage" to="/super-admin/subscriptions" icon={CreditCard} tone="purple" />
+              <QuickLinkTile label="Clients" meta={formatCount(data.total_vendors)} to="/super-admin/clients" icon={Building2} tone="blue" />
+              <QuickLinkTile
+                label="Support Tickets"
+                meta={data.tickets_new > 0 ? `${data.tickets_new} open` : 'All clear'}
+                to="/super-admin/tickets"
+                icon={LifeBuoy}
+                tone={data.tickets_new > 0 ? 'red' : 'green'}
+              />
+              <QuickLinkTile label="Configuration" meta="Config" to="/super-admin/settings" icon={Settings} tone="slate" />
+              <QuickLinkTile label="Pages" meta="CMS" to="/super-admin/pages" icon={FileText} tone="teal" />
+              <QuickLinkTile label="AI Call Setup" meta="Calls" to="/super-admin/ai-call-setup" icon={PhoneCall} tone="orange" />
+              <QuickLinkTile label="WhatsApp Numbers" meta={formatCount(data.connected_numbers)} to="/super-admin/clients" icon={Smartphone} tone="green" />
+            </div>
+          </section>
+
+          {/* 4. Action Needed */}
           <section className="space-y-3">
             <SectionTitle
               icon={AlertTriangle}
@@ -359,19 +415,7 @@ export const SuperAdminDashboardView: React.FC = () => {
             </div>
           </section>
 
-          {/* 3. Charts */}
-          <section className="space-y-3">
-            <SectionTitle icon={BarChart3} title="Trends" tone="blue" />
-            {chartsError ? null : !charts ? (
-              <LoadingBlock />
-            ) : (
-              <div className={cn('transition-opacity', chartsLoading && 'opacity-60')}>
-                <PlatformCharts data={charts} money={money} />
-              </div>
-            )}
-          </section>
-
-          {/* 4. Recent activity */}
+          {/* 5. Recent activity */}
           <section className="space-y-3">
             <SectionTitle icon={Receipt} title="Recent Activity" tone="green" />
             <div className="grid gap-4 lg:grid-cols-2">
@@ -425,63 +469,7 @@ export const SuperAdminDashboardView: React.FC = () => {
             </div>
           </section>
 
-          {/* 5. Today + usage (from the overview endpoint) */}
-          <section className="space-y-3">
-            <SectionTitle icon={Sun} title="Today & Last 30 Days" tone="amber" />
-            <StatGrid>
-              <StatCard variant="compact" label="New Signups Today" value={formatCount(data.new_signups_today)} icon={UserPlus} tone="blue" to="/super-admin/clients" />
-              <StatCard variant="compact" label="Messages Today" value={formatCount(data.messages_today)} icon={MessageSquare} tone="purple" />
-              <StatCard variant="compact" label="Messages Sent (30d)" value={formatCount(data.messages_sent_30d)} icon={Send} tone="green" />
-              <StatCard variant="compact" label="Messages Received (30d)" value={formatCount(data.messages_received_30d)} icon={Inbox} tone="purple" />
-              <StatCard variant="compact" label="AI Calls (30d)" value={formatCount(data.ai_calls_30d)} icon={Sparkles} tone="blue" hint={`${formatCount(data.calls_30d)} voice calls`} />
-              <StatCard variant="compact" label="Total Campaigns" value={formatCount(data.total_campaigns)} icon={Megaphone} tone="orange" />
-              <StatCard
-                variant="compact"
-                label="Active Plans"
-                value={formatCount(data.active_plans)}
-                icon={Layers}
-                tone="blue"
-                to="/super-admin/plans"
-              />
-              <StatCard
-                variant="compact"
-                label="Expiring Soon (7d)"
-                value={formatCount(data.expiring_soon)}
-                icon={CalendarX}
-                tone={data.expiring_soon > 0 ? 'amber' : 'slate'}
-                hint={next ? `Next: ${next.name} · ${formatDate(next.renewal_date)}` : 'No upcoming renewals'}
-              />
-            </StatGrid>
-          </section>
-
-          {/* 6. Shortcuts */}
-          <section className="space-y-3">
-            <SectionTitle icon={LayoutGrid} title="Shortcuts" tone="teal" />
-            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-3">
-              <QuickLinkTile
-                label="Payments"
-                meta={pendingCount > 0 ? `${formatCount(pendingCount)} to approve` : 'All clear'}
-                to="/super-admin/payments"
-                icon={IndianRupee}
-                tone={pendingCount > 0 ? 'amber' : 'green'}
-              />
-              <QuickLinkTile label="Subscriptions" meta="Manage" to="/super-admin/subscriptions" icon={CreditCard} tone="purple" />
-              <QuickLinkTile label="Clients" meta={formatCount(data.total_vendors)} to="/super-admin/clients" icon={Building2} tone="blue" />
-              <QuickLinkTile
-                label="Support Tickets"
-                meta={data.tickets_new > 0 ? `${data.tickets_new} open` : 'All clear'}
-                to="/super-admin/tickets"
-                icon={LifeBuoy}
-                tone={data.tickets_new > 0 ? 'red' : 'green'}
-              />
-              <QuickLinkTile label="Configuration" meta="Config" to="/super-admin/settings" icon={Settings} tone="slate" />
-              <QuickLinkTile label="Pages" meta="CMS" to="/super-admin/pages" icon={FileText} tone="teal" />
-              <QuickLinkTile label="AI Call Setup" meta="Calls" to="/super-admin/ai-call-setup" icon={PhoneCall} tone="orange" />
-              <QuickLinkTile label="WhatsApp Numbers" meta={formatCount(data.connected_numbers)} to="/super-admin/clients" icon={Smartphone} tone="green" />
-            </div>
-          </section>
-
-          {/* 7. Renewals & plans */}
+          {/* 6. Renewals & plans */}
           <section className="space-y-3">
             <SectionTitle icon={CalendarClock} title="Renewals & Plans" tone="blue" />
             <div className="grid gap-4 lg:grid-cols-2">
@@ -530,6 +518,18 @@ export const SuperAdminDashboardView: React.FC = () => {
               </Panel>
             </div>
           </section>
+          {/* 7. Graphs and charts, at the bottom */}
+          <section className="space-y-3">
+            <SectionTitle icon={BarChart3} title={`Graphs & Charts · ${periodLabel}`} tone="blue" />
+            {chartsError ? null : !charts ? (
+              <LoadingBlock />
+            ) : (
+              <div className={cn('transition-opacity', chartsLoading && 'opacity-60')}>
+                <PlatformCharts data={charts} money={money} />
+              </div>
+            )}
+          </section>
+
         </div>
       )}
     </div>

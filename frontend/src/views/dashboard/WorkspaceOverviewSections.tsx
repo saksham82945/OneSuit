@@ -30,6 +30,7 @@ import {
   Users,
   UsersRound,
   type LucideIcon,
+  Zap,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { dashboardService, planStatusLabel, type DashboardOverview } from '@/services/dashboard';
@@ -322,6 +323,17 @@ export const WorkspaceOverviewSections: React.FC = () => {
         </section>
       )}
 
+      {quickLinks.length > 0 && (
+        <section className="space-y-3">
+          <SectionTitle icon={Zap} title="Shortcuts" tone="teal" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {quickLinks.map((q) => (
+              <QuickLinkTile key={q.to + q.label} {...q} />
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="space-y-3">
         <SectionTitle
           icon={AlertTriangle}
@@ -419,13 +431,6 @@ export const WorkspaceOverviewSections: React.FC = () => {
           )}
         </div>
 
-        {quickLinks.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {quickLinks.map((q) => (
-              <QuickLinkTile key={q.to + q.label} {...q} />
-            ))}
-          </div>
-        )}
       </section>
     </div>
   );
