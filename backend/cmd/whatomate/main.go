@@ -128,6 +128,10 @@ func runServer(args []string) {
 		lo.Warn("JWT secret is empty, using a random secret (tokens will not persist across restarts)")
 	}
 
+	if cfg.App.Environment == "production" && cfg.App.EncryptionKey == "" {
+		lo.Warn("app.encryption_key is empty in production: payment, Meta and SSO secrets are stored as plain text. Set WHATOMATE_APP__ENCRYPTION_KEY.")
+	}
+
 	// Warn if debug mode is on in production
 	if cfg.App.Environment == "production" && cfg.App.Debug {
 		lo.Warn("Debug mode is enabled in production! This may expose sensitive information.")
@@ -290,7 +294,7 @@ func runServer(args []string) {
 
 	// Create server with CORS wrapper
 	server := &fasthttp.Server{
-		Handler:            corsWrapper(g.Handler(), allowedOrigins),
+		Handler:            middleware.RecoverHandler(lo, corsWrapper(g.Handler(), allowedOrigins)), // a handler panic must not take the server down
 		ReadTimeout:        time.Duration(cfg.Server.ReadTimeout) * time.Second,
 		WriteTimeout:       time.Duration(cfg.Server.WriteTimeout) * time.Second,
 		MaxRequestBodySize: 15 * 1024 * 1024,
@@ -1027,6 +1031,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/support-tickets/{id}", app.GetSupportTicket)
 	g.POST("/api/support-tickets", app.CreateSupportTicket)
 	g.POST("/api/support-tickets/{id}/reply", app.AddSupportTicketReply)
+	g.PUT("/api/support-tickets/{id}", app.UpdateMySupportTicket)
 	g.POST("/api/support-tickets/upload", app.UploadTicketImage)
 	g.GET("/api/support-tickets/media/{filename}", app.ServeTicketMedia)
 

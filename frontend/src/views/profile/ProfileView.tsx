@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { User, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { passwordIsValid, PASSWORD_RULES_MESSAGE } from '@/lib/passwordRules';
 
 export const ProfileView: React.FC = () => {
   const { t } = useTranslation();
@@ -45,8 +46,8 @@ export const ProfileView: React.FC = () => {
       toast.error(t('profile.passwordMismatch') || 'New passwords do not match');
       return;
     }
-    if (newPassword.length < 6) {
-      toast.error(t('profile.passwordTooShort') || 'Password must be at least 6 characters');
+    if (!passwordIsValid(newPassword)) {
+      toast.error(PASSWORD_RULES_MESSAGE);
       return;
     }
 

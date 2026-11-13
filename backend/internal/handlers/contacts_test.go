@@ -778,6 +778,44 @@ func TestApp_GetMessages(t *testing.T) {
 		assert.False(t, resp.Data.HasMore)
 	})
 
+	t.Run("page past the start returns no messages", func(t *testing.T) {
+		t.Parallel()
+		app := newTestApp(t)
+		org := testutil.CreateTestOrganization(t, app.DB)
+		adminRole := testutil.CreateAdminRole(t, app.DB, org.ID)
+		user := testutil.CreateTestUser(t, app.DB, org.ID, testutil.WithRoleID(&adminRole.ID))
+		account := testutil.CreateTestWhatsAppAccount(t, app.DB, org.ID)
+		contact := testutil.CreateTestContactWith(t, app.DB, org.ID, testutil.WithContactAccount(account.Name))
+		for i := 0; i < 3; i++ {
+			require.NoError(t, app.DB.Create(&models.Message{
+				BaseModel:       models.BaseModel{ID: uuid.New()},
+				OrganizationID:  org.ID,
+				WhatsAppAccount: account.Name,
+				ContactID:       contact.ID,
+				Direction:       models.DirectionIncoming,
+				MessageType:     models.MessageTypeText,
+				Content:         "m",
+				Status:          models.MessageStatusDelivered,
+			}).Error)
+		}
+
+		req := testutil.NewGETRequest(t)
+		testutil.SetAuthContext(req, org.ID, user.ID)
+		testutil.SetPathParam(req, "id", contact.ID.String())
+		testutil.SetQueryParam(req, "limit", 2)
+		testutil.SetQueryParam(req, "page", 5)
+
+		require.NoError(t, app.GetMessages(req))
+		assert.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req))
+		var resp struct {
+			Data struct {
+				Messages []handlers.MessageResponse `json:"messages"`
+			} `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(testutil.GetResponseBody(req), &resp))
+		assert.Empty(t, resp.Data.Messages, "a page past the start must not return the whole conversation")
+	})
+
 	t.Run("empty messages", func(t *testing.T) {
 		t.Parallel()
 		app := newTestApp(t)

@@ -1414,3 +1414,151 @@ func TestRunChatGraph_Prompt_NoRegexAcceptsAnything(t *testing.T) {
 	assert.Equal(t, models.SessionStatusCompleted, session.Status)
 	assert.Equal(t, "literally anything", session.SessionData["email"])
 }
+
+// TestRunChatGraph_GotoFlow_WorkspaceWideTarget: flows saved from the
+// builder have no WhatsApp account. goto_flow used to refuse them because
+// "" != the session's account, so jumps never worked in production.
+func TestRunChatGraph_GotoFlow_WorkspaceWideTarget(t *testing.T) {
+	app, org, account, contact, session := newGraphTestFixtures(t)
+	target := newGotoTargetFlow(t, app, org, account, "org-wide-target", "From target")
+	require.NoError(t, app.DB.Model(target).Update("whats_app_account", "").Error)
+
+	source := &models.ChatbotFlow{
+		BaseModel:      models.BaseModel{ID: uuid.New()},
+		OrganizationID: org.ID,
+		Name:           "org-wide-source",
+		IsEnabled:      true,
+		Graph: models.JSONB{
+			"version":    2,
+			"entry_node": "g1",
+			"nodes": []any{
+				map[string]any{"id": "g1", "type": "goto_flow", "label": "jump", "config": map[string]any{"flow_id": target.ID.String()}},
+			},
+			"edges": []any{},
+		},
+	}
+	require.NoError(t, app.DB.Create(source).Error)
+
+	require.NoError(t, app.runChatGraph(account, contact, session, source, "start", "", nil))
+	require.NoError(t, app.DB.First(session, session.ID).Error)
+	require.NotNil(t, session.CurrentFlowID)
+	assert.Equal(t, target.ID, *session.CurrentFlowID, "jump to a workspace-wide flow must work")
+}
+
+// TestRunChatGraph_GotoFlow_OtherAccountRefused keeps refusing a target
+// pinned to a different WhatsApp account.
+func TestRunChatGraph_GotoFlow_OtherAccountRefused(t *testing.T) {
+	app, org, account, contact, session := newGraphTestFixtures(t)
+	target := newGotoTargetFlow(t, app, org, account, "other-account-target", "x")
+	require.NoError(t, app.DB.Model(target).Update("whats_app_account", "some-other-account").Error)
+
+	source := &models.ChatbotFlow{
+		BaseModel:      models.BaseModel{ID: uuid.New()},
+		OrganizationID: org.ID,
+		Name:           "other-account-source",
+		IsEnabled:      true,
+		Graph: models.JSONB{
+			"version":    2,
+			"entry_node": "g1",
+			"nodes": []any{
+				map[string]any{"id": "g1", "type": "goto_flow", "label": "jump", "config": map[string]any{"flow_id": target.ID.String()}},
+			},
+			"edges": []any{},
+		},
+	}
+	require.NoError(t, app.DB.Create(source).Error)
+
+	require.NoError(t, app.runChatGraph(account, contact, session, source, "start", "", nil))
+	require.NoError(t, app.DB.First(session, session.ID).Error)
+	if session.CurrentFlowID != nil {
+		assert.NotEqual(t, target.ID, *session.CurrentFlowID)
+	}
+	assert.Equal(t, models.SessionStatusCompleted, session.Status)
+}
+
+// TestRunChatGraph_RunawayCycleEndsSession: a message→message cycle hits
+// the iteration cap. The session must end, otherwise every later inbound
+// resumed the cycle and sent another burst of messages.
+func TestRunChatGraph_RunawayCycleEndsSession(t *testing.T) {
+	app, org, account, contact, session := newGraphTestFixtures(t)
+	flow := &models.ChatbotFlow{
+		BaseModel:      models.BaseModel{ID: uuid.New()},
+		OrganizationID: org.ID,
+		Name:           "cycle",
+		IsEnabled:      true,
+		Graph: models.JSONB{
+			"version":    2,
+			"entry_node": "s1",
+			"nodes": []any{
+				map[string]any{"id": "s1", "type": "set_variable", "config": map[string]any{"set": map[string]any{"x": "1"}}},
+				map[string]any{"id": "s2", "type": "set_variable", "config": map[string]any{"set": map[string]any{"y": "2"}}},
+			},
+			"edges": []any{
+				map[string]any{"from": "s1", "to": "s2", "condition": "default"},
+				map[string]any{"from": "s2", "to": "s1", "condition": "default"},
+			},
+		},
+	}
+	require.NoError(t, app.DB.Create(flow).Error)
+
+	err := app.runChatGraph(account, contact, session, flow, "start", "", nil)
+	require.ErrorIs(t, err, errChatGraphRunaway)
+	require.NoError(t, app.DB.First(session, session.ID).Error)
+	assert.Equal(t, models.SessionStatusCompleted, session.Status)
+
+	// The audit trail is capped instead of growing with every step.
+	path, _ := session.SessionData["__path__"].([]any)
+	assert.LessOrEqual(t, len(path), maxChatPathEntries)
+}
+
+// TestRunChatGraph_MissingResumeNodeEndsSession: the step a contact was
+// parked on was deleted from the flow. The session used to stay active and
+// every inbound errored with no reply until the session timed out.
+func TestRunChatGraph_MissingResumeNodeEndsSession(t *testing.T) {
+	app, org, account, contact, session := newGraphTestFixtures(t)
+	flow := newGotoTargetFlow(t, app, org, account, "missing-node", "hi")
+	session.CurrentFlowID = &flow.ID
+	session.CurrentStep = "deleted_node"
+	require.NoError(t, app.DB.Save(session).Error)
+
+	err := app.runChatGraph(account, contact, session, flow, "hello", "", nil)
+	require.Error(t, err)
+	require.NoError(t, app.DB.First(session, session.ID).Error)
+	assert.Equal(t, models.SessionStatusCompleted, session.Status)
+}
+
+// TestRunChatGraph_UnknownNodeTypeEndsSession: same for a node type the
+// runner can't execute.
+func TestRunChatGraph_UnknownNodeTypeEndsSession(t *testing.T) {
+	app, org, account, contact, session := newGraphTestFixtures(t)
+	flow := &models.ChatbotFlow{
+		BaseModel:      models.BaseModel{ID: uuid.New()},
+		OrganizationID: org.ID,
+		Name:           "unknown-type",
+		IsEnabled:      true,
+		Graph: models.JSONB{
+			"version":    2,
+			"entry_node": "x1",
+			"nodes": []any{
+				map[string]any{"id": "x1", "type": "teleport", "config": map[string]any{}},
+			},
+			"edges": []any{},
+		},
+	}
+	require.NoError(t, app.DB.Create(flow).Error)
+
+	err := app.runChatGraph(account, contact, session, flow, "start", "", nil)
+	require.ErrorIs(t, err, errChatNodeUnsupported)
+	require.NoError(t, app.DB.First(session, session.ID).Error)
+	assert.Equal(t, models.SessionStatusCompleted, session.Status)
+}
+
+func TestAppendChatPath_Capped(t *testing.T) {
+	s := &models.ChatbotSession{SessionData: models.JSONB{}}
+	node := &ChatNode{ID: "n", Type: ChatNodeMessage}
+	for range maxChatPathEntries + 50 {
+		appendChatPath(s, node, "default")
+	}
+	path, _ := s.SessionData["__path__"].([]any)
+	assert.Len(t, path, maxChatPathEntries)
+}

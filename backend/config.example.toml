@@ -26,9 +26,10 @@ user = "whatomate"
 password = "whatomate"
 name = "whatomate"
 ssl_mode = "disable"
-max_open_conns = 25
-max_idle_conns = 5
-conn_max_lifetime = 300
+max_open_conns = 25      # keep (instances x max_open_conns) under the Postgres connection limit (~97 on Render's small plans)
+max_idle_conns = 10
+conn_max_lifetime = 300  # seconds
+conn_max_idle_time = 120 # seconds; idle connections are closed after this
 
 [redis]
 host = "redis"  # Use "localhost" for local development
@@ -37,6 +38,8 @@ username = ""  # Redis ACL username (Redis 6+). Leave empty to use the default u
 password = ""
 db = 0
 tls = false    # Set to true for TLS connections (e.g. Upstash, Redis Cloud)
+pool_size = 20     # max connections per process (go-redis default is 10 per CPU)
+min_idle_conns = 2
 
 [jwt]
 secret = "your-super-secret-jwt-key-change-in-production"  # Must be 32+ chars in production

@@ -145,6 +145,10 @@ func (a *App) getKeywordRulesCached(orgID uuid.UUID, whatsAppAccount string) ([]
 	// Cache miss - fetch from database (account-specific + global)
 	var rules []models.KeywordRule
 
+	// A failed read must not be cached: it would hide every rule for the
+	// whole cache TTL. dbFailed skips the cache write below.
+	dbFailed := false
+
 	// Get account-specific rules
 	var accountRules []models.KeywordRule
 	if err := a.DB.Where("organization_id = ? AND whats_app_account = ? AND is_enabled = true",
@@ -152,6 +156,7 @@ func (a *App) getKeywordRulesCached(orgID uuid.UUID, whatsAppAccount string) ([]
 		Order("priority DESC").
 		Find(&accountRules).Error; err != nil {
 		a.Log.Error("Failed to fetch account keyword rules", "error", err, "org_id", orgID)
+		dbFailed = true
 	}
 
 	// Get global rules (whats_app_account = '')
@@ -161,12 +166,16 @@ func (a *App) getKeywordRulesCached(orgID uuid.UUID, whatsAppAccount string) ([]
 		Order("priority DESC").
 		Find(&globalRules).Error; err != nil {
 		a.Log.Error("Failed to fetch global keyword rules", "error", err, "org_id", orgID)
+		dbFailed = true
 	}
 
 	// Merge: account-specific first, then global
 	rules = append(accountRules, globalRules...)
 
 	// Cache the result
+	if dbFailed {
+		return rules, nil
+	}
 	if data, err := json.Marshal(rules); err == nil {
 		a.Redis.Set(ctx, cacheKey, data, keywordRulesCacheTTL)
 	}
@@ -349,6 +358,9 @@ func (a *App) getAIContextsCached(orgID uuid.UUID, whatsAppAccount string) ([]mo
 	// Cache miss - fetch from database (account-specific + global)
 	var contexts []models.AIContext
 
+	// As with keyword rules, a failed read is not cached.
+	dbFailed := false
+
 	// Get account-specific contexts
 	var accountContexts []models.AIContext
 	if err := a.DB.Where("organization_id = ? AND whats_app_account = ? AND is_enabled = true",
@@ -356,6 +368,7 @@ func (a *App) getAIContextsCached(orgID uuid.UUID, whatsAppAccount string) ([]mo
 		Order("priority DESC").
 		Find(&accountContexts).Error; err != nil {
 		a.Log.Error("Failed to fetch account AI contexts", "error", err, "org_id", orgID)
+		dbFailed = true
 	}
 
 	// Get global contexts (whats_app_account = '')
@@ -365,12 +378,16 @@ func (a *App) getAIContextsCached(orgID uuid.UUID, whatsAppAccount string) ([]mo
 		Order("priority DESC").
 		Find(&globalContexts).Error; err != nil {
 		a.Log.Error("Failed to fetch global AI contexts", "error", err, "org_id", orgID)
+		dbFailed = true
 	}
 
 	// Merge: account-specific first, then global
 	contexts = append(accountContexts, globalContexts...)
 
 	// Cache the result
+	if dbFailed {
+		return contexts, nil
+	}
 	if data, err := json.Marshal(contexts); err == nil {
 		a.Redis.Set(ctx, cacheKey, data, aiContextsCacheTTL)
 	}

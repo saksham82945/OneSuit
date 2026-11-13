@@ -84,7 +84,7 @@ func TestGetTeamConfig_LoadsFromDBAndCaches(t *testing.T) {
 	// Subsequent call must come from cache; verify the cache key is populated.
 	rdb := testutil.SetupTestRedis(t)
 	require.NotNil(t, rdb)
-	cached, err := rdb.Get(context.Background(), "team:assignment:"+team.ID.String()).Result()
+	cached, err := rdb.Get(context.Background(), "team:assignment:v2:"+team.ID.String()).Result()
 	require.NoError(t, err)
 	var roundtrip assignment.TeamConfig
 	require.NoError(t, json.Unmarshal([]byte(cached), &roundtrip))
@@ -132,7 +132,7 @@ func TestInvalidateTeamCache_RemovesCachedConfig(t *testing.T) {
 	a.InvalidateTeamCache(team.ID)
 
 	rdb := testutil.SetupTestRedis(t)
-	exists, err := rdb.Exists(context.Background(), "team:assignment:"+team.ID.String()).Result()
+	exists, err := rdb.Exists(context.Background(), "team:assignment:v2:"+team.ID.String()).Result()
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), exists)
 }
@@ -463,4 +463,16 @@ func TestCallLoadCounter_OnlyWaitingAndConnected(t *testing.T) {
 
 	loads := assignment.CallLoadCounter(db, org.ID, []uuid.UUID{agent.ID})
 	assert.Equal(t, int64(2), loads[agent.ID], "only waiting + connected should be counted")
+}
+
+// A team id from another organization (imported bot, hand-edited flow)
+// must never hand a chat to that organization's agents.
+func TestAssignToTeam_RefusesTeamOfAnotherOrganization(t *testing.T) {
+	a, db := newAssigner(t)
+	org := testutil.CreateTestOrganization(t, db)
+	other := testutil.CreateTestOrganization(t, db)
+	team, _ := createTeam(t, db, other.ID, models.AssignmentStrategyRoundRobin, 2, 0)
+
+	assert.Nil(t, a.AssignToTeam(team.ID, org.ID, nil, assignment.ChatLoadCounter))
+	assert.NotNil(t, a.AssignToTeam(team.ID, other.ID, nil, assignment.ChatLoadCounter))
 }

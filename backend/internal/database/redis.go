@@ -27,6 +27,15 @@ func NewRedis(cfg *config.RedisConfig) (*redis.Client, error) {
 		opts = parsed
 	}
 
+	// Pool limits from config, unless the URL already set them
+	// (e.g. redis://host/0?pool_size=10).
+	if opts.PoolSize == 0 && cfg.PoolSize > 0 {
+		opts.PoolSize = cfg.PoolSize
+	}
+	if opts.MinIdleConns == 0 && cfg.MinIdleConns > 0 {
+		opts.MinIdleConns = cfg.MinIdleConns
+	}
+
 	if cfg.TLS && opts.TLSConfig == nil {
 		opts.TLSConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,

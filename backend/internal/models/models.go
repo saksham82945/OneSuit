@@ -133,8 +133,10 @@ func (User) TableName() string {
 // UserOrganization represents a many-to-many relationship between users and organizations
 type UserOrganization struct {
 	BaseModel
-	UserID         uuid.UUID  `gorm:"type:uuid;uniqueIndex:idx_user_org;not null" json:"user_id"`
-	OrganizationID uuid.UUID  `gorm:"type:uuid;uniqueIndex:idx_user_org;not null" json:"organization_id"`
+	// Unique per live membership: idx_user_org_unique (user_id, organization_id)
+	// WHERE deleted_at IS NULL, created in database.getIndexes.
+	UserID         uuid.UUID  `gorm:"type:uuid;index;not null" json:"user_id"`
+	OrganizationID uuid.UUID  `gorm:"type:uuid;index;not null" json:"organization_id"`
 	RoleID         *uuid.UUID `gorm:"type:uuid;index" json:"role_id,omitempty"`
 	IsDefault      bool       `gorm:"default:false" json:"is_default"`
 

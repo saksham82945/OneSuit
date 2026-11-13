@@ -295,7 +295,7 @@ export const TagsView: React.FC = () => {
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder="Search tags..."
-                className="w-72"
+                className="w-full sm:w-72"
               />
             </div>
           </CardHeader>

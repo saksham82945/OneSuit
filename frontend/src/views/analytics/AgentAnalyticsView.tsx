@@ -91,7 +91,7 @@ export const AgentAnalyticsView: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="rounded-lg border border-white/[0.08] overflow-hidden light:border-gray-200">
+            <div className="rounded-lg border border-white/[0.08] overflow-x-auto light:border-gray-200">
               <table className="w-full text-xs text-left">
                 <thead className="bg-white/[0.02] border-b border-white/[0.08] text-white/50 light:bg-gray-50 light:border-gray-200 light:text-gray-500">
                   <tr>

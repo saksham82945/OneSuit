@@ -22,12 +22,15 @@ export type EmbeddedSignupResult = { status: 'connected' | 'pending_registration
 const errorMessage = (err: unknown, fallback: string) =>
   (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
 
-function loadFacebookSDK(appId: string, version: string): Promise<void> {
+export function loadFacebookSDK(appId: string, version: string): Promise<void> {
   return new Promise((resolve) => {
     if (window.FB) return resolve();
     if (document.getElementById('facebook-jssdk')) {
+      // Another load is in flight. Stop waiting after 15s so a blocked script
+      // doesn't leave an interval running forever; the caller reports "SDK not loaded".
+      const startedAt = Date.now();
       const wait = setInterval(() => {
-        if (window.FB) {
+        if (window.FB || Date.now() - startedAt > 15000) {
           clearInterval(wait);
           resolve();
         }

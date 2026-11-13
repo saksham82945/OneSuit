@@ -134,7 +134,10 @@ type DatabaseConfig struct {
 	SSLMode         string `koanf:"ssl_mode"`
 	MaxOpenConns    int    `koanf:"max_open_conns"`
 	MaxIdleConns    int    `koanf:"max_idle_conns"`
-	ConnMaxLifetime int    `koanf:"conn_max_lifetime"`
+	ConnMaxLifetime int    `koanf:"conn_max_lifetime"` // seconds
+	// ConnMaxIdleTime closes connections idle this long (seconds), so a quiet
+	// server gives its Postgres connections back.
+	ConnMaxIdleTime int `koanf:"conn_max_idle_time"`
 }
 
 type RedisConfig struct {
@@ -147,6 +150,10 @@ type RedisConfig struct {
 	Password string `koanf:"password"`
 	DB       int    `koanf:"db"`
 	TLS      bool   `koanf:"tls"`
+	// PoolSize caps open connections. go-redis otherwise uses 10 per CPU,
+	// which on a many-core host can exceed a small managed Redis's limit.
+	PoolSize     int `koanf:"pool_size"`
+	MinIdleConns int `koanf:"min_idle_conns"`
 }
 
 type JWTConfig struct {
@@ -308,13 +315,22 @@ func setDefaults(cfg *Config) {
 		cfg.Database.MaxOpenConns = 25
 	}
 	if cfg.Database.MaxIdleConns == 0 {
-		cfg.Database.MaxIdleConns = 5
+		cfg.Database.MaxIdleConns = 10
 	}
 	if cfg.Database.ConnMaxLifetime == 0 {
 		cfg.Database.ConnMaxLifetime = 300
 	}
+	if cfg.Database.ConnMaxIdleTime == 0 {
+		cfg.Database.ConnMaxIdleTime = 120
+	}
 	if cfg.Redis.Port == 0 {
 		cfg.Redis.Port = 6379
+	}
+	if cfg.Redis.PoolSize == 0 {
+		cfg.Redis.PoolSize = 20
+	}
+	if cfg.Redis.MinIdleConns == 0 {
+		cfg.Redis.MinIdleConns = 2
 	}
 	if cfg.JWT.AccessExpiryMins == 0 {
 		cfg.JWT.AccessExpiryMins = 15

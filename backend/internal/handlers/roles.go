@@ -61,9 +61,9 @@ type PermissionResponse struct {
 
 // ListRoles returns all roles for the organization
 func (a *App) ListRoles(r *fastglue.Request) error {
-	orgID, userID, err := a.getOrgAndUserID(r)
+	orgID, userID, err := a.requireAuth(r, models.ResourceRoles, models.ActionRead)
 	if err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
+		return nil
 	}
 
 	pg := parsePagination(r)
@@ -109,9 +109,9 @@ func (a *App) ListRoles(r *fastglue.Request) error {
 
 // GetRole returns a single role
 func (a *App) GetRole(r *fastglue.Request) error {
-	orgID, err := a.getOrgID(r)
+	orgID, _, err := a.requireAuth(r, models.ResourceRoles, models.ActionRead)
 	if err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
+		return nil
 	}
 
 	id, err := parsePathUUID(r, "id", "role")
@@ -138,9 +138,9 @@ func (a *App) GetRole(r *fastglue.Request) error {
 
 // CreateRole creates a new custom role
 func (a *App) CreateRole(r *fastglue.Request) error {
-	orgID, userID, err := a.getOrgAndUserID(r)
+	orgID, userID, err := a.requireAuth(r, models.ResourceRoles, models.ActionWrite)
 	if err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
+		return nil
 	}
 
 	var req RoleRequest
@@ -205,9 +205,9 @@ func (a *App) CreateRole(r *fastglue.Request) error {
 
 // UpdateRole updates a custom role
 func (a *App) UpdateRole(r *fastglue.Request) error {
-	orgID, userID, err := a.getOrgAndUserID(r)
+	orgID, userID, err := a.requireAuth(r, models.ResourceRoles, models.ActionWrite)
 	if err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
+		return nil
 	}
 
 	id, err := parsePathUUID(r, "id", "role")
@@ -338,9 +338,9 @@ func (a *App) UpdateRole(r *fastglue.Request) error {
 
 // DeleteRole deletes a custom role
 func (a *App) DeleteRole(r *fastglue.Request) error {
-	orgID, userID, err := a.getOrgAndUserID(r)
+	orgID, userID, err := a.requireAuth(r, models.ResourceRoles, models.ActionDelete)
 	if err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
+		return nil
 	}
 
 	id, err := parsePathUUID(r, "id", "role")

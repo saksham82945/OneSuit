@@ -75,6 +75,11 @@ func enforce(opts RateLimitOpts, r *fastglue.Request, key string) *fastglue.Requ
 	if count > int64(opts.Max) {
 		// Look up remaining TTL for Retry-After header.
 		ttl, err := opts.Redis.TTL(ctx, key).Result()
+		if err == nil && ttl == -1 {
+			// The window's expiry was never set (EXPIRE failed earlier); set it
+			// now so the caller isn't blocked forever.
+			_ = opts.Redis.Expire(ctx, key, opts.Window).Err()
+		}
 		if err != nil || ttl < 0 {
 			ttl = opts.Window
 		}

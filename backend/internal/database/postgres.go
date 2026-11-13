@@ -103,6 +103,9 @@ func NewPostgres(cfg *config.DatabaseConfig, debug bool) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 	sqlDB.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetime) * time.Second)
+	if cfg.ConnMaxIdleTime > 0 {
+		sqlDB.SetConnMaxIdleTime(time.Duration(cfg.ConnMaxIdleTime) * time.Second)
+	}
 
 	return db, nil
 }
@@ -370,7 +373,9 @@ func getIndexes() []string {
 		`CREATE INDEX IF NOT EXISTS idx_notification_rules_account ON notification_rules(whats_app_account, is_enabled)`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_account ON messages(whats_app_account, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_contacts_account ON contacts(whats_app_account)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_canned_responses_org_name ON canned_responses(organization_id, name)`,
+		// Canned response names: unique among live rows only (see custom roles).
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_canned_responses_org_name_live ON canned_responses(organization_id, name) WHERE deleted_at IS NULL`,
+		`DROP INDEX IF EXISTS idx_canned_responses_org_name`,
 		`CREATE INDEX IF NOT EXISTS idx_canned_responses_active ON canned_responses(organization_id, is_active, usage_count DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_webhooks_org_active ON webhooks(organization_id, is_active)`,
 		`CREATE INDEX IF NOT EXISTS idx_availability_logs_user_time ON user_availability_logs(user_id, started_at DESC)`,
@@ -382,13 +387,21 @@ func getIndexes() []string {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_team_members_unique ON team_members(team_id, user_id) WHERE deleted_at IS NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id)`,
 		// Custom roles indexes
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_roles_org_name ON custom_roles(organization_id, name)`,
+		// Role names are unique among live roles only: a deleted role's name can be
+		// used again. The partial index is built before the old one is dropped so
+		// the rule is never missing.
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_roles_org_name_live ON custom_roles(organization_id, name) WHERE deleted_at IS NULL`,
+		`DROP INDEX IF EXISTS idx_custom_roles_org_name`,
 		`CREATE INDEX IF NOT EXISTS idx_custom_roles_org_system ON custom_roles(organization_id, is_system)`,
 		`CREATE INDEX IF NOT EXISTS idx_custom_roles_org_default ON custom_roles(organization_id, is_default) WHERE is_default = true`,
 		// GIN index for JSONB tag filtering
 		`CREATE INDEX IF NOT EXISTS idx_contacts_tags ON contacts USING GIN (tags)`,
 		// User organizations
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_org_unique ON user_organizations(user_id, organization_id) WHERE deleted_at IS NULL`,
+		// The old full unique index also covered removed (soft-deleted) memberships,
+		// so a removed member could not be added back and the startup backfill
+		// failed. The partial index above is the real rule; drop the old one.
+		`DROP INDEX IF EXISTS idx_user_org`,
 		// Conversation notes
 		`CREATE INDEX IF NOT EXISTS idx_conversation_notes_contact ON conversation_notes(organization_id, contact_id, created_at DESC)`,
 		// Call logs
@@ -406,6 +419,58 @@ func getIndexes() []string {
 		// so the old global unique index is replaced by a partial one.
 		`DROP INDEX IF EXISTS idx_catalog_products_meta_product_id`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_products_meta_pid_unique ON catalog_products(meta_product_id) WHERE meta_product_id <> '' AND deleted_at IS NULL`,
+		// Hot paths. Each is plain CREATE INDEX IF NOT EXISTS: migrations run on
+		// every start, so these are no-ops once built.
+		// Live Chat inbox / contact list: organization_id = ? AND deleted_at IS NULL
+		// ORDER BY last_message_at DESC NULLS LAST, created_at DESC LIMIT n.
+		`CREATE INDEX IF NOT EXISTS idx_contacts_org_last_message ON contacts(organization_id, last_message_at DESC NULLS LAST, created_at DESC) WHERE deleted_at IS NULL`,
+		// Dashboards and charts: messages for one workspace in a date range.
+		`CREATE INDEX IF NOT EXISTS idx_messages_org_created ON messages(organization_id, created_at DESC)`,
+		// Campaign retry / stats recount: metadata->>'campaign_id' = ?.
+		`CREATE INDEX IF NOT EXISTS idx_messages_campaign_id ON messages((metadata->>'campaign_id')) WHERE (metadata->>'campaign_id') IS NOT NULL`,
+		// Campaign worker and recipient list: campaign_id = ? AND status = ?.
+		`CREATE INDEX IF NOT EXISTS idx_bulk_recipients_campaign_status ON bulk_message_recipients(campaign_id, status)`,
+		// Chatbot: the contact's active session, latest activity first.
+		`CREATE INDEX IF NOT EXISTS idx_chatbot_sessions_contact_status ON chatbot_sessions(contact_id, status, last_activity_at DESC)`,
+		// Dashboard chatbot charts: sessions for one workspace in a date range.
+		`CREATE INDEX IF NOT EXISTS idx_chatbot_sessions_org_created ON chatbot_sessions(organization_id, created_at)`,
+		// Audit logs: per workspace newest first, and platform-wide newest first.
+		`CREATE INDEX IF NOT EXISTS idx_audit_logs_org_created ON audit_logs(organization_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC)`,
+		// Payments: a workspace's payments newest first; super admin list newest first.
+		`CREATE INDEX IF NOT EXISTS idx_payments_org_created ON payments(organization_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_payments_created ON payments(created_at DESC)`,
+		// Scheduled sends and scheduled campaigns, polled every minute:
+		// status = 'scheduled' AND scheduled_at <= now().
+		`CREATE INDEX IF NOT EXISTS idx_scheduled_messages_status_due ON scheduled_messages(status, scheduled_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_bulk_campaigns_status_scheduled ON bulk_message_campaigns(status, scheduled_at)`,
+		// Chatbot AI replies: a session's recent history.
+		`CREATE INDEX IF NOT EXISTS idx_chatbot_session_messages_session_created ON chatbot_session_messages(session_id, created_at DESC)`,
+		// WhatsApp Flow node / send: organization_id = ? AND meta_flow_id = ?.
+		`CREATE INDEX IF NOT EXISTS idx_whatsapp_flows_org_meta_flow ON whatsapp_flows(organization_id, meta_flow_id)`,
+		// One live message per WhatsApp message ID: the database backstop for
+		// webhook retries racing each other. Built only when existing rows have
+		// no duplicates; otherwise it is skipped (the plain index on
+		// whats_app_message_id still serves lookups) and retried on next start.
+		`DO $$
+BEGIN
+	IF to_regclass('idx_messages_wamid_unique') IS NULL THEN
+		IF EXISTS (
+			SELECT 1 FROM messages
+			WHERE whats_app_message_id <> '' AND deleted_at IS NULL
+			GROUP BY whats_app_message_id HAVING COUNT(*) > 1
+		) THEN
+			RAISE NOTICE 'idx_messages_wamid_unique skipped: duplicate whats_app_message_id rows exist';
+		ELSE
+			BEGIN
+				CREATE UNIQUE INDEX idx_messages_wamid_unique ON messages(whats_app_message_id)
+					WHERE whats_app_message_id <> '' AND deleted_at IS NULL;
+			EXCEPTION WHEN unique_violation THEN
+				RAISE NOTICE 'idx_messages_wamid_unique skipped: duplicate inserted meanwhile';
+			END;
+		END IF;
+	END IF;
+END $$`,
 	}
 }
 
@@ -504,15 +569,16 @@ func createDefaultAdmin(db *gorm.DB, cfg *config.DefaultAdminConfig, superAdmin 
 }
 
 // MigrateUserOrganizations backfills user_organizations from existing users
-// A user may still have a removed (soft-deleted) membership row for their
-// home workspace; the unique index covers removed rows too, so those are
-// skipped rather than stopping the server from starting.
+// Only users with no membership row at all for their home workspace are
+// backfilled: a removed (soft-deleted) membership means the user was taken
+// out of that workspace, and re-adding it on every start would undo that.
+// ON CONFLICT DO NOTHING keeps a start from failing on any leftover clash.
 func MigrateUserOrganizations(db *gorm.DB) error {
 	return db.Exec(`
 		INSERT INTO user_organizations (id, user_id, organization_id, role_id, is_default, created_at, updated_at)
 		SELECT gen_random_uuid(), u.id, u.organization_id, u.role_id, true, NOW(), NOW()
 		FROM users u
-		LEFT JOIN user_organizations uo ON uo.user_id = u.id AND uo.organization_id = u.organization_id AND uo.deleted_at IS NULL
+		LEFT JOIN user_organizations uo ON uo.user_id = u.id AND uo.organization_id = u.organization_id
 		WHERE uo.id IS NULL AND u.deleted_at IS NULL
 		ON CONFLICT DO NOTHING
 	`).Error

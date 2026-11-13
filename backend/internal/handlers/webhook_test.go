@@ -705,3 +705,143 @@ func TestWebhookHandler_smb_app_state_sync(t *testing.T) {
 	assert.Error(t, err, "contact should have been soft-deleted and not found by standard query")
 	assert.True(t, checkUnscoped.DeletedAt.Valid, "DeletedAt should be populated")
 }
+
+// A status re-delivered by Meta (or two goroutines racing on the same
+// status) must only be counted once in campaign stats.
+func TestUpdateMessageStatus_DuplicateDeliveredCountedOnce(t *testing.T) {
+	app := webhookTestApp(t)
+	_, msg, campaign, _ := webhookTestData(t, app, models.MessageStatusSent)
+
+	app.updateMessageStatus(msg.WhatsAppMessageID, "delivered", nil)
+	app.updateMessageStatus(msg.WhatsAppMessageID, "delivered", nil)
+
+	var updatedCampaign models.BulkMessageCampaign
+	require.NoError(t, app.DB.First(&updatedCampaign, campaign.ID).Error)
+	assert.Equal(t, 1, updatedCampaign.DeliveredCount)
+}
+
+// "failed" sent twice must only bump failed_count once.
+func TestUpdateMessageStatus_DuplicateFailedCountedOnce(t *testing.T) {
+	app := webhookTestApp(t)
+	_, msg, campaign, _ := webhookTestData(t, app, models.MessageStatusSent)
+
+	app.updateMessageStatus(msg.WhatsAppMessageID, "failed", nil)
+	app.updateMessageStatus(msg.WhatsAppMessageID, "failed", nil)
+
+	var updatedCampaign models.BulkMessageCampaign
+	require.NoError(t, app.DB.First(&updatedCampaign, campaign.ID).Error)
+	assert.Equal(t, 1, updatedCampaign.FailedCount)
+}
+
+// When "read" wins the race against "delivered" (they arrive in one payload
+// and run in separate goroutines) the delivery must still be counted.
+func TestUpdateMessageStatus_ReadBeforeDeliveredCountsDelivery(t *testing.T) {
+	app := webhookTestApp(t)
+	_, msg, campaign, recipient := webhookTestData(t, app, models.MessageStatusSent)
+
+	app.updateMessageStatus(msg.WhatsAppMessageID, "read", nil)
+	app.updateMessageStatus(msg.WhatsAppMessageID, "delivered", nil)
+
+	var updatedCampaign models.BulkMessageCampaign
+	require.NoError(t, app.DB.First(&updatedCampaign, campaign.ID).Error)
+	assert.Equal(t, 1, updatedCampaign.DeliveredCount)
+	assert.Equal(t, 1, updatedCampaign.ReadCount)
+
+	var updatedMsg models.Message
+	require.NoError(t, app.DB.First(&updatedMsg, msg.ID).Error)
+	assert.Equal(t, models.MessageStatusRead, updatedMsg.Status)
+	var updatedRecipient models.BulkMessageRecipient
+	require.NoError(t, app.DB.First(&updatedRecipient, recipient.ID).Error)
+	assert.Equal(t, models.MessageStatusRead, updatedRecipient.Status)
+}
+
+// A status that arrives before the message row has its wamid is applied once
+// the row appears instead of being dropped.
+func TestProcessStatusUpdate_RetriesUntilMessageExists(t *testing.T) {
+	app := webhookTestApp(t)
+	oldAttempts, oldDelay := statusLookupAttempts, statusLookupDelay
+	statusLookupAttempts, statusLookupDelay = 5, 50*time.Millisecond
+	defer func() { statusLookupAttempts, statusLookupDelay = oldAttempts, oldDelay }()
+
+	_, msg, _, _ := webhookTestData(t, app, models.MessageStatusPending)
+	realWamid := msg.WhatsAppMessageID
+	require.NoError(t, app.DB.Model(&models.Message{}).Where("id = ?", msg.ID).Update("whats_app_message_id", "").Error)
+
+	go func() {
+		time.Sleep(120 * time.Millisecond)
+		app.DB.Model(&models.Message{}).Where("id = ?", msg.ID).Update("whats_app_message_id", realWamid)
+	}()
+	app.processStatusUpdate("phone-x", WebhookStatus{ID: realWamid, Status: "delivered"})
+
+	var updated models.Message
+	require.NoError(t, app.DB.First(&updated, msg.ID).Error)
+	assert.Equal(t, models.MessageStatusDelivered, updated.Status)
+}
+
+// Template status events carry no phone number ID. They must still be
+// checked against the account's App Secret, and must only touch templates
+// of the organization that owns the WABA.
+func TestWebhookHandler_TemplateStatusUpdate_SignatureAndTenant(t *testing.T) {
+	app := webhookTestApp(t)
+	app.Config.WhatsApp = config.WhatsAppConfig{BaseURL: "https://graph.facebook.com", APIVersion: "v18.0"}
+	uid := uuid.New().String()[:8]
+	secret := "tmpl-secret-" + uid
+
+	mkOrg := func(prefix string) models.Organization {
+		o := models.Organization{BaseModel: models.BaseModel{ID: uuid.New()}, Name: prefix + uid, Slug: prefix + uid}
+		require.NoError(t, app.DB.Create(&o).Error)
+		return o
+	}
+	orgA, orgB := mkOrg("tsa-"), mkOrg("tsb-")
+	accName := "shared-name-" + uid
+	accA := models.WhatsAppAccount{BaseModel: models.BaseModel{ID: uuid.New()}, OrganizationID: orgA.ID, Name: accName,
+		PhoneID: "p-a-" + uid, BusinessID: "waba-a-" + uid, AccessToken: "t", AppSecret: secret}
+	// Account names are globally unique today; org B's template still names
+	// the same account string, which is what the old query matched on.
+	accB := models.WhatsAppAccount{BaseModel: models.BaseModel{ID: uuid.New()}, OrganizationID: orgB.ID, Name: accName + "-b",
+		PhoneID: "p-b-" + uid, BusinessID: "waba-b-" + uid, AccessToken: "t"}
+	require.NoError(t, app.DB.Create(&accA).Error)
+	require.NoError(t, app.DB.Create(&accB).Error)
+	tA := models.Template{BaseModel: models.BaseModel{ID: uuid.New()}, OrganizationID: orgA.ID, WhatsAppAccount: accName, Name: "promo_" + uid, Language: "en", Status: "PENDING"}
+	tB := models.Template{BaseModel: models.BaseModel{ID: uuid.New()}, OrganizationID: orgB.ID, WhatsAppAccount: accName, Name: "promo_" + uid, Language: "en", Status: "PENDING"}
+	require.NoError(t, app.DB.Create(&tA).Error)
+	require.NoError(t, app.DB.Create(&tB).Error)
+
+	body, _ := json.Marshal(map[string]any{
+		"object": "whatsapp_business_account",
+		"entry": []map[string]any{{
+			"id": accA.BusinessID,
+			"changes": []map[string]any{{
+				"field": "message_template_status_update",
+				"value": map[string]any{
+					"event": "APPROVED", "message_template_name": tA.Name, "message_template_language": "en",
+				},
+			}},
+		}},
+	})
+
+	// Unsigned: rejected.
+	req := testutil.NewRequest(t)
+	req.RequestCtx.Request.Header.SetMethod("POST")
+	req.RequestCtx.Request.SetBody(body)
+	require.NoError(t, app.WebhookHandler(req))
+	assert.Equal(t, 403, testutil.GetResponseStatusCode(req), "unsigned template update must be rejected")
+
+	// Signed: accepted, only org A's template changes.
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	req = testutil.NewRequest(t)
+	req.RequestCtx.Request.Header.SetMethod("POST")
+	req.RequestCtx.Request.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	req.RequestCtx.Request.SetBody(body)
+	require.NoError(t, app.WebhookHandler(req))
+	assert.Equal(t, 200, testutil.GetResponseStatusCode(req))
+
+	assert.Eventually(t, func() bool {
+		var got models.Template
+		return app.DB.First(&got, tA.ID).Error == nil && got.Status == "APPROVED"
+	}, 3*time.Second, 50*time.Millisecond)
+	var gotB models.Template
+	require.NoError(t, app.DB.First(&gotB, tB.ID).Error)
+	assert.Equal(t, "PENDING", gotB.Status, "another organization's template must not change")
+}

@@ -101,3 +101,20 @@ func (a *App) clearTeamMemberPermissionCaches(teamID uuid.UUID) {
 		a.clearUserPermissionKeys(id)
 	}
 }
+
+// sameTeamAccess reports whether two cleaned access lists hold the same areas.
+func sameTeamAccess(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]bool, len(a))
+	for _, x := range a {
+		seen[x] = true
+	}
+	for _, x := range b {
+		if !seen[x] {
+			return false
+		}
+	}
+	return true
+}

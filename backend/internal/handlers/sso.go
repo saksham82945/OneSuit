@@ -370,6 +370,16 @@ func (a *App) CallbackSSO(r *fastglue.Request) error {
 
 		a.Log.Info("Created SSO user", "user_id", user.ID, "email", user.Email, "provider", provider)
 	} else {
+		// A business's own SSO setup (its keys, possibly its own identity
+		// server) only vouches for that business's people. Without this check
+		// any workspace admin could point a "custom" provider at a server that
+		// answers with someone else's email — even the super admin's — and
+		// sign in as them.
+		if !platformLogin && !a.ssoUserBelongsToOrg(&user, orgID) {
+			a.redirectWithError(r, "This account can't sign in with this organization's SSO. Sign in with your email and password instead.")
+			return nil
+		}
+
 		// User exists - update SSO info if not set
 		if user.SSOProvider == "" {
 			user.SSOProvider = provider
@@ -416,11 +426,27 @@ func (a *App) CallbackSSO(r *fastglue.Request) error {
 	return nil
 }
 
+// ssoUserBelongsToOrg reports whether an existing user may sign in through
+// orgID's own SSO provider: they must be a member of that organization and not
+// a super admin (platform accounts never trust a business's identity server).
+func (a *App) ssoUserBelongsToOrg(user *models.User, orgID uuid.UUID) bool {
+	if user.IsSuperAdmin || orgID == uuid.Nil {
+		return false
+	}
+	if user.OrganizationID == orgID {
+		return true
+	}
+	var count int64
+	a.DB.Model(&models.UserOrganization{}).
+		Where("user_id = ? AND organization_id = ?", user.ID, orgID).Count(&count)
+	return count > 0
+}
+
 // GetSSOSettings returns all SSO provider configs for the organization (admin only)
 func (a *App) GetSSOSettings(r *fastglue.Request) error {
-	orgID, err := a.getOrgID(r)
+	orgID, _, err := a.requireAuth(r, models.ResourceSettingsSSO, models.ActionRead)
 	if err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
+		return nil
 	}
 
 	var providers []models.SSOProvider
@@ -451,9 +477,9 @@ func (a *App) GetSSOSettings(r *fastglue.Request) error {
 
 // UpdateSSOProvider creates or updates an SSO provider config (admin only)
 func (a *App) UpdateSSOProvider(r *fastglue.Request) error {
-	orgID, err := a.getOrgID(r)
+	orgID, _, err := a.requireAuth(r, models.ResourceSettingsSSO, models.ActionWrite)
 	if err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
+		return nil
 	}
 
 	provider := r.RequestCtx.UserValue("provider").(string)
@@ -540,9 +566,9 @@ func (a *App) UpdateSSOProvider(r *fastglue.Request) error {
 // doesn't ignore deleted_at — a soft-deleted row would block re-creating the
 // same provider until the row is purged.
 func (a *App) DeleteSSOProvider(r *fastglue.Request) error {
-	orgID, err := a.getOrgID(r)
+	orgID, _, err := a.requireAuth(r, models.ResourceSettingsSSO, models.ActionWrite)
 	if err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
+		return nil
 	}
 
 	provider := r.RequestCtx.UserValue("provider").(string)

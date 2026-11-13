@@ -370,7 +370,7 @@ export const AccountsView: React.FC = () => {
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder="Search phone numbers..."
-                className="w-72"
+                className="w-full sm:w-72"
               />
             </div>
           </CardHeader>

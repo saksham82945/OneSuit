@@ -184,13 +184,24 @@ func (c *RedisConsumer) Consume(ctx context.Context, handler JobHandler) error {
 					continue
 				}
 
-				// Acknowledge the message
-				if err := c.client.XAck(ctx, StreamName, ConsumerGroup, msg.ID).Err(); err != nil {
+				// Acknowledge and remove the message
+				if err := c.ackAndDelete(ctx, msg.ID); err != nil {
 					c.log.Error("Failed to ACK message", "error", err, "message_id", msg.ID)
 				}
 			}
 		}
 	}
+}
+
+// ackAndDelete acknowledges a finished job and removes it from the stream.
+// Acknowledged entries are never read again, and keeping them would grow the
+// stream without bound (Redis runs with noeviction, so it would fill up).
+func (c *RedisConsumer) ackAndDelete(ctx context.Context, id string) error {
+	pipe := c.client.TxPipeline()
+	pipe.XAck(ctx, StreamName, ConsumerGroup, id)
+	pipe.XDel(ctx, StreamName, id)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 // claimPendingMessages claims stale pending messages from crashed workers
@@ -237,8 +248,8 @@ func (c *RedisConsumer) claimPendingMessages(ctx context.Context, handler JobHan
 				continue
 			}
 
-			// Acknowledge the message
-			if err := c.client.XAck(ctx, StreamName, ConsumerGroup, msg.ID).Err(); err != nil {
+			// Acknowledge and remove the message
+			if err := c.ackAndDelete(ctx, msg.ID); err != nil {
 				c.log.Error("Failed to ACK claimed message", "error", err, "message_id", msg.ID)
 			}
 		}

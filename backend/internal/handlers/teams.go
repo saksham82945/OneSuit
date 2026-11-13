@@ -14,7 +14,7 @@ type TeamRequest struct {
 	Name                string                    `json:"name" validate:"required"`
 	Description         string                    `json:"description"`
 	AssignmentStrategy  models.AssignmentStrategy `json:"assignment_strategy"` // round_robin, load_balanced, manual
-	PerAgentTimeoutSecs int                       `json:"per_agent_timeout_secs"`
+	PerAgentTimeoutSecs *int                      `json:"per_agent_timeout_secs"` // nil leaves it unchanged on update
 	IsActive            bool                      `json:"is_active"`
 	// Parts of the app members can use; nil leaves it unchanged on update.
 	Access *[]string `json:"access"`
@@ -182,7 +182,7 @@ func (a *App) CreateTeam(r *fastglue.Request) error {
 		Name:                req.Name,
 		Description:         req.Description,
 		AssignmentStrategy:  strategy,
-		PerAgentTimeoutSecs: req.PerAgentTimeoutSecs,
+		PerAgentTimeoutSecs: derefInt(req.PerAgentTimeoutSecs),
 		IsActive:            true,
 		CreatedByID:         &userID,
 		UpdatedByID:         &userID,
@@ -223,7 +223,8 @@ func (a *App) UpdateTeam(r *fastglue.Request) error {
 	oldTeam := team // value copy for audit diff
 
 	// Check access: users with teams:write permission OR team managers can update
-	if !a.HasPermission(userID, models.ResourceTeams, models.ActionWrite, orgID) {
+	hasWritePermission := a.HasPermission(userID, models.ResourceTeams, models.ActionWrite, orgID)
+	if !hasWritePermission {
 		isManager := false
 		for _, m := range team.Members {
 			if m.UserID == userID && m.Role == models.TeamRoleManager {
@@ -254,12 +255,20 @@ func (a *App) UpdateTeam(r *fastglue.Request) error {
 		}
 		team.AssignmentStrategy = req.AssignmentStrategy
 	}
-	team.PerAgentTimeoutSecs = req.PerAgentTimeoutSecs
+	if req.PerAgentTimeoutSecs != nil {
+		team.PerAgentTimeoutSecs = *req.PerAgentTimeoutSecs
+	}
 	accessChanged := false
 	if req.Access != nil {
 		access, ok := cleanTeamAccess(*req.Access)
 		if !ok {
 			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Unknown access option", nil, "")
+		}
+		// A team's access is added to every member's role, so a team manager
+		// without teams:write must not change it (they could grant themselves
+		// campaigns, contacts, automation...).
+		if !hasWritePermission && !sameTeamAccess(team.Access, access) {
+			return r.SendErrorEnvelope(fasthttp.StatusForbidden, "Only admins can change what a team can access", nil, "")
 		}
 		team.Access, accessChanged = access, true
 	}
@@ -585,4 +594,12 @@ func buildTeamResponse(team *models.Team, includeMembers bool) TeamResponse {
 	}
 
 	return resp
+}
+
+// derefInt returns the pointed-to value, or 0 for nil.
+func derefInt(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
 }

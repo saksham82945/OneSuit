@@ -1,12 +1,14 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/shridarpatil/whatomate/internal/handlers"
 	"github.com/shridarpatil/whatomate/internal/middleware"
 	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/shridarpatil/whatomate/test/testutil"
@@ -139,13 +141,13 @@ func TestApp_Login_UserWithRole(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req))
 }
 
-func TestApp_Register_Success(t *testing.T) {
+// Register no longer lets anyone who knows an organization's ID join it:
+// joining needs an invite link (accept-invite), new businesses use sign-up.
+func TestApp_Register_RefusesToJoinOrganizationByID(t *testing.T) {
 	app := newTestApp(t)
 	org := testutil.CreateTestOrganization(t, app.DB)
+	testutil.CreateTestRoleExact(t, app.DB, org.ID, "agent", true, true, nil)
 	email := testutil.UniqueEmail("register")
-
-	// Create a default role for the org (Register looks for is_default=true, then falls back to name="agent" + is_system=true)
-	defaultRole := testutil.CreateTestRoleExact(t, app.DB, org.ID, "agent", true, true, nil)
 
 	req := testutil.NewJSONRequest(t, map[string]any{
 		"email":           email,
@@ -154,96 +156,38 @@ func TestApp_Register_Success(t *testing.T) {
 		"organization_id": org.ID.String(),
 	})
 
-	err := app.Register(req)
-	require.NoError(t, err)
-	assert.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req))
+	require.NoError(t, app.Register(req))
+	testutil.AssertErrorResponse(t, req, fasthttp.StatusForbidden, "invite link")
+	assert.Empty(t, testutil.GetResponseCookie(req, "whm_access"))
 
-	var resp struct {
-		Status string `json:"status"`
-		Data   struct {
-			ExpiresIn int `json:"expires_in"`
-			User      struct {
-				ID       string `json:"id"`
-				Email    string `json:"email"`
-				FullName string `json:"full_name"`
-				RoleID   string `json:"role_id"`
-				IsActive bool   `json:"is_active"`
-			} `json:"user"`
-		} `json:"data"`
-	}
-	err = json.Unmarshal(testutil.GetResponseBody(req), &resp)
-	require.NoError(t, err)
-
-	assert.Equal(t, "success", resp.Status)
-	assert.Equal(t, email, resp.Data.User.Email)
-	assert.Equal(t, "New User", resp.Data.User.FullName)
-	assert.NotEmpty(t, resp.Data.User.RoleID, "User should have a role assigned")
-	assert.True(t, resp.Data.User.IsActive)
-
-	// Tokens should be in cookies
-	assert.NotEmpty(t, testutil.GetResponseCookie(req, "whm_access"))
-	assert.NotEmpty(t, testutil.GetResponseCookie(req, "whm_refresh"))
-
-	// Verify the user has the default role in the database
-	userID, err := uuid.Parse(resp.Data.User.ID)
-	require.NoError(t, err)
-	var user models.User
-	require.NoError(t, app.DB.Preload("Role").Where("id = ?", userID).First(&user).Error)
-	assert.NotNil(t, user.Role)
-	assert.Equal(t, defaultRole.Name, user.Role.Name)
-	assert.True(t, user.Role.IsSystem)
-
-	// Verify user_organizations entry was created
-	var userOrg models.UserOrganization
-	require.NoError(t, app.DB.Where("user_id = ? AND organization_id = ?", userID, org.ID).First(&userOrg).Error)
-	assert.True(t, userOrg.IsDefault)
+	var count int64
+	app.DB.Model(&models.User{}).Where("email = ?", email).Count(&count)
+	assert.Equal(t, int64(0), count, "no account may be created")
 }
 
-func TestApp_Register_EmailAlreadyExists_WrongPassword(t *testing.T) {
-	app := newTestApp(t)
-	org := testutil.CreateTestOrganization(t, app.DB)
-	email := testutil.UniqueEmail("existing")
-	testutil.CreateTestUser(t, app.DB, org.ID, testutil.WithEmail(email), testutil.WithPassword("password123"))
-
-	// Create a second org to register into
-	org2 := testutil.CreateTestOrganization(t, app.DB)
-	testutil.CreateTestRoleExact(t, app.DB, org2.ID, "agent", true, true, nil)
-
-	req := testutil.NewJSONRequest(t, map[string]any{
-		"email":           email,
-		"password":        "wrongpassword123",
-		"full_name":       "Another User",
-		"organization_id": org2.ID.String(),
-	})
-
-	err := app.Register(req)
-	require.NoError(t, err)
-	testutil.AssertErrorResponse(t, req, fasthttp.StatusConflict, "An account with this email already exists")
-}
-
-func TestApp_Register_ExistingUser_JoinsNewOrg(t *testing.T) {
+func TestApp_Register_ExistingUserCannotJoinAnotherOrg(t *testing.T) {
 	app := newTestApp(t)
 	org := testutil.CreateTestOrganization(t, app.DB)
 	email := testutil.UniqueEmail("multiorg")
-	testutil.CreateTestUser(t, app.DB, org.ID, testutil.WithEmail(email), testutil.WithPassword("password123"))
+	user := testutil.CreateTestUser(t, app.DB, org.ID, testutil.WithEmail(email), testutil.WithPassword("password123"))
 
-	// Create a second org with a default role
-	org2 := testutil.CreateTestOrganization(t, app.DB)
-	testutil.CreateTestRoleExact(t, app.DB, org2.ID, "agent", true, true, nil)
+	victim := testutil.CreateTestOrganization(t, app.DB)
+	testutil.CreateTestRoleExact(t, app.DB, victim.ID, "agent", true, true, nil)
 
 	req := testutil.NewJSONRequest(t, map[string]any{
 		"email":           email,
 		"password":        "password123",
 		"full_name":       "Same User",
-		"organization_id": org2.ID.String(),
+		"organization_id": victim.ID.String(),
 	})
 
-	err := app.Register(req)
-	require.NoError(t, err)
-	assert.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req))
+	require.NoError(t, app.Register(req))
+	assert.Equal(t, fasthttp.StatusForbidden, testutil.GetResponseStatusCode(req))
+	assert.Empty(t, testutil.GetResponseCookie(req, "whm_access"))
 
-	// Tokens should be in cookies, not body
-	assert.NotEmpty(t, testutil.GetResponseCookie(req, "whm_access"))
+	var count int64
+	app.DB.Model(&models.UserOrganization{}).Where("user_id = ? AND organization_id = ?", user.ID, victim.ID).Count(&count)
+	assert.Equal(t, int64(0), count, "must not become a member of the other organization")
 }
 
 func TestApp_Register_InvalidRequestBody(t *testing.T) {
@@ -258,11 +202,20 @@ func TestApp_Register_InvalidRequestBody(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusBadRequest, testutil.GetResponseStatusCode(req))
 }
 
+// storedRefreshToken issues a refresh token whose JTI is live in Redis, the
+// way generateRefreshToken does, so RefreshToken gets past the JTI check.
+func storedRefreshToken(t *testing.T, app *handlers.App, user *models.User) string {
+	t.Helper()
+	jti := uuid.New().String()
+	require.NoError(t, app.Redis.Set(context.Background(), "refresh:"+jti, user.ID.String(), time.Hour).Err())
+	return generateRefreshTokenWithJTI(t, testutil.TestJWTSecret, user, jti, time.Hour)
+}
+
 func TestApp_RefreshToken_Success(t *testing.T) {
 	app := newTestApp(t)
 	org := testutil.CreateTestOrganization(t, app.DB)
 	user := testutil.CreateTestUser(t, app.DB, org.ID, testutil.WithEmail(testutil.UniqueEmail("refresh")), testutil.WithPassword("password123"))
-	refreshToken := testutil.GenerateTestRefreshToken(t, user, testutil.TestJWTSecret, 7*24*time.Hour)
+	refreshToken := storedRefreshToken(t, app, user)
 
 	req := testutil.NewJSONRequest(t, map[string]string{
 		"refresh_token": refreshToken,
@@ -328,7 +281,7 @@ func TestApp_RefreshToken_UserNotFound(t *testing.T) {
 		OrganizationID: uuid.New(),
 		Email:          "fake@example.com",
 	}
-	token := testutil.GenerateTestRefreshToken(t, fakeUser, testutil.TestJWTSecret, 7*24*time.Hour)
+	token := storedRefreshToken(t, app, fakeUser)
 
 	req := testutil.NewJSONRequest(t, map[string]string{
 		"refresh_token": token,
@@ -343,7 +296,7 @@ func TestApp_RefreshToken_DisabledUser(t *testing.T) {
 	app := newTestApp(t)
 	org := testutil.CreateTestOrganization(t, app.DB)
 	user := testutil.CreateTestUser(t, app.DB, org.ID, testutil.WithEmail(testutil.UniqueEmail("disabled")), testutil.WithPassword("password123"), testutil.WithInactive())
-	token := testutil.GenerateTestRefreshToken(t, user, testutil.TestJWTSecret, 7*24*time.Hour)
+	token := storedRefreshToken(t, app, user)
 
 	req := testutil.NewJSONRequest(t, map[string]string{
 		"refresh_token": token,

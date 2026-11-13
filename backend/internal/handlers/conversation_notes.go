@@ -53,7 +53,7 @@ func (a *App) ListConversationNotes(r *fastglue.Request) error {
 		beforeID, err := uuid.Parse(beforeIDStr)
 		if err == nil {
 			var beforeNote models.ConversationNote
-			if err := a.DB.Where("id = ?", beforeID).First(&beforeNote).Error; err == nil {
+			if err := a.DB.Where("id = ? AND organization_id = ? AND contact_id = ?", beforeID, orgID, contactID).First(&beforeNote).Error; err == nil {
 				query = query.Where("created_at < ?", beforeNote.CreatedAt)
 			}
 		}

@@ -17,13 +17,13 @@ import (
 // LoginRequest represents login credentials
 type LoginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required,min=12"`
+	Password string `json:"password" validate:"required"`
 }
 
 // RegisterRequest represents registration data
 type RegisterRequest struct {
 	Email          string    `json:"email" validate:"required,email"`
-	Password       string    `json:"password" validate:"required,min=12"`
+	Password       string    `json:"password" validate:"required"`
 	FullName       string    `json:"full_name" validate:"required"`
 	OrganizationID uuid.UUID `json:"organization_id" validate:"required"`
 }
@@ -111,169 +111,19 @@ func (a *App) Login(r *fastglue.Request) error {
 	})
 }
 
-// Register creates a new user in an existing organization
+// registerClosedMessage answers POST /api/auth/register.
+const registerClosedMessage = "Joining an organization needs an invite link from its admin. To start a new business, sign up instead."
+
+// Register used to let anyone who knew an organization's ID join it as a
+// member, bypassing invites and the platform's "allow sign-up" switch. Joining an organization now
+// needs an invite (POST /api/auth/accept-invite) and new businesses use
+// POST /api/auth/signup, so this endpoint only refuses.
 func (a *App) Register(r *fastglue.Request) error {
 	var req RegisterRequest
 	if err := a.decodeRequest(r, &req); err != nil {
 		return nil
 	}
-
-	if req.OrganizationID == uuid.Nil {
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "organization_id is required", nil, "")
-	}
-
-	// Validate the organization exists
-	var org models.Organization
-	if err := a.DB.Where("id = ?", req.OrganizationID).First(&org).Error; err != nil {
-		return r.SendErrorEnvelope(fasthttp.StatusNotFound, "Organization not found", nil, "")
-	}
-
-	// Block access during maintenance or for a suspended vendor
-	if status, msg := a.orgAccessBlocked(&models.User{}, org.ID); status != 0 {
-		return r.SendErrorEnvelope(status, msg, nil, "")
-	}
-	if status, msg := a.userLimitReached(a.DB, org.ID); status != 0 {
-		return r.SendErrorEnvelope(status, msg, nil, "")
-	}
-
-	// Get the org's default role
-	var defaultRole models.CustomRole
-	if err := a.DB.Where("organization_id = ? AND is_default = ?", req.OrganizationID, true).First(&defaultRole).Error; err != nil {
-		if err := a.DB.Where("organization_id = ? AND name = ? AND is_system = ?", req.OrganizationID, "agent", true).First(&defaultRole).Error; err != nil {
-			a.Log.Error("Failed to find default role", "error", err)
-			return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to find default role", nil, "")
-		}
-	}
-
-	// Check if email already exists
-	var existingUser models.User
-	if err := a.DB.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
-		// User exists — verify password and add to this org
-		if err := bcrypt.CompareHashAndPassword([]byte(existingUser.PasswordHash), []byte(req.Password)); err != nil {
-			return r.SendErrorEnvelope(fasthttp.StatusConflict, "An account with this email already exists. Please sign in and ask your organization admin to add you.", nil, "")
-		}
-
-		// Check if user account is disabled
-		if !existingUser.IsActive {
-			return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Account is disabled", nil, "")
-		}
-
-		// Check if already a member of this org
-		var count int64
-		a.DB.Model(&models.UserOrganization{}).
-			Where("user_id = ? AND organization_id = ?", existingUser.ID, req.OrganizationID).
-			Count(&count)
-		if count > 0 {
-			return r.SendErrorEnvelope(fasthttp.StatusConflict, "You are already a member of this organization", nil, "")
-		}
-
-		// Add as member with default role
-		userOrg := models.UserOrganization{
-			UserID:         existingUser.ID,
-			OrganizationID: req.OrganizationID,
-			RoleID:         &defaultRole.ID,
-			IsDefault:      false,
-		}
-		if err := a.DB.Create(&userOrg).Error; err != nil {
-			a.Log.Error("Failed to add existing user to organization", "error", err)
-			return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to join organization", nil, "")
-		}
-
-		a.Log.Info("Existing user joined organization", "user_id", existingUser.ID, "org_id", req.OrganizationID)
-
-		// Set org context to the new org for token generation
-		existingUser.OrganizationID = req.OrganizationID
-		existingUser.Role = &defaultRole
-		existingUser.RoleID = &defaultRole.ID
-
-		accessToken, err := a.generateAccessToken(&existingUser)
-		if err != nil {
-			a.Log.Error("Failed to generate access token", "error", err)
-			return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to generate token", nil, "")
-		}
-		refreshToken, err := a.generateRefreshToken(&existingUser)
-		if err != nil {
-			a.Log.Error("Failed to generate refresh token", "error", err)
-			return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to generate token", nil, "")
-		}
-
-		a.setAuthCookies(r, accessToken, refreshToken)
-
-		return r.SendEnvelope(CookieAuthResponse{
-			ExpiresIn: a.Config.JWT.AccessExpiryMins * 60,
-			User:      existingUser,
-		})
-	}
-
-	// New user — run dummy bcrypt to prevent timing-based account enumeration
-	_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"), []byte(req.Password))
-
-	// Create account
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		a.Log.Error("Failed to hash password", "error", err)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to create account", nil, "")
-	}
-
-	tx := a.DB.Begin()
-	if tx.Error != nil {
-		a.Log.Error("Failed to begin transaction", "error", tx.Error)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to create account", nil, "")
-	}
-
-	user := models.User{
-		OrganizationID: req.OrganizationID,
-		Email:          req.Email,
-		PasswordHash:   string(hashedPassword),
-		FullName:       req.FullName,
-		RoleID:         &defaultRole.ID,
-		IsActive:       true,
-	}
-
-	if err := tx.Create(&user).Error; err != nil {
-		tx.Rollback()
-		a.Log.Error("Failed to create user", "error", err, "email", req.Email, "org_id", req.OrganizationID)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to create account", nil, "")
-	}
-
-	userOrg := models.UserOrganization{
-		UserID:         user.ID,
-		OrganizationID: req.OrganizationID,
-		RoleID:         &defaultRole.ID,
-		IsDefault:      true,
-	}
-	if err := tx.Create(&userOrg).Error; err != nil {
-		tx.Rollback()
-		a.Log.Error("Failed to create user organization entry", "error", err)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to create account", nil, "")
-	}
-
-	if err := tx.Commit().Error; err != nil {
-		a.Log.Error("Failed to commit transaction", "error", err)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to create account", nil, "")
-	}
-
-	a.Log.Info("Registration completed", "user_id", user.ID, "org_id", req.OrganizationID)
-
-	user.Role = &defaultRole
-
-	accessToken, err := a.generateAccessToken(&user)
-	if err != nil {
-		a.Log.Error("Failed to generate access token", "error", err)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to generate token", nil, "")
-	}
-	refreshToken, err := a.generateRefreshToken(&user)
-	if err != nil {
-		a.Log.Error("Failed to generate refresh token", "error", err)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to generate token", nil, "")
-	}
-
-	a.setAuthCookies(r, accessToken, refreshToken)
-
-	return r.SendEnvelope(CookieAuthResponse{
-		ExpiresIn: a.Config.JWT.AccessExpiryMins * 60,
-		User:      user,
-	})
+	return r.SendErrorEnvelope(fasthttp.StatusForbidden, registerClosedMessage, nil, "")
 }
 
 // RefreshToken refreshes access token using refresh token with rotation.
@@ -304,8 +154,15 @@ func (a *App) RefreshToken(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Invalid token claims", nil, "")
 	}
 
+	// Only real refresh tokens (they always carry a JTI) can be exchanged.
+	// Access and WebSocket tokens have none, and accepting them here would let
+	// a short-lived token mint fresh, unrevocable sessions.
+	if claims.ID == "" || claims.Subject == middleware.WSTokenSubject {
+		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Invalid refresh token", nil, "")
+	}
+
 	// Validate JTI in Redis (single-use: delete on consumption)
-	if claims.ID != "" {
+	{
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		deleted, err := a.Redis.Del(ctx, refreshTokenKey(claims.ID)).Result()
@@ -599,7 +456,7 @@ func (a *App) GetWSToken(r *fastglue.Request) error {
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * time.Second)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    "whatomate",
-			Subject:   "ws",
+			Subject:   middleware.WSTokenSubject,
 		},
 	}
 

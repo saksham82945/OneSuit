@@ -90,3 +90,26 @@ func TestApp_ImportContacts_NoPhoneColumnExplains(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusBadRequest, status)
 	assert.Contains(t, fmt.Sprint(out["message"]), "Mobile")
 }
+
+// A CSV may only assign contacts to users of the importing organization.
+func TestApp_ImportContacts_RejectsForeignAssignedUser(t *testing.T) {
+	app := newTestApp(t)
+	otherOrg := testutil.CreateTestOrganization(t, app.DB)
+	foreign := testutil.CreateTestUser(t, app.DB, otherOrg.ID)
+	phone := fmt.Sprintf("91%010d", uuid.New().ID())
+
+	status, out, _ := importContactsCSV(t, "phone_number,profile_name,assigned_user_id\n"+phone+",Alice,"+foreign.ID.String()+"\n")
+	require.Equal(t, fasthttp.StatusOK, status, "response: %v", out)
+	assert.Empty(t, importedPhones(t, out), "row assigning a user of another organization must not be imported")
+}
+
+// A file over the size limit is refused instead of being cut and partly imported.
+func TestApp_ImportContacts_TooLargeRejected(t *testing.T) {
+	var b bytes.Buffer
+	b.WriteString("phone_number,profile_name\n")
+	for b.Len() <= 10<<20 {
+		fmt.Fprintf(&b, "91%010d,Somebody With A Long Name\n", b.Len())
+	}
+	status, out, _ := importContactsCSV(t, b.String())
+	assert.Equal(t, fasthttp.StatusBadRequest, status, "response: %v", out)
+}

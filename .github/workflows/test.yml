@@ -14,6 +14,10 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # The Go module lives in backend/ (there is no go.mod at the repo root).
+    defaults:
+      run:
+        working-directory: backend
 
     services:
       postgres:
@@ -49,6 +53,7 @@ jobs:
         with:
           go-version: "1.26"
           cache: true
+          cache-dependency-path: backend/go.sum
 
       - name: Download dependencies
         run: go mod download
@@ -83,7 +88,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage.out
+          path: backend/coverage.out
           retention-days: 7
 
   lint:
@@ -97,14 +102,19 @@ jobs:
         with:
           go-version: "1.26"
           cache: true
+          cache-dependency-path: backend/go.sum
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.4
+          working-directory: backend
 
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -114,6 +124,7 @@ jobs:
         with:
           go-version: "1.26"
           cache: true
+          cache-dependency-path: backend/go.sum
 
       - name: Build
         run: go build -v ./...

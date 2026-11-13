@@ -642,6 +642,17 @@ func (a *App) CancelScheduledMessage(r *fastglue.Request) error {
 // ProcessDueScheduledMessages sends scheduled messages whose time has come.
 // It runs every minute from the background processor.
 func (a *App) ProcessDueScheduledMessages(ctx context.Context) {
+	// A message claimed as "sending" by a process that then died (restart,
+	// crash) would stay "sending" forever: hidden from retry and impossible
+	// to cancel. Surface it as failed so the agent can check and resend; it
+	// is not re-sent automatically because it may already have gone out.
+	a.DB.Model(&models.ScheduledMessage{}).
+		Where("status = ? AND updated_at < ?", models.ScheduledStatusSending, time.Now().Add(-scheduledSendingStaleAfter)).
+		Updates(map[string]any{
+			"status":        models.ScheduledStatusFailed,
+			"error_message": "Sending was interrupted. Check the chat before sending it again.",
+		})
+
 	var due []models.ScheduledMessage
 	if err := a.DB.Where("status = ? AND scheduled_at <= ?", models.ScheduledStatusScheduled, time.Now()).
 		Order("scheduled_at ASC").Limit(50).Find(&due).Error; err != nil {
@@ -662,6 +673,10 @@ func (a *App) ProcessDueScheduledMessages(ctx context.Context) {
 		a.sendScheduledMessage(ctx, &due[i])
 	}
 }
+
+// scheduledSendingStaleAfter is how long a scheduled message may stay in
+// "sending" before it is treated as interrupted.
+const scheduledSendingStaleAfter = 10 * time.Minute
 
 func (a *App) failScheduled(sm *models.ScheduledMessage, reason string) {
 	a.DB.Model(&models.ScheduledMessage{}).Where("id = ?", sm.ID).Updates(map[string]any{

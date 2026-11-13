@@ -876,6 +876,35 @@ func TestApp_RetryFailed_Success(t *testing.T) {
 	assert.Equal(t, string(models.CampaignStatusProcessing), resp.Data.Status)
 }
 
+// Retrying a paused campaign must also queue the recipients that were skipped
+// while it was paused, otherwise they stay pending and the campaign is stuck
+// in "processing" forever.
+func TestApp_RetryFailed_PausedQueuesPendingToo(t *testing.T) {
+	mockQueue := testutil.NewMockQueue()
+	app := newTestApp(t, withQueue(mockQueue))
+	org := testutil.CreateTestOrganization(t, app.DB)
+	user := testutil.CreateTestUser(t, app.DB, org.ID, testutil.WithEmail(testutil.UniqueEmail("retry-paused")), testutil.WithPassword("password"))
+	account := testutil.CreateTestWhatsAppAccountWith(t, app.DB, org.ID, testutil.WithAccountName("retry-paused-"+uuid.New().String()[:8]))
+	template := testutil.CreateTestTemplate(t, app.DB, org.ID, account.Name)
+	campaign := createTestCampaign(t, app, org.ID, template.ID, user.ID, account.Name, models.CampaignStatusPaused)
+	createTestRecipient(t, app, campaign.ID, "+1111111111", models.MessageStatusSent)
+	createTestRecipient(t, app, campaign.ID, "+2222222222", models.MessageStatusFailed)
+	createTestRecipient(t, app, campaign.ID, "+3333333333", models.MessageStatusPending)
+
+	req := testutil.NewJSONRequest(t, nil)
+	testutil.SetAuthContext(req, org.ID, user.ID)
+	testutil.SetPathParam(req, "id", campaign.ID.String())
+
+	require.NoError(t, app.RetryFailed(req))
+	assert.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req))
+
+	phones := []string{}
+	for _, j := range mockQueue.Jobs {
+		phones = append(phones, j.PhoneNumber)
+	}
+	assert.ElementsMatch(t, []string{"+2222222222", "+3333333333"}, phones)
+}
+
 func TestApp_RetryFailed_NoFailedRecipients(t *testing.T) {
 	mockQueue := testutil.NewMockQueue()
 	app := newTestApp(t, withQueue(mockQueue))

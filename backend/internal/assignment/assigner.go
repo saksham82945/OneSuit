@@ -38,6 +38,12 @@ func (a *Assigner) AssignToTeam(teamID, orgID uuid.UUID, excludeAgentIDs []uuid.
 	if cfg == nil {
 		return nil
 	}
+	// A team id from another workspace (e.g. in an imported bot or a
+	// hand-edited flow) must never hand this chat to that workspace's agents.
+	if cfg.OrganizationID != orgID {
+		a.log.Warn("Team does not belong to organization; not assigning", "team_id", teamID, "org_id", orgID)
+		return nil
+	}
 
 	switch cfg.Strategy {
 	case models.AssignmentStrategyRoundRobin:

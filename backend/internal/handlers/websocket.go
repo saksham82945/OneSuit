@@ -66,7 +66,9 @@ func (a *App) validateWSTokenFn() ws.AuthenticateFn {
 		}
 
 		claims, ok := token.Claims.(*middleware.JWTClaims)
-		if !ok {
+		// Only the short-lived WebSocket token signs in here, never an access
+		// or refresh token.
+		if !ok || claims.Subject != middleware.WSTokenSubject {
 			return uuid.Nil, uuid.Nil, jwt.ErrTokenInvalidClaims
 		}
 

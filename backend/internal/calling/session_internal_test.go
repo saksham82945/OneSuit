@@ -3,8 +3,10 @@ package calling
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shridarpatil/whatomate/internal/crypto"
@@ -95,4 +97,18 @@ func TestSessionAccount_IsDecryptedBeforeUse(t *testing.T) {
 	account.DecryptSecrets(key)
 
 	assert.Equal(t, plaintext, account.ToWAAccount().AccessToken)
+}
+
+// IVR HTTP steps used a plain client, so a flow could call internal
+// services (cloud metadata, Redis, the database host).
+func TestExecuteHTTPCallback_RefusesPrivateAddresses(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	_, err := executeHTTPCallback(srv.URL, "GET", nil, "", time.Second)
+	if err == nil || !strings.Contains(err.Error(), "not allowed") {
+		t.Fatalf("expected private address to be refused, got %v", err)
+	}
 }

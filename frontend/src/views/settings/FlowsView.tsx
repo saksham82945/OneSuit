@@ -281,7 +281,7 @@ export const FlowsView: React.FC = () => {
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder="Search flows..."
-                className="w-72"
+                className="w-full sm:w-72"
               />
             </div>
           </CardHeader>

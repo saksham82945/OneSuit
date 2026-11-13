@@ -1,4 +1,9 @@
-name: E2E Tests
+name: Frontend Tests
+
+# This workflow used to point at a "frontend-react" directory (and build the Go
+# backend from the repo root), neither of which exists, so every run failed.
+# The React app lives in frontend/ and its tests are Vitest unit tests, which
+# need no backend, database or Redis.
 
 on:
   push:
@@ -10,126 +15,29 @@ permissions:
   contents: read
 
 jobs:
-  e2e:
+  frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_DB: whatomate_test
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U test"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    defaults:
+      run:
+        working-directory: frontend
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.26"
-          cache: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: frontend-react/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Create test config
-        run: |
-          cat > config.toml << 'EOF'
-          [app]
-          name = "Whatomate"
-          environment = "test"
-          debug = true
+      - name: Install dependencies
+        run: npm ci
 
-          [server]
-          host = "0.0.0.0"
-          port = 8080
-          read_timeout = 30
-          write_timeout = 30
-          base_path = ""
+      # Same command Vercel runs (type-check + Vite build).
+      - name: Build
+        run: npm run build
 
-          [database]
-          host = "localhost"
-          port = 5432
-          user = "test"
-          password = "test"
-          name = "whatomate_test"
-          ssl_mode = "disable"
-          max_open_conns = 25
-          max_idle_conns = 5
-          conn_max_lifetime = 300
-
-          [redis]
-          host = "localhost"
-          port = 6379
-          username = ""
-          password = ""
-          db = 0
-          tls = false
-
-          [jwt]
-          secret = "test-secret-key-for-ci"
-          access_expiry_mins = 60
-          refresh_expiry_days = 7
-
-          [storage]
-          type = "local"
-          local_path = "./uploads"
-          EOF
-
-      # Build frontend FIRST so it can be embedded in the backend
-      - name: Install frontend dependencies
-        run: cd frontend-react && npm ci
-
-      - name: Build frontend
-        run: cd frontend-react && npm run build
-
-      - name: Copy frontend to embed directory
-        run: |
-          rm -rf internal/frontend/dist/*
-          cp -r frontend-react/dist/* internal/frontend/dist/
-
-      - name: Build backend
-        run: go build -o whatomate ./cmd/whatomate
-
-      - name: Start backend with migrations
-        run: |
-          ./whatomate server -migrate &
-          sleep 10
-          # Verify server is running
-          curl -f http://localhost:8080/health || exit 1
-        env:
-          WHATOMATE_CONFIG: config.toml
-
-      - name: Run frontend tests
-        run: cd frontend-react && npm run test
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: frontend-test-results
-          path: frontend-react/
-          retention-days: 7
+      - name: Run tests
+        run: npm run test

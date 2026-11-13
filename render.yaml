@@ -15,7 +15,9 @@ services:
     plan: starter
     region: oregon
     buildCommand: go build -ldflags="-s -w" -o whatomate ./cmd/whatomate
-    startCommand: ./whatomate server -config config.toml -migrate
+    # backend/config.toml is git-ignored (local secrets), so start from the
+    # committed template; every setting below overrides it.
+    startCommand: ./whatomate server -config config.example.toml -migrate
     healthCheckPath: /health
     envVars:
       - key: PORT
@@ -26,6 +28,14 @@ services:
         value: 0.0.0.0
       - key: WHATOMATE_APP__ENVIRONMENT
         value: production
+      # The template turns debug (SQL logging) on; keep it off in production.
+      - key: WHATOMATE_APP__DEBUG
+        value: false
+      # Encrypts stored secrets (Razorpay, Meta, SSO keys). Without it they are
+      # saved as plain text. Generated once; never change it after secrets are
+      # saved, or they can no longer be read.
+      - key: WHATOMATE_APP__ENCRYPTION_KEY
+        generateValue: true
       # The frontend (Vercel) address people open in the browser
       - key: WHATOMATE_SERVER__PUBLIC_URL
         value: https://one-suit-roan.vercel.app
@@ -44,12 +54,18 @@ services:
         generateValue: true
       - key: WHATOMATE_COOKIE__SECURE
         value: true
-      - key: WHATOMATE_COOKIE__SAME_SITE
-        value: None
+      # Cookies are always SameSite=Lax (no setting reads a SAME_SITE value):
+      # the browser reaches the API through the Vercel /api rewrite, so it is
+      # same-site. WHATOMATE_COOKIE__SAME_SITE was removed for that reason.
       - key: WHATOMATE_DEFAULT_ADMIN__EMAIL
         value: admin@login.com
       - key: WHATOMATE_DEFAULT_ADMIN__PASSWORD
         value: admin123
+      # Rate limits on sign-in/sign-up/refresh and on the whole API (per user,
+      # or per IP when signed out). Behind Render's proxy the client IP comes
+      # from X-Forwarded-For, so trust_proxy must stay true.
+      - key: WHATOMATE_RATE_LIMIT__ENABLED
+        value: true
       - key: WHATOMATE_RATE_LIMIT__TRUST_PROXY
         value: true
 
@@ -78,11 +94,17 @@ services:
         source: /api/*
         destination: https://onesuit.onrender.com/api/*
       - type: rewrite
+        source: /razorpay/*
+        destination: https://onesuit.onrender.com/razorpay/*
+      - type: rewrite
         source: /*
         destination: /index.html
     envVars:
+      # Same-origin through the /api rewrite above: the auth cookies are
+      # SameSite=Lax and httpOnly, so calling the backend's own domain from
+      # the browser would never send them.
       - key: VITE_API_URL
-        value: https://onesuit.onrender.com/api
+        value: /api
 
 # -------------------------------------------------------
 # 3. Managed PostgreSQL Database (Render Free Tier)

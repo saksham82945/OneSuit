@@ -14,6 +14,9 @@ export interface NewSupportTicket {
 export const supportService = {
   list: () => api.get<{ data: SupportTicket[] }>('/support-tickets').then((r) => r.data.data ?? []),
   get: (id: string) => api.get<{ data: SupportTicket }>(`/support-tickets/${id}`).then((r) => r.data.data),
+  /** Mark one of your own tickets solved or open it again. */
+  setStatus: (id: string, status: SupportTicket['status']) =>
+    api.put<{ data: SupportTicket }>(`/support-tickets/${id}`, { status }).then((r) => r.data.data),
   create: (data: NewSupportTicket) =>
     api.post<{ data: SupportTicket }>('/support-tickets', data).then((r) => r.data.data),
   reply: (id: string, data: { message: string; image_url?: string }) =>

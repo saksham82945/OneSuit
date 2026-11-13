@@ -253,6 +253,9 @@ func (a *App) CreateUser(r *fastglue.Request) error {
 	if _, err := mail.ParseAddress(req.Email); err != nil {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Invalid email format", nil, "")
 	}
+	if !strongEnoughPassword(req.Password) {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, passwordRulesMessage, nil, "")
+	}
 
 	// Respect the plan's user limit
 	if err := a.requireUserSlot(r, orgID, userID); err != nil {
@@ -496,6 +499,9 @@ func (a *App) UpdateUser(r *fastglue.Request) error {
 		user.FullName = req.FullName
 	}
 	if req.Password != "" {
+		if !strongEnoughPassword(req.Password) {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, passwordRulesMessage, nil, "")
+		}
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
 			a.Log.Error("Failed to hash password", "error", err)
@@ -820,9 +826,9 @@ func (a *App) ChangePassword(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Current password and new password are required", nil, "")
 	}
 
-	// Validate new password length
-	if len(req.NewPassword) < 6 {
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "New password must be at least 6 characters", nil, "")
+	// Same rule as sign-up: 8+ characters with a letter and a number
+	if !strongEnoughPassword(req.NewPassword) {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, passwordRulesMessage, nil, "")
 	}
 
 	// Verify current password

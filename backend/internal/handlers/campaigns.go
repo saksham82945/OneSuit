@@ -665,9 +665,18 @@ func (a *App) RetryFailed(r *fastglue.Request) error {
 
 	a.Log.Info("Retrying failed messages", "campaign_id", id, "failed_count", len(failedRecipients))
 
-	// Enqueue failed recipients as individual jobs for parallel processing
-	jobs := make([]*queue.RecipientJob, len(failedRecipients))
-	for i, recipient := range failedRecipients {
+	// Enqueue every pending recipient: the failed ones just reset, plus (for a
+	// paused campaign) the ones skipped while it was paused. Queuing only the
+	// failed ones left those behind as pending, so the campaign never
+	// completed. The worker skips recipients that are no longer pending, so a
+	// recipient that is still queued from before is not sent twice.
+	var toSend []models.BulkMessageRecipient
+	if err := a.DB.Where("campaign_id = ? AND status = ?", id, models.MessageStatusPending).Find(&toSend).Error; err != nil {
+		a.Log.Error("Failed to load recipients for retry", "error", err)
+		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to load recipients", nil, "")
+	}
+	jobs := make([]*queue.RecipientJob, len(toSend))
+	for i, recipient := range toSend {
 		jobs[i] = &queue.RecipientJob{
 			CampaignID:     id,
 			RecipientID:    recipient.ID,

@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -848,3 +850,238 @@ func TestMatchFlowTrigger_Match(t *testing.T) {
 // =============================================================================
 // evaluateExpression (package-level, not on App)
 // =============================================================================
+
+// =============================================================================
+// Regression tests (pre-production bug hunt)
+// =============================================================================
+
+// An empty keyword matched every message ("contains" the empty string), so a
+// rule saved with a blank keyword answered everything.
+func TestMatchKeywordRules_EmptyKeywordIgnored(t *testing.T) {
+	app := newProcessorTestApp(t)
+	org, account := createProcessorTestOrg(t, app)
+	require.NoError(t, app.DB.Create(&models.KeywordRule{
+		BaseModel: models.BaseModel{ID: uuid.New()}, OrganizationID: org.ID, WhatsAppAccount: account.Name,
+		Name: "blank", Keywords: models.StringArray{"", "  "}, MatchType: models.MatchTypeContains,
+		ResponseType: models.ResponseTypeText, ResponseContent: models.JSONB{"body": "catch-all"}, IsEnabled: true,
+	}).Error)
+
+	_, matched := app.matchKeywordRules(org.ID, account.Name, "anything at all")
+	assert.False(t, matched)
+}
+
+// active_from / active_until (set by bot import) were never checked.
+func TestMatchKeywordRules_ActiveWindow(t *testing.T) {
+	app := newProcessorTestApp(t)
+	org, account := createProcessorTestOrg(t, app)
+	past := time.Now().Add(-48 * time.Hour)
+	yesterday := time.Now().Add(-24 * time.Hour)
+	tomorrow := time.Now().Add(24 * time.Hour)
+	mk := func(name, kw string, from, until *time.Time) {
+		require.NoError(t, app.DB.Create(&models.KeywordRule{
+			BaseModel: models.BaseModel{ID: uuid.New()}, OrganizationID: org.ID, WhatsAppAccount: account.Name,
+			Name: name, Keywords: models.StringArray{kw}, MatchType: models.MatchTypeExact,
+			ResponseType: models.ResponseTypeText, ResponseContent: models.JSONB{"body": name}, IsEnabled: true,
+			ActiveFrom: from, ActiveUntil: until,
+		}).Error)
+	}
+	mk("expired", "promo", &past, &yesterday)
+	mk("future", "launch", &tomorrow, nil)
+	mk("live", "sale", &yesterday, &tomorrow)
+
+	_, matched := app.matchKeywordRules(org.ID, account.Name, "promo")
+	assert.False(t, matched, "expired rule must not answer")
+	_, matched = app.matchKeywordRules(org.ID, account.Name, "launch")
+	assert.False(t, matched, "rule before its start must not answer")
+	resp, matched := app.matchKeywordRules(org.ID, account.Name, "sale")
+	require.True(t, matched)
+	assert.Equal(t, "live", resp.Body)
+}
+
+func TestCompileKeywordRegex_CachesAndRejectsInvalid(t *testing.T) {
+	assert.Nil(t, compileKeywordRegex("(unclosed"))
+	re1 := compileKeywordRegex(`^order\s+\d+$`)
+	require.NotNil(t, re1)
+	assert.Same(t, re1, compileKeywordRegex(`^order\s+\d+$`))
+	assert.True(t, re1.MatchString("order 42"))
+}
+
+func TestMatchFlowTrigger_EmptyKeywordIgnored(t *testing.T) {
+	app := newProcessorTestApp(t)
+	org, _ := createProcessorTestOrg(t, app)
+	require.NoError(t, app.DB.Create(&models.ChatbotFlow{
+		BaseModel: models.BaseModel{ID: uuid.New()}, OrganizationID: org.ID, Name: "blank-trigger",
+		IsEnabled: true, TriggerKeywords: models.StringArray{""},
+	}).Error)
+	assert.Nil(t, app.matchFlowTrigger(org.ID, "unrelated message"))
+}
+
+// A 0 timeout made every message start a new session (flows never advanced),
+// and sessions past the timeout stayed "active" forever.
+func TestGetOrCreateSession_ZeroTimeoutAndStaleSessions(t *testing.T) {
+	app := newProcessorTestApp(t)
+	org, account := createProcessorTestOrg(t, app)
+	contact := testutil.CreateTestContact(t, app.DB, org.ID)
+
+	s1, isNew := app.getOrCreateSession(org.ID, contact.ID, account.Name, contact.PhoneNumber, 0)
+	require.True(t, isNew)
+	s2, isNew := app.getOrCreateSession(org.ID, contact.ID, account.Name, contact.PhoneNumber, 0)
+	assert.False(t, isNew, "timeout 0 must not start a new session per message")
+	assert.Equal(t, s1.ID, s2.ID)
+
+	// Age the session past the timeout: a new one starts and the old one is closed.
+	require.NoError(t, app.DB.Model(&models.ChatbotSession{}).Where("id = ?", s1.ID).
+		Update("last_activity_at", time.Now().Add(-2*time.Hour)).Error)
+	s3, isNew := app.getOrCreateSession(org.ID, contact.ID, account.Name, contact.PhoneNumber, 30)
+	assert.True(t, isNew)
+	assert.NotEqual(t, s1.ID, s3.ID)
+	var old models.ChatbotSession
+	require.NoError(t, app.DB.First(&old, s1.ID).Error)
+	assert.Equal(t, models.SessionStatusTimeout, old.Status)
+	assert.NotNil(t, old.CompletedAt)
+}
+
+// Two inbound messages for one contact ran the bot concurrently.
+func TestContactLocker_SerializesSameKey(t *testing.T) {
+	l := &contactLocker{locks: map[string]*contactLockEntry{}}
+	var inside, maxInside int32
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			unlock, _ := l.lock("pn|919999")
+			n := atomic.AddInt32(&inside, 1)
+			for {
+				m := atomic.LoadInt32(&maxInside)
+				if n <= m || atomic.CompareAndSwapInt32(&maxInside, m, n) {
+					break
+				}
+			}
+			time.Sleep(time.Millisecond)
+			atomic.AddInt32(&inside, -1)
+			unlock()
+		}()
+	}
+	wg.Wait()
+	assert.Equal(t, int32(1), maxInside)
+	assert.Empty(t, l.locks, "unused entries must be removed")
+
+	// Different contacts don't block each other.
+	u1, _ := l.lock("a")
+	u2, waited := l.lock("b")
+	assert.False(t, waited)
+	u1()
+	u2()
+}
+
+// A duplicate delivery of the same message that waited on the lock must not
+// run the bot again once the first copy is saved.
+func TestProcessIncomingMessageFull_DuplicateAfterWaitSkipped(t *testing.T) {
+	app := newProcessorTestApp(t)
+	org, account := createProcessorTestOrg(t, app)
+	contact := testutil.CreateTestContact(t, app.DB, org.ID)
+	wamid := "wamid.dup_" + uuid.New().String()[:8]
+	require.NoError(t, app.DB.Create(&models.Message{
+		BaseModel: models.BaseModel{ID: uuid.New()}, OrganizationID: org.ID, WhatsAppAccount: account.Name,
+		ContactID: contact.ID, WhatsAppMessageID: wamid, Direction: models.DirectionIncoming,
+		MessageType: models.MessageTypeText, Content: "hi", Status: models.MessageStatusReceived,
+	}).Error)
+
+	key := account.PhoneID + "|" + contact.PhoneNumber
+	unlock, _ := inboundContactLocks.lock(key)
+	done := make(chan struct{})
+	go func() {
+		msg := IncomingTextMessage{From: contact.PhoneNumber, ID: wamid, Type: "text"}
+		msg.Text = &struct {
+			Body string `json:"body"`
+		}{Body: "hi"}
+		app.processIncomingMessageFull(account.PhoneID, msg, "")
+		close(done)
+	}()
+	time.Sleep(50 * time.Millisecond)
+	unlock()
+	<-done
+
+	var n int64
+	app.DB.Model(&models.Message{}).Where("whats_app_message_id = ?", wamid).Count(&n)
+	assert.Equal(t, int64(1), n, "the duplicate must not be saved again")
+}
+
+// A transfer node holding another workspace's team id (imported bot) must
+// not create a transfer to that team.
+func TestCreateTransferToTeam_ForeignTeamUsesQueue(t *testing.T) {
+	app := newProcessorTestApp(t)
+	org, account := createProcessorTestOrg(t, app)
+	contact := testutil.CreateTestContact(t, app.DB, org.ID)
+	other := testutil.CreateTestOrganization(t, app.DB)
+	foreign := &models.Team{BaseModel: models.BaseModel{ID: uuid.New()}, OrganizationID: other.ID, Name: "foreign", IsActive: true}
+	require.NoError(t, app.DB.Create(foreign).Error)
+
+	app.createTransferToTeam(account, contact, foreign.ID, "", models.TransferSourceFlow)
+
+	var tr models.AgentTransfer
+	require.NoError(t, app.DB.Where("organization_id = ? AND contact_id = ?", org.ID, contact.ID).First(&tr).Error)
+	assert.Nil(t, tr.TeamID, "must fall back to the general queue")
+}
+
+func TestCreateKeywordRule_CleansAndValidatesKeywords(t *testing.T) {
+	app := newProcessorTestApp(t)
+	org, _ := createProcessorTestOrg(t, app)
+	user := testutil.CreateTestUser(t, app.DB, org.ID)
+
+	req := testutil.NewJSONRequest(t, map[string]any{
+		"keywords": []string{"(bad", "ok"}, "match_type": "regex", "response_type": "text",
+		"response_content": map[string]any{"body": "x"}, "enabled": true,
+	})
+	testutil.SetAuthContext(req, org.ID, user.ID)
+	require.NoError(t, app.CreateKeywordRule(req))
+	assert.Equal(t, http.StatusBadRequest, testutil.GetResponseStatusCode(req))
+
+	req = testutil.NewJSONRequest(t, map[string]any{
+		"keywords": []string{" ", ""}, "response_type": "text",
+		"response_content": map[string]any{"body": "x"}, "enabled": true,
+	})
+	testutil.SetAuthContext(req, org.ID, user.ID)
+	require.NoError(t, app.CreateKeywordRule(req))
+	assert.Equal(t, http.StatusBadRequest, testutil.GetResponseStatusCode(req))
+
+	req = testutil.NewJSONRequest(t, map[string]any{
+		"name": "trimmed", "keywords": []string{" hello ", ""}, "response_type": "text",
+		"response_content": map[string]any{"body": "x"}, "enabled": true,
+	})
+	testutil.SetAuthContext(req, org.ID, user.ID)
+	require.NoError(t, app.CreateKeywordRule(req))
+	require.Equal(t, http.StatusOK, testutil.GetResponseStatusCode(req))
+	var rule models.KeywordRule
+	require.NoError(t, app.DB.Where("organization_id = ? AND name = ?", org.ID, "trimmed").First(&rule).Error)
+	assert.Equal(t, models.StringArray{"hello"}, rule.Keywords)
+}
+
+// `while(true){}` in a JavaScript custom action hung the request forever.
+func TestExecuteJavaScriptAction_Timeout(t *testing.T) {
+	app := newProcessorTestApp(t)
+	old := customActionJSTimeout
+	customActionJSTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { customActionJSTimeout = old })
+
+	start := time.Now()
+	_, err := app.executeJavaScriptAction(models.CustomAction{Config: models.JSONB{"code": "while(true){}"}}, map[string]any{})
+	require.Error(t, err)
+	assert.Less(t, time.Since(start), 5*time.Second)
+}
+
+func TestStoreRedirectToken_PrunesExpired(t *testing.T) {
+	redirectTokenMutex.Lock()
+	redirectTokens["stale-test-token"] = redirectToken{URL: "https://x", ExpiresAt: time.Now().Add(-time.Minute)}
+	redirectTokenMutex.Unlock()
+
+	storeRedirectToken("fresh-test-token", "https://y")
+
+	redirectTokenMutex.RLock()
+	_, stale := redirectTokens["stale-test-token"]
+	_, fresh := redirectTokens["fresh-test-token"]
+	redirectTokenMutex.RUnlock()
+	assert.False(t, stale)
+	assert.True(t, fresh)
+}

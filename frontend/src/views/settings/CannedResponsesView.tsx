@@ -166,7 +166,7 @@ export const CannedResponsesView: React.FC = () => {
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder="Search shortcuts..."
-                className="w-72"
+                className="w-full sm:w-72"
               />
             </div>
           </CardHeader>

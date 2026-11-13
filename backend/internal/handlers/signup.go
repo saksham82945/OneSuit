@@ -568,9 +568,8 @@ func (a *App) AcceptInvite(r *fastglue.Request) error {
 		if req.FullName == "" {
 			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Your name is required", nil, "")
 		}
-		if len(req.Password) < minPasswordLength {
-			return r.SendErrorEnvelope(fasthttp.StatusBadRequest,
-				fmt.Sprintf("Password must be at least %d characters", minPasswordLength), nil, "")
+		if !strongEnoughPassword(req.Password) {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, passwordRulesMessage, nil, "")
 		}
 		var deleted int64
 		a.DB.Unscoped().Model(&models.User{}).Where("LOWER(email) = ?", req.Email).Count(&deleted)

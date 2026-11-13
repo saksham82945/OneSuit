@@ -21,6 +21,11 @@ const maxChatGraphIterations = 100
 
 var errChatGraphRunaway = errors.New("chat graph: too many non-blocking nodes in a single inbound (cycle?)")
 
+// maxChatPathEntries caps the __path__ audit trail kept in SessionData.
+// A session that loops through a menu would otherwise grow the JSONB row
+// on every inbound, and the whole row is rewritten on each persist.
+const maxChatPathEntries = 200
+
 // chatNodeCtx carries the per-inbound execution state for a single
 // runChatGraph call. userInput is the message text; buttonID is the
 // payload of an interactive button reply (empty for text messages).
@@ -111,6 +116,11 @@ func (a *App) runChatGraph(
 		if node == nil {
 			a.Log.Error("chat graph node not found",
 				"session", session.ID, "node_id", session.CurrentStep, "flow", flow.ID)
+			// The step was removed from the flow (edited while a contact was
+			// parked on it). End the session so the contact isn't stuck
+			// getting no reply until the session times out.
+			session.Status = models.SessionStatusCompleted
+			_ = a.persistChatSession(session)
 			return fmt.Errorf("node %q not found", session.CurrentStep)
 		}
 
@@ -136,6 +146,10 @@ func (a *App) runChatGraph(
 
 		res, err := a.executeChatNode(node, ctx)
 		if err != nil {
+			if errors.Is(err, errChatNodeUnsupported) {
+				// Permanent: retrying on the next inbound can't succeed.
+				session.Status = models.SessionStatusCompleted
+			}
 			_ = a.persistChatSession(session)
 			return err
 		}
@@ -181,9 +195,15 @@ func (a *App) runChatGraph(
 		session.CurrentStep = next
 	}
 
+	// A cycle of non-blocking nodes. End the session: resuming it on the
+	// next inbound would run the same cycle (and resend its messages) again.
+	session.Status = models.SessionStatusCompleted
 	_ = a.persistChatSession(session)
 	return errChatGraphRunaway
 }
+
+// errChatNodeUnsupported marks a node the runner can't execute at all.
+var errChatNodeUnsupported = errors.New("chat node type not supported")
 
 // executeChatNode dispatches by node type. Phase 1 implements only
 // message, buttons, and end. Other types return an error until their
@@ -225,7 +245,7 @@ func (a *App) executeChatNode(node *ChatNode, ctx *chatNodeCtx) (nodeOutcome, er
 		return a.execChatEnd(node, ctx)
 	default:
 		return nodeOutcome{outcome: "", yield: true},
-			fmt.Errorf("chat node type %q not implemented in this phase", node.Type)
+			fmt.Errorf("%w: %q", errChatNodeUnsupported, node.Type)
 	}
 }
 
@@ -818,7 +838,9 @@ func (a *App) execChatGotoFlow(node *ChatNode, ctx *chatNodeCtx) (nodeOutcome, e
 			"node", node.ID, "flow_id", targetID)
 		return nodeOutcome{}, nil
 	}
-	if target.WhatsAppAccount != ctx.session.WhatsAppAccount {
+	// Flows saved from the builder are workspace-wide (empty account), so
+	// only a flow pinned to a different account is refused.
+	if target.WhatsAppAccount != "" && target.WhatsAppAccount != ctx.session.WhatsAppAccount {
 		a.Log.Warn("goto_flow target belongs to a different WA account; refusing",
 			"node", node.ID, "target_account", target.WhatsAppAccount,
 			"session_account", ctx.session.WhatsAppAccount)
@@ -891,7 +913,7 @@ func (a *App) execChatWhatsAppFlow(node *ChatNode, ctx *chatNodeCtx) (nodeOutcom
 	// existing WhatsAppFlow rows continue to work.
 	firstScreen := ""
 	var waFlow models.WhatsAppFlow
-	if err := a.DB.Where("meta_flow_id = ?", flowID).First(&waFlow).Error; err == nil {
+	if err := a.DB.Where("organization_id = ? AND meta_flow_id = ?", ctx.account.OrganizationID, flowID).First(&waFlow).Error; err == nil {
 		if len(waFlow.Screens) > 0 {
 			if screenMap, ok := waFlow.Screens[0].(map[string]any); ok {
 				if id, ok := screenMap["id"].(string); ok {
@@ -964,6 +986,9 @@ func appendChatPath(s *models.ChatbotSession, node *ChatNode, outcome string) {
 	}
 	path, _ := s.SessionData["__path__"].([]any)
 	path = append(path, entry)
+	if len(path) > maxChatPathEntries {
+		path = append([]any(nil), path[len(path)-maxChatPathEntries:]...)
+	}
 	s.SessionData["__path__"] = path
 }
 

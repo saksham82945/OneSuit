@@ -286,13 +286,20 @@ func (c *Client) DownloadMedia(ctx context.Context, mediaURL string, accessToken
 		return nil, fmt.Errorf("media download failed with status %d", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	// WhatsApp media is at most 100 MB; never buffer more than that in memory.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxMediaDownloadBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read media content: %w", err)
+	}
+	if int64(len(data)) > MaxMediaDownloadBytes {
+		return nil, fmt.Errorf("media larger than %d bytes", MaxMediaDownloadBytes)
 	}
 
 	return data, nil
 }
+
+// MaxMediaDownloadBytes caps a single media download (WhatsApp's own limit is 100 MB).
+var MaxMediaDownloadBytes int64 = 100 << 20
 
 // UploadMediaResponse represents the response from uploading media
 type UploadMediaResponse struct {

@@ -2,6 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -395,6 +398,10 @@ func (a *App) UpdateChatbotSettings(r *fastglue.Request) error {
 		settings.FallbackButtons = buttons
 	}
 	if req.SessionTimeoutMinutes != nil {
+		// 0 or less made every message start a new bot session.
+		if *req.SessionTimeoutMinutes < 1 {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Session timeout must be at least 1 minute", nil, "")
+		}
 		settings.SessionTimeoutMins = *req.SessionTimeoutMinutes
 	}
 	// Business Hours
@@ -631,6 +638,7 @@ func (a *App) CreateKeywordRule(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Invalid request body", nil, "")
 	}
 
+	req.Keywords = cleanKeywords(req.Keywords)
 	if len(req.Keywords) == 0 {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "At least one keyword is required", nil, "")
 	}
@@ -638,6 +646,9 @@ func (a *App) CreateKeywordRule(r *fastglue.Request) error {
 	// Set defaults
 	if req.MatchType == "" {
 		req.MatchType = models.MatchTypeContains
+	}
+	if err := checkKeywordRegexes(req.MatchType, req.Keywords); err != nil {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, err.Error(), nil, "")
 	}
 	if req.ResponseType == "" {
 		req.ResponseType = models.ResponseTypeText
@@ -757,10 +768,17 @@ func (a *App) UpdateKeywordRule(r *fastglue.Request) error {
 		rule.Name = *req.Name
 	}
 	if len(req.Keywords) > 0 {
-		rule.Keywords = req.Keywords
+		cleaned := cleanKeywords(req.Keywords)
+		if len(cleaned) == 0 {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "At least one keyword is required", nil, "")
+		}
+		rule.Keywords = cleaned
 	}
 	if req.MatchType != nil {
 		rule.MatchType = *req.MatchType
+	}
+	if err := checkKeywordRegexes(rule.MatchType, rule.Keywords); err != nil {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, err.Error(), nil, "")
 	}
 	if req.ResponseType != nil {
 		rule.ResponseType = *req.ResponseType
@@ -921,7 +939,7 @@ func (a *App) CreateChatbotFlow(r *fastglue.Request) error {
 		OrganizationID:    orgID,
 		Name:              req.Name,
 		Description:       req.Description,
-		TriggerKeywords:   req.TriggerKeywords,
+		TriggerKeywords:   cleanKeywords(req.TriggerKeywords),
 		InitialMessage:    req.InitialMessage,
 		CompletionMessage: req.CompletionMessage,
 		OnCompleteAction:  req.OnCompleteAction,
@@ -1026,7 +1044,7 @@ func (a *App) UpdateChatbotFlow(r *fastglue.Request) error {
 	}
 	// nil = field not sent; an empty list clears the keywords.
 	if req.TriggerKeywords != nil {
-		flow.TriggerKeywords = req.TriggerKeywords
+		flow.TriggerKeywords = cleanKeywords(req.TriggerKeywords)
 	}
 	if req.InitialMessage != nil {
 		flow.InitialMessage = *req.InitialMessage
@@ -1481,4 +1499,30 @@ func (a *App) getChatbotStats(orgID uuid.UUID) ChatbotStatsResponse {
 		Count(&stats.AIContextsCount)
 
 	return stats
+}
+
+// cleanKeywords trims keywords and drops empty ones. An empty keyword
+// matched every inbound message ("contains" the empty string).
+func cleanKeywords(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, k := range in {
+		if k = strings.TrimSpace(k); k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// checkKeywordRegexes rejects regex keywords that don't compile; the
+// matcher silently skipped them, so the rule never fired.
+func checkKeywordRegexes(matchType models.MatchType, keywords []string) error {
+	if matchType != models.MatchTypeRegex {
+		return nil
+	}
+	for _, k := range keywords {
+		if _, err := regexp.Compile(k); err != nil {
+			return fmt.Errorf("keyword %q isn't a valid regex pattern", k)
+		}
+	}
+	return nil
 }

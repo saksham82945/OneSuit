@@ -10,12 +10,14 @@ import (
 )
 
 const (
-	teamCachePrefix = "team:assignment:"
+	// v2: entries carry the team's organization (older entries didn't).
+	teamCachePrefix = "team:assignment:v2:"
 	teamCacheTTL    = 6 * time.Hour
 )
 
 // TeamConfig holds the cached team metadata used for assignment decisions.
 type TeamConfig struct {
+	OrganizationID      uuid.UUID                 `json:"organization_id"`
 	Strategy            models.AssignmentStrategy `json:"strategy"`
 	PerAgentTimeoutSecs int                       `json:"per_agent_timeout_secs"`
 	MemberIDs           []uuid.UUID               `json:"member_ids"` // agent-role members only
@@ -50,6 +52,7 @@ func (a *Assigner) GetTeamConfig(teamID uuid.UUID) *TeamConfig {
 		Pluck("user_id", &memberIDs)
 
 	cfg := &TeamConfig{
+		OrganizationID:      team.OrganizationID,
 		Strategy:            team.AssignmentStrategy,
 		PerAgentTimeoutSecs: team.PerAgentTimeoutSecs,
 		MemberIDs:           memberIDs,

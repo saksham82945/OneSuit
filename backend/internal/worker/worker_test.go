@@ -1123,3 +1123,59 @@ func TestReplaceTemplateContent_NoParams(t *testing.T) {
 
 	assert.Equal(t, "Hello, your order is ready!", result)
 }
+
+// A recipient that was already sent must not be sent again when its job is
+// delivered a second time (pause/resume re-queues pending recipients while
+// the original jobs are still in the stream; stale jobs are re-delivered
+// after a restart).
+func TestWorker_HandleRecipientJob_DuplicateJobSendsOnce(t *testing.T) {
+	w := testWorker(t)
+	org, account, _, campaign, recipient := createTestCampaignData(t, w)
+
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		calls++
+		rw.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(rw).Encode(map[string]any{
+			"messages": []map[string]any{{"id": "wamid.once-" + uuid.New().String()}},
+		})
+	}))
+	defer server.Close()
+	require.NoError(t, w.DB.Model(account).Update("api_version", "v21.0").Error)
+	w.WhatsApp = whatsapp.NewWithBaseURL(w.Log, server.URL)
+
+	job := &queue.RecipientJob{
+		CampaignID:     campaign.ID,
+		RecipientID:    recipient.ID,
+		OrganizationID: org.ID,
+		PhoneNumber:    recipient.PhoneNumber,
+		RecipientName:  recipient.RecipientName,
+		TemplateParams: recipient.TemplateParams,
+	}
+
+	require.NoError(t, w.HandleRecipientJob(context.Background(), job))
+	require.NoError(t, w.HandleRecipientJob(context.Background(), job))
+
+	assert.Equal(t, 1, calls, "the same recipient must only be sent once")
+	var updated models.BulkMessageCampaign
+	require.NoError(t, w.DB.First(&updated, campaign.ID).Error)
+	assert.Equal(t, 1, updated.SentCount)
+}
+
+// A job whose organization does not match the campaign's is dropped.
+func TestWorker_HandleRecipientJob_OrgMismatchSkipped(t *testing.T) {
+	w := testWorker(t)
+	_, _, _, campaign, recipient := createTestCampaignData(t, w)
+
+	job := &queue.RecipientJob{
+		CampaignID:     campaign.ID,
+		RecipientID:    recipient.ID,
+		OrganizationID: uuid.New(),
+		PhoneNumber:    recipient.PhoneNumber,
+	}
+	require.NoError(t, w.HandleRecipientJob(context.Background(), job))
+
+	var updated models.BulkMessageRecipient
+	require.NoError(t, w.DB.First(&updated, recipient.ID).Error)
+	assert.Equal(t, models.MessageStatusPending, updated.Status)
+}

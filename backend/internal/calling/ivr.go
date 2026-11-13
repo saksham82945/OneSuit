@@ -127,9 +127,22 @@ func (m *Manager) runIVRFlow(session *CallSession, waAccount *whatsapp.Account) 
 	m.executeNodeLoop(session, waAccount, &graph, ivrCtx, player)
 }
 
+// maxIVRNodeSteps bounds one IVR run. A cycle of steps that don't wait
+// for the caller (a greeting with no audio, timing, http) otherwise spun a
+// CPU core until the call ended.
+const maxIVRNodeSteps = 500
+
+// maxIVRGotoJumps bounds goto_flow jumps in one call; each jump recurses
+// into runIVRFlow, so an A→B→A loop grew the stack without limit.
+const maxIVRGotoJumps = 20
+
 // executeNodeLoop dispatches to type-specific executors in a loop.
 func (m *Manager) executeNodeLoop(session *CallSession, waAccount *whatsapp.Account, graph *IVRFlowGraph, ctx *IVRContext, player *AudioPlayer) {
-	for {
+	for steps := 0; ; steps++ {
+		if steps >= maxIVRNodeSteps {
+			m.log.Error("IVR flow ran too many steps (loop?), stopping", "call_id", session.ID, "node_id", ctx.CurrentNode)
+			break
+		}
 		// Check session is still active
 		session.mu.Lock()
 		status := session.Status
@@ -514,6 +527,25 @@ func (m *Manager) executeGotoFlow(session *CallSession, node *IVRNode, ctx *IVRC
 		return
 	}
 	targetFlow := *targetFlowPtr
+
+	// The flow id comes from flow config: never run another workspace's flow.
+	if targetFlow.OrganizationID != session.OrganizationID {
+		m.log.Warn("goto_flow target belongs to another organization", "call_id", session.ID, "flow_id", flowID)
+		m.saveIVRPath(session, ctx.Path)
+		return
+	}
+
+	jumps := 0
+	for _, p := range ctx.Path {
+		if p["action"] == "goto_flow" {
+			jumps++
+		}
+	}
+	if jumps >= maxIVRGotoJumps {
+		m.log.Error("Too many goto_flow jumps in one call (loop?), stopping", "call_id", session.ID, "flow_id", flowID)
+		m.saveIVRPath(session, ctx.Path)
+		return
+	}
 
 	if !targetFlow.IsActive {
 		m.log.Warn("goto_flow target is disabled", "call_id", session.ID, "flow_id", flowID)

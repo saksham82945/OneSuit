@@ -30,8 +30,9 @@ type AccountRequest struct {
 	APIVersion             string `json:"api_version"`
 	IsDefaultIncoming      bool   `json:"is_default_incoming"`
 	IsDefaultOutgoing      bool   `json:"is_default_outgoing"`
-	AutoReadReceipt        bool   `json:"auto_read_receipt"`
-	BusinessCallingEnabled bool   `json:"business_calling_enabled"`
+	// Pointers: a field left out of an update keeps its current value.
+	AutoReadReceipt        *bool `json:"auto_read_receipt"`
+	BusinessCallingEnabled *bool `json:"business_calling_enabled"`
 }
 
 // AccountResponse represents the response for an account (without sensitive data)
@@ -128,8 +129,8 @@ func (a *App) CreateAccount(r *fastglue.Request) error {
 		APIVersion:             apiVersion,
 		IsDefaultIncoming:      req.IsDefaultIncoming,
 		IsDefaultOutgoing:      req.IsDefaultOutgoing,
-		AutoReadReceipt:        req.AutoReadReceipt,
-		BusinessCallingEnabled: req.BusinessCallingEnabled,
+		AutoReadReceipt:        req.AutoReadReceipt != nil && *req.AutoReadReceipt,
+		BusinessCallingEnabled: req.BusinessCallingEnabled != nil && *req.BusinessCallingEnabled,
 		Status:                 "active",
 		CreatedByID:            &userID,
 		UpdatedByID:            &userID,
@@ -248,8 +249,12 @@ func (a *App) UpdateAccount(r *fastglue.Request) error {
 	if req.APIVersion != "" {
 		account.APIVersion = req.APIVersion
 	}
-	account.AutoReadReceipt = req.AutoReadReceipt
-	account.BusinessCallingEnabled = req.BusinessCallingEnabled
+	if req.AutoReadReceipt != nil {
+		account.AutoReadReceipt = *req.AutoReadReceipt
+	}
+	if req.BusinessCallingEnabled != nil {
+		account.BusinessCallingEnabled = *req.BusinessCallingEnabled
+	}
 
 	// Handle default flags
 	if req.IsDefaultIncoming && !account.IsDefaultIncoming {

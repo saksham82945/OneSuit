@@ -330,6 +330,27 @@ func TestClient_DownloadMedia(t *testing.T) {
 	}
 }
 
+// Not parallel: it lowers the package-wide size cap for its duration.
+func TestClient_DownloadMedia_TooLarge(t *testing.T) {
+	old := whatsapp.MaxMediaDownloadBytes
+	whatsapp.MaxMediaDownloadBytes = 10
+	defer func() { whatsapp.MaxMediaDownloadBytes = old }()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("0123456789ABCDEF"))
+	}))
+	defer server.Close()
+
+	client := whatsapp.NewWithTimeout(testutil.NopLogger(), 5*time.Second)
+	_, err := client.DownloadMedia(testutil.TestContext(t), server.URL+"/media/big", "tok")
+	require.Error(t, err)
+
+	whatsapp.MaxMediaDownloadBytes = 16
+	data, err := client.DownloadMedia(testutil.TestContext(t), server.URL+"/media/big", "tok")
+	require.NoError(t, err)
+	assert.Len(t, data, 16)
+}
+
 func TestClient_MarkMessageRead(t *testing.T) {
 	t.Parallel()
 

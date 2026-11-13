@@ -302,3 +302,32 @@ func TestApp_WebhookHandler_EmptyEntryAccepted(t *testing.T) {
 	require.NoError(t, app.WebhookHandler(req))
 	assert.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req))
 }
+
+func TestApp_WebhookHandler_MissingSignatureWithAppSecret_Rejected(t *testing.T) {
+	// An account with an App Secret only accepts signed requests: dropping the
+	// header must not skip verification.
+	app := newAppForWebhook(t, "")
+	org := testutil.CreateTestOrganization(t, app.DB)
+	uid := uuid.New().String()[:8]
+	acc := &models.WhatsAppAccount{
+		BaseModel:          models.BaseModel{ID: uuid.New()},
+		OrganizationID:     org.ID,
+		Name:               "wbk-h-nosig-" + uid,
+		PhoneID:            "phone-nosig-" + uid,
+		BusinessID:         "biz-nosig-" + uid,
+		AccessToken:        "tok",
+		AppSecret:          "real-secret",
+		WebhookVerifyToken: "vt",
+		APIVersion:         "v18.0",
+		Status:             "active",
+	}
+	require.NoError(t, app.DB.Create(acc).Error)
+
+	req := testutil.NewRequest(t)
+	req.RequestCtx.Request.Header.SetMethod("POST")
+	req.RequestCtx.Request.Header.SetContentType("application/json")
+	req.RequestCtx.Request.SetBody(makeMessagesPayload(acc.PhoneID))
+
+	require.NoError(t, app.WebhookHandler(req))
+	assert.Equal(t, fasthttp.StatusForbidden, testutil.GetResponseStatusCode(req))
+}

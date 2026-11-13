@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Button } from '@/components/ui/button';
 import { supportService, type SupportTicket, type SupportTicketReply } from '@/services/support';
-import { formatDate, ticketRef, superAdminService } from '@/services/superAdmin';
+import { formatDate, ticketRef } from '@/services/superAdmin';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -231,7 +231,7 @@ export const SupportView: React.FC = () => {
     setUpdatingStatus(true);
     const newStatus: SupportTicket['status'] = selectedTicket.status === 'open' ? 'solved' : 'open';
     try {
-      const updated = await superAdminService.updateTicket(selectedTicket.id, { status: newStatus });
+      const updated = await supportService.setStatus(selectedTicket.id, newStatus);
       const merged = { ...selectedTicket, status: newStatus, solved_at: updated.solved_at };
       setTickets((list) =>
         (list ?? []).map((tk) => (tk.id === merged.id ? merged : tk))

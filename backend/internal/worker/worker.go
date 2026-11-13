@@ -80,6 +80,33 @@ func (w *Worker) HandleRecipientJob(ctx context.Context, job *queue.RecipientJob
 		return nil // Not an error, just skip
 	}
 
+	// A job must never reach recipients of another organization.
+	if campaign.OrganizationID != job.OrganizationID {
+		w.Log.Error("Recipient job organization does not match campaign, skipping", "campaign_id", job.CampaignID, "job_org", job.OrganizationID)
+		return nil
+	}
+
+	// Send each recipient at most once. The same recipient can be queued
+	// twice (pause then resume re-queues every pending recipient while the
+	// first jobs are still in the stream; stale jobs are re-delivered after a
+	// worker restart), so take a short lock and re-check that the recipient
+	// is still pending before sending.
+	if !w.claimRecipient(ctx, job.RecipientID) {
+		w.Log.Info("Recipient already being sent by another worker, skipping", "recipient_id", job.RecipientID)
+		return nil
+	}
+	defer w.releaseRecipient(job.RecipientID)
+
+	var current models.BulkMessageRecipient
+	if err := w.DB.Select("id", "status").Where("id = ? AND campaign_id = ?", job.RecipientID, job.CampaignID).First(&current).Error; err != nil {
+		w.Log.Info("Recipient no longer exists, skipping", "recipient_id", job.RecipientID, "error", err)
+		return nil
+	}
+	if current.Status != models.MessageStatusPending {
+		w.Log.Info("Recipient already processed, skipping duplicate job", "recipient_id", job.RecipientID, "status", current.Status)
+		return nil
+	}
+
 	// Get WhatsApp account
 	var account models.WhatsAppAccount
 	if err := w.DB.Where("name = ? AND organization_id = ?", campaign.WhatsAppAccount, job.OrganizationID).First(&account).Error; err != nil {
@@ -166,6 +193,35 @@ func (w *Worker) HandleRecipientJob(ctx context.Context, job *queue.RecipientJob
 	w.checkCampaignCompletion(ctx, job.CampaignID, job.OrganizationID)
 
 	return nil
+}
+
+// recipientLockTTL bounds how long a crashed worker can block a recipient.
+const recipientLockTTL = 2 * time.Minute
+
+func recipientLockKey(recipientID uuid.UUID) string {
+	return "whatomate:campaign:recipient-lock:" + recipientID.String()
+}
+
+// claimRecipient takes a short Redis lock so two workers never send to the
+// same recipient at the same time. Without Redis it always succeeds (the
+// pending-status check still filters out already-sent recipients).
+func (w *Worker) claimRecipient(ctx context.Context, recipientID uuid.UUID) bool {
+	if w.Redis == nil {
+		return true
+	}
+	ok, err := w.Redis.SetNX(ctx, recipientLockKey(recipientID), "1", recipientLockTTL).Result()
+	if err != nil {
+		w.Log.Warn("Failed to take recipient lock, continuing", "error", err, "recipient_id", recipientID)
+		return true
+	}
+	return ok
+}
+
+func (w *Worker) releaseRecipient(recipientID uuid.UUID) {
+	if w.Redis == nil {
+		return
+	}
+	w.Redis.Del(context.Background(), recipientLockKey(recipientID))
 }
 
 // updateRecipientStatus updates the recipient's status in the database

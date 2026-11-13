@@ -171,16 +171,18 @@ func (a *App) WebhookHandler(r *fastglue.Request) error {
 	}
 
 	// Verify webhook signature before processing any fields.
-	// Find a phoneNumberID from any change to look up the account's AppSecret.
-	if len(signature) > 0 {
+	// Every change is checked against the App Secret of the account it targets
+	// (by phone number ID, or by WABA ID for events without one, such as
+	// template status updates). A missing header is treated like a wrong one
+	// whenever a secret is known: Meta always signs, so an unsigned request
+	// for such an account is forged.
+	{
+		verified := map[uuid.UUID]bool{}
 		for _, entry := range payload.Entry {
 			for _, change := range entry.Changes {
 				phoneNumberID := change.Value.Metadata.PhoneNumberID
-				if phoneNumberID == "" {
-					continue
-				}
-				account, err := a.getWhatsAppAccountCached(phoneNumberID)
-				if err != nil {
+				account := a.webhookAccountFor(phoneNumberID, entry.ID)
+				if account == nil || verified[account.ID] {
 					continue
 				}
 				secrets := a.webhookSecretsFor(account)
@@ -188,12 +190,12 @@ func (a *App) WebhookHandler(r *fastglue.Request) error {
 					continue
 				}
 				if !signatureMatchesAny(body, signature, secrets) {
-					a.Log.Warn("Invalid webhook signature", "phone_id", phoneNumberID)
+					a.Log.Warn("Invalid webhook signature", "phone_id", phoneNumberID, "waba_id", entry.ID, "signed", len(signature) > 0)
 					a.recordWebhookEvent(phoneNumberID, change.Field, "rejected: signature didn't match the saved App Secret")
 					return r.SendErrorEnvelope(fasthttp.StatusForbidden, "Invalid signature", nil, "")
 				}
+				verified[account.ID] = true
 				a.Log.Debug("Webhook signature verified successfully")
-				break
 			}
 		}
 	}
@@ -367,6 +369,11 @@ func (a *App) processIncomingMessage(phoneNumberID string, msg IncomingTextMessa
 
 	// Check for duplicate message - Meta sometimes sends the same message multiple times
 	if msg.ID != "" {
+		if !a.claimWebhookMessage(msg.ID) {
+			a.Log.Debug("Duplicate message delivery in flight, skipping", "message_id", msg.ID)
+			return
+		}
+		defer a.releaseWebhookMessage(msg.ID)
 		var existingMsg models.Message
 		if err := a.DB.Where("whats_app_message_id = ?", msg.ID).First(&existingMsg).Error; err == nil {
 			a.Log.Debug("Duplicate message detected, skipping", "message_id", msg.ID)
@@ -390,9 +397,27 @@ func (a *App) processStatusUpdate(phoneNumberID string, status WebhookStatus) {
 
 	a.Log.Info("Processing status update", "message_id", messageID, "status", statusValue, "phone_number_id", phoneNumberID)
 
-	// Update messages table - this also handles campaign stats via incrementCampaignStat
-	a.updateMessageStatus(messageID, statusValue, status.Errors)
+	// Update messages table - this also handles campaign stats via incrementCampaignStat.
+	// Meta can report a status before our own row carries the wamid (the
+	// campaign worker saves the message after the API call returns, and agent
+	// sends store the wamid right after it), so retry briefly before giving up.
+	for attempt := 0; attempt < statusLookupAttempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(statusLookupDelay)
+		}
+		if a.updateMessageStatus(messageID, statusValue, status.Errors) {
+			return
+		}
+	}
+	a.Log.Debug("No message found for status update after retries", "whats_app_message_id", messageID)
 }
+
+// statusLookupAttempts / statusLookupDelay bound how long a status update waits
+// for its message row to appear.
+var (
+	statusLookupAttempts = 4
+	statusLookupDelay    = 2 * time.Second
+)
 
 // statusPriority returns the priority of a status (higher = more progressed)
 func statusPriority(status models.MessageStatus) int {
@@ -412,14 +437,18 @@ func statusPriority(status models.MessageStatus) int {
 	}
 }
 
-// updateMessageStatus updates the status of a regular message in the messages table
-func (a *App) updateMessageStatus(whatsappMsgID, statusValue string, errors []WebhookStatusError) {
+// updateMessageStatus updates the status of a regular message in the messages table.
+// It returns false only when no message with that WhatsApp ID exists (yet).
+func (a *App) updateMessageStatus(whatsappMsgID, statusValue string, errors []WebhookStatusError) bool {
+	if whatsappMsgID == "" {
+		return true
+	}
 	// Find the message by WhatsApp message ID
 	var message models.Message
 	result := a.DB.Where("whats_app_message_id = ?", whatsappMsgID).First(&message)
 	if result.Error != nil {
 		a.Log.Debug("No message found for status update", "whats_app_message_id", whatsappMsgID)
-		return
+		return false
 	}
 
 	newStatus := models.MessageStatus(statusValue)
@@ -432,7 +461,7 @@ func (a *App) updateMessageStatus(whatsappMsgID, statusValue string, errors []We
 			"message_id", message.ID,
 			"current_status", message.Status,
 			"new_status", statusValue)
-		return
+		return true
 	}
 
 	updates := map[string]any{}
@@ -460,12 +489,33 @@ func (a *App) updateMessageStatus(whatsappMsgID, statusValue string, errors []We
 		}
 	default:
 		a.Log.Debug("Ignoring message status update", "status", statusValue)
-		return
+		return true
 	}
 
-	if err := a.DB.Model(&message).Updates(updates).Error; err != nil {
-		a.Log.Error("Failed to update message status", "error", err, "message_id", message.ID)
-		return
+	// Conditional update: Meta often delivers sent/delivered/read in one
+	// payload (each handled in its own goroutine) and re-delivers webhooks.
+	// Only the update that actually moves the row forward may count it, so a
+	// late "sent" can't overwrite "read" and a duplicate can't double-count
+	// campaign stats.
+	notBelow := []models.MessageStatus{models.MessageStatusFailed}
+	if newStatus != models.MessageStatusFailed {
+		notBelow = nil
+		for _, s := range []models.MessageStatus{models.MessageStatusSent, models.MessageStatusDelivered, models.MessageStatusRead, models.MessageStatusFailed} {
+			if statusPriority(s) >= newPriority {
+				notBelow = append(notBelow, s)
+			}
+		}
+	}
+	res := a.DB.Model(&models.Message{}).
+		Where("id = ? AND status NOT IN ?", message.ID, notBelow).
+		Updates(updates)
+	if res.Error != nil {
+		a.Log.Error("Failed to update message status", "error", res.Error, "message_id", message.ID)
+		return true
+	}
+	if res.RowsAffected == 0 {
+		a.Log.Debug("Status already progressed concurrently, skipping", "message_id", message.ID, "new_status", statusValue)
+		return true
 	}
 
 	a.Log.Info("Updated message status", "message_id", message.ID, "status", statusValue)
@@ -473,6 +523,11 @@ func (a *App) updateMessageStatus(whatsappMsgID, statusValue string, errors []We
 	// Update campaign stats and recipient status if this is a campaign message
 	if message.Metadata != nil {
 		if campaignID, ok := message.Metadata["campaign_id"].(string); ok && campaignID != "" {
+			// "read" implies "delivered": when Meta's delivered event is
+			// skipped or loses the race, still count the delivery.
+			if newStatus == models.MessageStatusRead && currentPriority < statusPriority(models.MessageStatusDelivered) {
+				a.incrementCampaignStat(campaignID, string(models.MessageStatusDelivered))
+			}
 			a.incrementCampaignStat(campaignID, statusValue)
 
 			// Update the BulkMessageRecipient status and timestamps
@@ -490,7 +545,7 @@ func (a *App) updateMessageStatus(whatsappMsgID, statusValue string, errors []We
 				}
 			}
 			a.DB.Model(&models.BulkMessageRecipient{}).
-				Where("whats_app_message_id = ?", whatsappMsgID).
+				Where("whats_app_message_id = ? AND status NOT IN ?", whatsappMsgID, notBelow).
 				Updates(recipientUpdates)
 		}
 	}
@@ -509,6 +564,7 @@ func (a *App) updateMessageStatus(whatsappMsgID, statusValue string, errors []We
 			Payload: wsPayload,
 		})
 	}
+	return true
 }
 
 // processTemplateStatusUpdate updates template status when Meta sends a status update webhook
@@ -538,7 +594,7 @@ func (a *App) processTemplateStatusUpdate(wabaID, event, templateName, templateL
 	for _, account := range accounts {
 		// Find and update the template
 		result := a.DB.Model(&models.Template{}).
-			Where("whats_app_account = ? AND name = ? AND language = ?", account.Name, templateName, templateLanguage).
+			Where("organization_id = ? AND whats_app_account = ? AND name = ? AND language = ?", account.OrganizationID, account.Name, templateName, templateLanguage).
 			Update("status", status)
 
 		if result.Error != nil {
@@ -561,6 +617,55 @@ func (a *App) processTemplateStatusUpdate(wabaID, event, templateName, templateL
 			)
 		}
 	}
+}
+
+// claimWebhookMessage reports whether this is the first delivery of an inbound
+// WhatsApp message ID. Meta retries and duplicate deliveries can arrive at the
+// same moment; the "already saved?" DB check alone lets both through before
+// either row exists (no unique index on whats_app_message_id), which stored
+// the message twice and ran the chatbot twice. Without Redis it allows all.
+func (a *App) claimWebhookMessage(waMessageID string) bool {
+	if a.Redis == nil || waMessageID == "" {
+		return true
+	}
+	ok, err := a.Redis.SetNX(context.Background(), webhookMsgClaimPrefix+waMessageID, "1", 10*time.Minute).Result()
+	if err != nil {
+		return true
+	}
+	return ok
+}
+
+// releaseWebhookMessage drops the in-flight claim once processing is done;
+// from then on the saved message row is what marks later deliveries as
+// duplicates.
+func (a *App) releaseWebhookMessage(waMessageID string) {
+	if a.Redis == nil || waMessageID == "" {
+		return
+	}
+	a.Redis.Del(context.Background(), webhookMsgClaimPrefix+waMessageID)
+}
+
+const webhookMsgClaimPrefix = "wa:webhook:msg:"
+
+// webhookAccountFor finds the account a webhook change belongs to, by phone
+// number ID when the change carries one, otherwise by WABA (entry) ID.
+func (a *App) webhookAccountFor(phoneNumberID, wabaID string) *models.WhatsAppAccount {
+	if phoneNumberID != "" {
+		account, err := a.getWhatsAppAccountCached(phoneNumberID)
+		if err != nil {
+			return nil
+		}
+		return account
+	}
+	if wabaID == "" {
+		return nil
+	}
+	var account models.WhatsAppAccount
+	if err := a.DB.Where("business_id = ?", wabaID).First(&account).Error; err != nil {
+		return nil
+	}
+	a.decryptAccountSecrets(&account)
+	return &account
 }
 
 // verifyWebhookSignature verifies the X-Hub-Signature-256 header from Meta.
@@ -642,6 +747,11 @@ func (a *App) processMessageEcho(phoneNumberID string, msg IncomingTextMessage) 
 
 	// Check for duplicate message - Meta sometimes sends the same message multiple times
 	if msg.ID != "" {
+		if !a.claimWebhookMessage(msg.ID) {
+			a.Log.Debug("Duplicate echo delivery in flight, skipping", "message_id", msg.ID)
+			return
+		}
+		defer a.releaseWebhookMessage(msg.ID)
 		var existingMsg models.Message
 		if err := a.DB.Where("whats_app_message_id = ?", msg.ID).First(&existingMsg).Error; err == nil {
 			a.Log.Debug("Duplicate echo message detected, skipping", "message_id", msg.ID)

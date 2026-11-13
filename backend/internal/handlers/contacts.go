@@ -426,7 +426,7 @@ func (a *App) GetMessages(r *fastglue.Request) error {
 		if err == nil {
 			// Get the created_at of the before_id message
 			var beforeMsg models.Message
-			if err := a.DB.Where("id = ?", beforeID).First(&beforeMsg).Error; err == nil {
+			if err := a.DB.Where("id = ? AND contact_id = ?", beforeID, contactID).First(&beforeMsg).Error; err == nil {
 				msgQuery = msgQuery.Where("created_at < ?", beforeMsg.CreatedAt)
 			}
 		}
@@ -468,9 +468,14 @@ func (a *App) GetMessages(r *fastglue.Request) error {
 	}
 
 	var messages []models.Message
-	if err := msgQuery.Preload("ReplyToMessage").Order("created_at ASC").Offset(offset).Limit(queryLimit).Find(&messages).Error; err != nil {
-		a.Log.Error("Failed to list messages", "error", err)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to list messages", nil, "")
+	// A page past the start of the conversation is empty. Without this check
+	// queryLimit goes negative, which GORM treats as "no limit" and the whole
+	// conversation is returned.
+	if queryLimit > 0 {
+		if err := msgQuery.Preload("ReplyToMessage").Order("created_at ASC").Offset(offset).Limit(queryLimit).Find(&messages).Error; err != nil {
+			a.Log.Error("Failed to list messages", "error", err)
+			return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to list messages", nil, "")
+		}
 	}
 
 	// Mark messages as read

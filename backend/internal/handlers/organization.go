@@ -343,13 +343,20 @@ func (a *App) ListOrganizations(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
 	}
 
-	// Super admins or users with organizations:read permission
-	if !a.IsSuperAdmin(userID) && !a.HasPermission(userID, models.ResourceOrganizations, models.ActionRead) {
+	// Super admins see every organization. Everyone else (organizations:read
+	// is in the stock admin and manager roles of every workspace) sees only the
+	// organizations they belong to — never other tenants' names and IDs.
+	superAdmin := a.IsSuperAdmin(userID)
+	if !superAdmin && !a.HasPermission(userID, models.ResourceOrganizations, models.ActionRead) {
 		return r.SendErrorEnvelope(fasthttp.StatusForbidden, "Insufficient permissions", nil, "")
 	}
 
 	var orgs []models.Organization
-	if err := a.DB.Order("name ASC").Find(&orgs).Error; err != nil {
+	q := a.DB.Order("name ASC")
+	if !superAdmin {
+		q = q.Where("id IN (?)", a.DB.Model(&models.UserOrganization{}).Select("organization_id").Where("user_id = ?", userID))
+	}
+	if err := q.Find(&orgs).Error; err != nil {
 		a.Log.Error("Failed to list organizations", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to list organizations", nil, "")
 	}
@@ -399,6 +406,12 @@ func (a *App) CreateOrganization(r *fastglue.Request) error {
 	_, userID, err := a.requireAuth(r, models.ResourceOrganizations, models.ActionWrite)
 	if err != nil {
 		return nil
+	}
+	// organizations:write is in every workspace's stock admin role, but a
+	// workspace made here has no subscription (so no plan limits and every
+	// module on) — new businesses come from sign-up or the super admin.
+	if !a.IsSuperAdmin(userID) {
+		return r.SendErrorEnvelope(fasthttp.StatusForbidden, "Only the platform super admin can create organizations", nil, "")
 	}
 
 	var req CreateOrganizationRequest

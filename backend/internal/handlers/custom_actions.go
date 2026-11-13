@@ -76,6 +76,29 @@ type redirectToken struct {
 	ExpiresAt time.Time
 }
 
+// storeRedirectToken saves a one-time redirect token. Tokens that were
+// never opened used to stay in the map forever; expired ones are dropped
+// here so the map only holds live tokens.
+func storeRedirectToken(token, url string) {
+	now := time.Now()
+	redirectTokenMutex.Lock()
+	defer redirectTokenMutex.Unlock()
+	for k, v := range redirectTokens {
+		if now.After(v.ExpiresAt) {
+			delete(redirectTokens, k)
+		}
+	}
+	redirectTokens[token] = redirectToken{URL: url, ExpiresAt: now.Add(30 * time.Second)}
+}
+
+// customActionJSTimeout bounds a JavaScript action; `while(true){}` used to
+// hang the request and burn a CPU core forever. A var so tests can shorten it.
+var customActionJSTimeout = 5 * time.Second
+
+// customActionMaxResponseBytes caps how much of a webhook action's
+// response is read into memory.
+const customActionMaxResponseBytes = 1 << 20
+
 // ListCustomActions returns all custom actions for the organization
 func (a *App) ListCustomActions(r *fastglue.Request) error {
 	orgID, err := a.getOrgID(r)
@@ -429,7 +452,7 @@ func (a *App) executeWebhookAction(action models.CustomAction, context map[strin
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, customActionMaxResponseBytes))
 
 	// Parse response
 	var responseData map[string]any
@@ -473,12 +496,7 @@ func (a *App) executeURLAction(action models.CustomAction, context map[string]an
 	token := hex.EncodeToString(tokenBytes)
 
 	// Store the redirect token (expires in 30 seconds)
-	redirectTokenMutex.Lock()
-	redirectTokens[token] = redirectToken{
-		URL:       finalURL,
-		ExpiresAt: time.Now().Add(30 * time.Second),
-	}
-	redirectTokenMutex.Unlock()
+	storeRedirectToken(token, finalURL)
 
 	// Return the redirect URL
 	redirectURL := "/api/custom-actions/redirect/" + token
@@ -527,7 +545,11 @@ func (a *App) executeJavaScriptAction(action models.CustomAction, context map[st
 	// Wrap user code in an IIFE so return works
 	wrapped := fmt.Sprintf("(function(context, contact, user, organization) { %s })(context, contact, user, organization)", config.Code)
 
+	timer := time.AfterFunc(customActionJSTimeout, func() {
+		vm.Interrupt("custom action timed out")
+	})
 	val, err := vm.RunString(wrapped)
+	timer.Stop()
 	if err != nil {
 		return nil, fmt.Errorf("javascript execution error: %w", err)
 	}
@@ -555,12 +577,7 @@ func (a *App) executeJavaScriptAction(action models.CustomAction, context map[st
 				tokenBytes := make([]byte, 16)
 				_, _ = rand.Read(tokenBytes)
 				token := hex.EncodeToString(tokenBytes)
-				redirectTokenMutex.Lock()
-				redirectTokens[token] = redirectToken{
-					URL:       url,
-					ExpiresAt: time.Now().Add(30 * time.Second),
-				}
-				redirectTokenMutex.Unlock()
+				storeRedirectToken(token, url)
 				result.RedirectURL = "/api/custom-actions/redirect/" + token
 			}
 			if msg, ok := jsResult["message"].(string); ok {

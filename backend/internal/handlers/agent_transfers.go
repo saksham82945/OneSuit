@@ -1321,6 +1321,16 @@ func (a *App) createTransferToTeam(account *models.WhatsAppAccount, contact *mod
 		return
 	}
 
+	// The team comes from flow config, which may hold another workspace's
+	// team (imported bot file). Fall back to the general queue then.
+	var teamCount int64
+	a.DB.Model(&models.Team{}).Where("id = ? AND organization_id = ?", teamID, account.OrganizationID).Count(&teamCount)
+	if teamCount == 0 {
+		a.Log.Warn("Transfer team not found in organization, using the general queue", "contact_id", contact.ID, "team_id", teamID)
+		a.createTransferToQueue(account, contact, source)
+		return
+	}
+
 	settings, _ := a.getChatbotSettingsCached(account.OrganizationID, account.Name)
 
 	// Suppress transfers outside business hours (same reason as

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -144,6 +145,52 @@ type IncomingTextMessage struct {
 	Order *IncomingOrder `json:"order,omitempty"`
 }
 
+// contactLocker serializes inbound processing per contact so two messages
+// from the same person (or Meta delivering one message twice) don't run the
+// bot at the same time: that read the same session, sent duplicate replies
+// and let the last write win. Entries are reference counted and removed
+// when unused, so the map only holds contacts being processed right now.
+// This is per process; with several app replicas, route a phone number to
+// one replica or move this to a Redis lock.
+type contactLocker struct {
+	mu    sync.Mutex
+	locks map[string]*contactLockEntry
+}
+
+type contactLockEntry struct {
+	mu   sync.Mutex
+	refs int
+}
+
+var inboundContactLocks = &contactLocker{locks: map[string]*contactLockEntry{}}
+
+// lock blocks until key is free and returns its unlock function, plus
+// whether it had to wait for another goroutine holding the same key.
+func (l *contactLocker) lock(key string) (unlock func(), waited bool) {
+	l.mu.Lock()
+	e := l.locks[key]
+	if e == nil {
+		e = &contactLockEntry{}
+		l.locks[key] = e
+	}
+	e.refs++
+	l.mu.Unlock()
+
+	if !e.mu.TryLock() {
+		waited = true
+		e.mu.Lock()
+	}
+	return func() {
+		e.mu.Unlock()
+		l.mu.Lock()
+		e.refs--
+		if e.refs == 0 {
+			delete(l.locks, key)
+		}
+		l.mu.Unlock()
+	}, waited
+}
+
 // processIncomingMessageFull processes incoming WhatsApp messages with chatbot logic
 func (a *App) processIncomingMessageFull(phoneNumberID string, msg IncomingTextMessage, profileName string) {
 	a.Log.Info("Processing incoming message",
@@ -152,6 +199,19 @@ func (a *App) processIncomingMessageFull(phoneNumberID string, msg IncomingTextM
 		"type", msg.Type,
 		"profile_name", profileName,
 	)
+
+	unlock, waited := inboundContactLocks.lock(phoneNumberID + "|" + msg.From)
+	defer unlock()
+	// Another delivery for this contact ran while we waited. If it was the
+	// same message (Meta retries), it is saved now: don't process it twice.
+	if waited && msg.ID != "" {
+		var n int64
+		a.DB.Model(&models.Message{}).Where("whats_app_message_id = ?", msg.ID).Limit(1).Count(&n)
+		if n > 0 {
+			a.Log.Debug("Duplicate message detected after wait, skipping", "message_id", msg.ID)
+			return
+		}
+	}
 
 	// Find the WhatsApp account by phone_number_id (use cache)
 	account, err := a.getWhatsAppAccountCached(phoneNumberID)
@@ -204,8 +264,11 @@ func (a *App) processIncomingMessageFull(phoneNumberID string, msg IncomingTextM
 	}
 	a.saveIncomingMessage(account, contact, msg.ID, messageType, messageText, mediaInfo, replyToWAMID)
 
-	// Clear chatbot tracking since client has replied
-	a.ClearContactChatbotTracking(contact.ID)
+	// Clear chatbot tracking since client has replied (skip the write
+	// when there is nothing to clear: this runs for every inbound message)
+	if contact.ChatbotLastMessageAt != nil || contact.ChatbotReminderSent {
+		a.ClearContactChatbotTracking(contact.ID)
+	}
 
 	// A tap on a quick-poll option is a vote, not input for the chatbot.
 	if a.recordPollVote(account.OrganizationID, contact.ID, buttonID, messageText) {
@@ -470,9 +533,21 @@ func (a *App) matchKeywordRules(orgID uuid.UUID, accountName, messageText string
 	}
 
 	messageLower := strings.ToLower(messageText)
+	now := time.Now()
 
 	for _, rule := range rules {
+		// Scheduled rules only answer inside their active window.
+		if rule.ActiveFrom != nil && now.Before(*rule.ActiveFrom) {
+			continue
+		}
+		if rule.ActiveUntil != nil && now.After(*rule.ActiveUntil) {
+			continue
+		}
 		for _, keyword := range rule.Keywords {
+			// An empty keyword would match every message ("contains" "").
+			if strings.TrimSpace(keyword) == "" {
+				continue
+			}
 			keywordLower := strings.ToLower(keyword)
 			matched := false
 
@@ -496,8 +571,7 @@ func (a *App) matchKeywordRules(orgID uuid.UUID, accountName, messageText string
 					matched = strings.HasPrefix(messageLower, keywordLower)
 				}
 			case models.MatchTypeRegex:
-				re, err := regexp.Compile(keyword)
-				if err == nil {
+				if re := compileKeywordRegex(keyword); re != nil {
 					matched = re.MatchString(messageText)
 				}
 			default:
@@ -549,6 +623,37 @@ func (a *App) matchKeywordRules(orgID uuid.UUID, accountName, messageText string
 	}
 
 	return nil, false
+}
+
+// keywordRegexCache holds compiled keyword regexes (nil for invalid ones)
+// so rules aren't recompiled on every inbound message.
+var keywordRegexCache sync.Map // pattern -> *regexp.Regexp
+
+const keywordRegexCacheMax = 5000
+
+var keywordRegexCacheSize int64
+var keywordRegexCacheMu sync.Mutex
+
+func compileKeywordRegex(pattern string) *regexp.Regexp {
+	if v, ok := keywordRegexCache.Load(pattern); ok {
+		re, _ := v.(*regexp.Regexp)
+		return re
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		re = nil
+	}
+	keywordRegexCacheMu.Lock()
+	if keywordRegexCacheSize >= keywordRegexCacheMax {
+		// Edited rules leave old patterns behind; start over rather than grow.
+		keywordRegexCache.Range(func(k, _ any) bool { keywordRegexCache.Delete(k); return true })
+		keywordRegexCacheSize = 0
+	}
+	if _, loaded := keywordRegexCache.LoadOrStore(pattern, re); !loaded {
+		keywordRegexCacheSize++
+	}
+	keywordRegexCacheMu.Unlock()
+	return re
 }
 
 // sendAndSaveTextMessage sends a text message and saves it to the database
@@ -703,17 +808,31 @@ func (a *App) sendAndSaveFlowMessage(account *models.WhatsAppAccount, contact *m
 func (a *App) getOrCreateSession(orgID, contactID uuid.UUID, accountName, phoneNumber string, timeoutMins int) (*models.ChatbotSession, bool) {
 	now := time.Now()
 
+	// A zero/negative timeout made every message start a new session, so
+	// flows could never get past their first question.
+	if timeoutMins <= 0 {
+		timeoutMins = 30
+	}
+
 	// Look for an active session that hasn't timed out
 	var session models.ChatbotSession
 	timeout := now.Add(-time.Duration(timeoutMins) * time.Minute)
 	result := a.DB.Where("organization_id = ? AND contact_id = ? AND whats_app_account = ? AND status = ? AND last_activity_at > ?",
-		orgID, contactID, accountName, models.SessionStatusActive, timeout).First(&session)
+		orgID, contactID, accountName, models.SessionStatusActive, timeout).
+		Order("last_activity_at DESC").First(&session)
 
 	if result.Error == nil {
 		// Update last activity
 		a.DB.Model(&session).Update("last_activity_at", now)
 		return &session, false // existing session
 	}
+
+	// Sessions left active past the timeout are over: mark them so they
+	// stop counting as active (and stop matching this lookup's index scan).
+	a.DB.Model(&models.ChatbotSession{}).
+		Where("organization_id = ? AND contact_id = ? AND whats_app_account = ? AND status = ? AND last_activity_at <= ?",
+			orgID, contactID, accountName, models.SessionStatusActive, timeout).
+		Updates(map[string]any{"status": models.SessionStatusTimeout, "completed_at": now})
 
 	// Create new session
 	session = models.ChatbotSession{
@@ -760,6 +879,10 @@ func (a *App) matchFlowTrigger(orgID uuid.UUID, messageText string) *models.Chat
 
 	for _, flow := range flows {
 		for _, keyword := range flow.TriggerKeywords {
+			keyword = strings.TrimSpace(keyword)
+			if keyword == "" {
+				continue // "" would trigger the flow for every message
+			}
 			if strings.Contains(messageLower, strings.ToLower(keyword)) {
 				return &flow
 			}
@@ -1344,7 +1467,10 @@ func (a *App) handleIncomingReaction(account *models.WhatsAppAccount, fromPhone,
 			suffixStart := idx + 8
 			if suffixStart < len(messageWAMID) {
 				suffix := messageWAMID[suffixStart:]
-				if err := a.DB.Where("whats_app_message_id LIKE ?", "%"+suffix).First(&message).Error; err != nil {
+				// Scoped to the workspace and recent messages: a bare suffix LIKE scans every message.
+				if err := a.DB.Where("organization_id = ? AND created_at > ? AND whats_app_message_id LIKE ?",
+					account.OrganizationID, time.Now().AddDate(0, 0, -30), "%"+suffix).
+					First(&message).Error; err != nil {
 					a.Log.Warn("Message not found for reaction", "wamid", messageWAMID, "suffix", suffix)
 					return
 				}
@@ -1619,7 +1745,7 @@ func (a *App) saveIncomingMessage(account *models.WhatsAppAccount, contact *mode
 	// Handle reply context - look up the original message by WhatsApp message ID
 	if replyToWAMID != "" {
 		var replyToMsg models.Message
-		if err := a.DB.Where("whats_app_message_id = ?", replyToWAMID).First(&replyToMsg).Error; err == nil {
+		if err := a.DB.Where("organization_id = ? AND whats_app_message_id = ?", account.OrganizationID, replyToWAMID).First(&replyToMsg).Error; err == nil {
 			message.IsReply = true
 			message.ReplyToMessageID = &replyToMsg.ID
 		} else {

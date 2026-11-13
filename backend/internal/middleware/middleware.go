@@ -36,6 +36,34 @@ type JWTClaims struct {
 	jwt.RegisteredClaims
 }
 
+// WSTokenSubject marks the short-lived tokens issued for WebSocket sign-in.
+const WSTokenSubject = "ws"
+
+// IsAccessToken reports whether claims belong to an access token. Refresh
+// tokens are the only tokens with a JTI, and WebSocket tokens use the "ws"
+// subject.
+func IsAccessToken(claims *JWTClaims) bool {
+	return claims != nil && claims.ID == "" && claims.Subject != WSTokenSubject
+}
+
+// RecoverHandler wraps a fasthttp handler so a panic in any handler or
+// middleware answers 500 instead of crashing the whole server (fasthttp does
+// not recover panics, and a fastglue "before" middleware can't catch them).
+func RecoverHandler(log logf.Logger, next fasthttp.RequestHandler) fasthttp.RequestHandler {
+	return func(ctx *fasthttp.RequestCtx) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Error("Panic recovered", "error", err, "path", string(ctx.Path()))
+				ctx.Response.ResetBody()
+				ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+				ctx.SetContentType("application/json")
+				ctx.SetBodyString(`{"status":"error","message":"Internal server error"}`)
+			}
+		}()
+		next(ctx)
+	}
+}
+
 // RequestLogger logs incoming requests
 func RequestLogger(log logf.Logger) fastglue.FastMiddleware {
 	return func(r *fastglue.Request) *fastglue.Request {
@@ -179,6 +207,14 @@ func AuthWithDB(secret string, db *gorm.DB) fastglue.FastMiddleware {
 			return nil
 		}
 
+		// Only access tokens open the API. Refresh tokens carry a JTI (and live
+		// for days, surviving logout as a bearer token) and WebSocket tokens
+		// are marked with the "ws" subject; neither may be used here.
+		if !IsAccessToken(claims) {
+			_ = r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Invalid or expired token", nil, "")
+			return nil
+		}
+
 		// Store claims in context
 		r.RequestCtx.SetUserValue(ContextKeyUserID, claims.UserID)
 		r.RequestCtx.SetUserValue(ContextKeyOrganizationID, claims.OrganizationID)
@@ -226,8 +262,9 @@ func validateAPIKey(r *fastglue.Request, key string, db *gorm.DB) bool {
 				db.WithContext(ctx).Model(&models.APIKey{}).Where("id = ?", id).Update("last_used_at", now)
 			}(apiKey.ID)
 
-			// Set context values from the user who created the key
-			if apiKey.User != nil {
+			// Set context values from the user who created the key. A
+			// deactivated user's keys stop working with their login.
+			if apiKey.User != nil && apiKey.User.IsActive {
 				r.RequestCtx.SetUserValue(ContextKeyUserID, apiKey.UserID)
 				r.RequestCtx.SetUserValue(ContextKeyOrganizationID, apiKey.OrganizationID)
 				r.RequestCtx.SetUserValue(ContextKeyEmail, apiKey.User.Email)

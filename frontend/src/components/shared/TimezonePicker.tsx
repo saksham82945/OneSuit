@@ -197,7 +197,7 @@ export const TimezonePicker: React.FC<TimezonePickerProps> = ({
           <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[380px] p-0 bg-[#141415] border-white/[0.08] light:bg-white light:border-gray-200" align="start">
+      <PopoverContent className="w-[380px] max-w-[calc(100vw-2rem)] p-0 bg-[#141415] border-white/[0.08] light:bg-white light:border-gray-200" align="start">
         <div className="flex items-center border-b border-white/[0.08] px-3 py-2 light:border-gray-200">
           <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
           <Input

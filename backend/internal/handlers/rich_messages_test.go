@@ -300,3 +300,32 @@ func TestScheduleMessage_DueJobSendsAndRespectsWindow(t *testing.T) {
 	assert.Equal(t, 1, texts, "sent exactly once")
 	assert.Equal(t, 1, templates)
 }
+
+// A message left in "sending" by a process that died is surfaced as failed
+// (not resent), while one that is genuinely being sent right now is left alone.
+func TestScheduleMessage_StaleSendingBecomesFailed(t *testing.T) {
+	e := newRichEnv(t)
+	mk := func(content string) models.ScheduledMessage {
+		sm := models.ScheduledMessage{
+			BaseModel: models.BaseModel{ID: uuid.New()}, OrganizationID: e.org.ID, ContactID: e.contact.ID,
+			WhatsAppAccount: e.account.Name, Kind: "text", Content: content, ScheduledAt: time.Now().Add(-time.Hour),
+			Status: models.ScheduledStatusSending,
+		}
+		require.NoError(t, e.app.DB.Create(&sm).Error)
+		return sm
+	}
+	stale := mk("stale")
+	fresh := mk("fresh")
+	require.NoError(t, e.app.DB.Exec("UPDATE scheduled_messages SET updated_at = ? WHERE id = ?", time.Now().Add(-time.Hour), stale.ID).Error)
+
+	e.app.ProcessDueScheduledMessages(testutil.TestContext(t))
+
+	var got models.ScheduledMessage
+	require.NoError(t, e.app.DB.First(&got, "id = ?", stale.ID).Error)
+	assert.Equal(t, models.ScheduledStatusFailed, got.Status)
+	assert.NotEmpty(t, got.ErrorMessage)
+	var gotFresh models.ScheduledMessage
+	require.NoError(t, e.app.DB.First(&gotFresh, "id = ?", fresh.ID).Error)
+	assert.Equal(t, models.ScheduledStatusSending, gotFresh.Status)
+	assert.Empty(t, e.mock.sentMessages, "an interrupted message must not be resent automatically")
+}

@@ -431,6 +431,11 @@ func (a *App) ImportData(r *fastglue.Request) error {
 	if err != nil {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Failed to read file", nil, "")
 	}
+	// A larger file used to be cut at 10 MB and imported anyway, with the
+	// row at the cut silently corrupted and the rest dropped.
+	if len(raw) > maxCSVSize {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "CSV file is larger than 10 MB. Split it into smaller files and import them one by one.", nil, "")
+	}
 	reader := newImportCSVReader(raw)
 
 	// Read header
@@ -559,6 +564,18 @@ func (a *App) ImportData(r *fastglue.Request) error {
 		if hasError {
 			errors++
 			continue
+		}
+
+		// An assigned user must belong to this organization (same rule as
+		// AssignContact); otherwise a CSV could point contacts at any user ID.
+		if uid, ok := recordMap["assigned_user_id"].(*uuid.UUID); ok && uid != nil {
+			var n int64
+			a.DB.Model(&models.User{}).Where("id = ? AND organization_id = ?", *uid, orgID).Count(&n)
+			if n == 0 {
+				errors++
+				errorMessages = append(errorMessages, fmt.Sprintf("Row %d: assigned_user_id - user not found in this organization", rowNum))
+				continue
+			}
 		}
 
 		// Check for duplicate based on unique column

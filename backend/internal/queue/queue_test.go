@@ -281,6 +281,11 @@ func TestConsume_ProcessesJob(t *testing.T) {
 
 	received := handler.getJobs()
 	require.Len(t, received, 1)
+	// A finished job is removed from the stream so it can't grow forever.
+	testutil.AssertEventually(t, func() bool {
+		n, err := client.XLen(ctx, queue.StreamName).Result()
+		return err == nil && n == 0
+	}, 5*time.Second, "processed job should be deleted from the stream")
 	assert.Equal(t, job.CampaignID, received[0].CampaignID)
 	assert.Equal(t, job.RecipientID, received[0].RecipientID)
 	assert.Equal(t, job.PhoneNumber, received[0].PhoneNumber)

@@ -108,6 +108,14 @@ func createCustomSSOProvider(t *testing.T, app *handlers.App, orgID uuid.UUID, f
 	return p
 }
 
+// ssoAdminID creates a workspace admin (holding settings.sso:read/write) in
+// orgID for the SSO settings endpoints, which require that permission.
+func ssoAdminID(t *testing.T, app *handlers.App, orgID uuid.UUID) uuid.UUID {
+	t.Helper()
+	role := testutil.CreateAdminRole(t, app.DB, orgID)
+	return testutil.CreateTestUser(t, app.DB, orgID, testutil.WithRoleID(&role.ID)).ID
+}
+
 // --- GetPublicSSOProviders ---
 
 func TestApp_GetPublicSSOProviders_DedupsByType(t *testing.T) {
@@ -159,7 +167,7 @@ func TestApp_GetSSOSettings_HidesSecretButReportsHasSecret(t *testing.T) {
 	}).Error)
 
 	req := testutil.NewGETRequest(t)
-	testutil.SetAuthContext(req, org.ID, uuid.New())
+	testutil.SetAuthContext(req, org.ID, ssoAdminID(t, app, org.ID))
 
 	require.NoError(t, app.GetSSOSettings(req))
 	require.Equal(t, fasthttp.StatusOK, testutil.GetResponseStatusCode(req))
@@ -187,7 +195,7 @@ func TestApp_UpdateSSOProvider_CreateCustomRequiresURLs(t *testing.T) {
 		"client_secret": "secret",
 		"is_enabled":    true,
 	})
-	testutil.SetAuthContext(req, org.ID, uuid.New())
+	testutil.SetAuthContext(req, org.ID, ssoAdminID(t, app, org.ID))
 	testutil.SetPathParam(req, "provider", "custom")
 
 	require.NoError(t, app.UpdateSSOProvider(req))
@@ -202,7 +210,7 @@ func TestApp_UpdateSSOProvider_InvalidProviderRejected(t *testing.T) {
 		"client_id":     "id",
 		"client_secret": "s",
 	})
-	testutil.SetAuthContext(req, org.ID, uuid.New())
+	testutil.SetAuthContext(req, org.ID, ssoAdminID(t, app, org.ID))
 	testutil.SetPathParam(req, "provider", "okta") // not in allowlist
 
 	require.NoError(t, app.UpdateSSOProvider(req))
@@ -219,7 +227,7 @@ func TestApp_UpdateSSOProvider_EncryptsClientSecret(t *testing.T) {
 		"client_secret": "PLAIN-SSO-SECRET",
 		"is_enabled":    true,
 	})
-	testutil.SetAuthContext(req, org.ID, uuid.New())
+	testutil.SetAuthContext(req, org.ID, ssoAdminID(t, app, org.ID))
 	testutil.SetPathParam(req, "provider", "google")
 
 	require.NoError(t, app.UpdateSSOProvider(req))
@@ -246,7 +254,7 @@ func TestApp_UpdateSSOProvider_OmittingSecretLeavesUnchanged(t *testing.T) {
 		"client_id":  "new-id",
 		"is_enabled": true,
 	})
-	testutil.SetAuthContext(req, org.ID, uuid.New())
+	testutil.SetAuthContext(req, org.ID, ssoAdminID(t, app, org.ID))
 	testutil.SetPathParam(req, "provider", "google")
 
 	require.NoError(t, app.UpdateSSOProvider(req))
@@ -269,7 +277,7 @@ func TestApp_DeleteSSOProvider_Success(t *testing.T) {
 	}).Error)
 
 	req := testutil.NewRequest(t)
-	testutil.SetAuthContext(req, org.ID, uuid.New())
+	testutil.SetAuthContext(req, org.ID, ssoAdminID(t, app, org.ID))
 	testutil.SetPathParam(req, "provider", "google")
 
 	require.NoError(t, app.DeleteSSOProvider(req))
@@ -285,7 +293,7 @@ func TestApp_DeleteSSOProvider_NotFound(t *testing.T) {
 	org := testutil.CreateTestOrganization(t, app.DB)
 
 	req := testutil.NewRequest(t)
-	testutil.SetAuthContext(req, org.ID, uuid.New())
+	testutil.SetAuthContext(req, org.ID, ssoAdminID(t, app, org.ID))
 	testutil.SetPathParam(req, "provider", "google")
 
 	require.NoError(t, app.DeleteSSOProvider(req))
@@ -303,7 +311,7 @@ func TestApp_DeleteSSOProvider_CrossOrgIsolation(t *testing.T) {
 	require.NoError(t, app.DB.Create(rec).Error)
 
 	req := testutil.NewRequest(t)
-	testutil.SetAuthContext(req, orgB.ID, uuid.New())
+	testutil.SetAuthContext(req, orgB.ID, ssoAdminID(t, app, orgB.ID))
 	testutil.SetPathParam(req, "provider", "google")
 
 	require.NoError(t, app.DeleteSSOProvider(req))
