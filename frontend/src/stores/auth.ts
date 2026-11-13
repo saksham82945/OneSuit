@@ -65,6 +65,27 @@ interface AuthState {
   hasPermission: (resource: string, action?: string) => boolean;
 }
 
+const SIGNED_OUT_KEY = 'signed_out';
+
+/** Remembers, for this tab, that the user signed out on purpose (see ProtectedRoute). */
+function markSignedOut(on: boolean) {
+  try {
+    if (on) sessionStorage.setItem(SIGNED_OUT_KEY, '1');
+    else sessionStorage.removeItem(SIGNED_OUT_KEY);
+  } catch {
+    // Storage can be blocked (private mode); the redirect then falls back to login.
+  }
+}
+
+/** True when the user signed out in this tab and hasn't signed in again. */
+export function signedOutInThisTab(): boolean {
+  try {
+    return sessionStorage.getItem(SIGNED_OUT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   breakStartedAt: null,
@@ -75,6 +96,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   setAuth: (user: User) => {
     localStorage.setItem('user', JSON.stringify(user));
+    markSignedOut(false);
     set({
       user,
       isAuthenticated: true,
@@ -162,6 +184,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // Ignore logout errors; local auth is cleared either way.
     } finally {
+      // Before clearing, so the page being left goes to the landing page.
+      markSignedOut(true);
       get().clearAuth();
     }
   },

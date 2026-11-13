@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuthStore } from '@/stores/auth';
+import { signedOutInThisTab, useAuthStore } from '@/stores/auth';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -23,6 +23,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }, [isAuthenticated, restoreSession]);
 
   if (!isAuthenticated && !restoreSession()) {
+    // After signing out, app pages (e.g. reached with Back) show the landing
+    // page instead of trapping the user on the login page.
+    if (signedOutInThisTab()) {
+      return <Navigate to="/" replace />;
+    }
     return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />;
   }
 
